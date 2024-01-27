@@ -13,6 +13,8 @@ author:
     email: <lwh@fb.com>
   - name: Lucian Radu Teodorescu
     email: <lucteo@lucteo.ro>
+  - name: Ian Petersen
+    email: <ispeters@meta.com>
 toc: true
 ---
 
@@ -42,8 +44,8 @@ _`async-function`_ s spawned by the `counting_scope` have completed.
 ## Implementation experience
 
 The general concept of an async scope to manage work has been deployed broadly in Meta's folly [@asyncscopefolly] to
-safely launch awaitables in Folly's coro library [@corofolly] and in Facebook's libunifex library [@asyncscopeunifex]
-where it is designed to be used with the sender/receiver pattern.
+safely launch awaitables in Folly's coro library [@corofolly] and in Meta's libunifex library [@asyncscopeunifex] where
+it is designed to be used with the sender/receiver pattern.
 
 ## RAII and _`async-object`_
 
@@ -1003,20 +1005,20 @@ references:
     citation-label: asyncscopeunifex
     type: header
     title: "async_scope"
-    url: https://github.com/facebookexperimental/libunifex/blob/main/include/unifex/async_scope.hpp
-    company: Facebook, Inc
+    url: https://github.com/facebookexperimental/libunifex/blob/main/include/unifex/v2/async_scope.hpp
+    company: Meta Platforms, Inc
   - id: letvwthunifex
     citation-label: letvwthunifex
     type: documentation
     title: "let_value_with"
     url: https://github.com/facebookexperimental/libunifex/blob/main/doc/api_reference.md#let_value_withinvocable-state_factory-invocable-func---sender
-    company: Facebook, Inc
+    company: Meta Platforms, Inc
   - id: libunifex
     citation-label: libunifex
     type: repository
     title: "libunifex"
     url: https://github.com/facebookexperimental/libunifex/
-    company: Facebook, Inc
+    company: Meta Platforms, Inc
   - id: asyncscopestdexec
     citation-label: asyncscopestdexec
     type: repository
