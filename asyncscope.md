@@ -90,28 +90,27 @@ int main() {
 }
 ```
 
-In this example we are creating parallel work based on the given input vector.
-All the work will be spawned on the local `static_thread_pool` object, and will use a shared `work_context` object.
+In this example we are creating parallel work based on the given input vector. All the work will be spawned on the local
+`static_thread_pool` object, and will use a shared `work_context` object.
 
 Because the number of work items is dynamic, one is forced to use `start_detached()` from [@P2300R7] (or something
-equivalent) to dynamically spawn work.
-[@P2300R7] doesn't provide any facilities to spawn dynamic work and return a sender (i.e., something like `when_all`
-but with a dynamic number of input senders).
+equivalent) to dynamically spawn work. [@P2300R7] doesn't provide any facilities to spawn dynamic work and return a
+sender (i.e., something like `when_all` but with a dynamic number of input senders).
 
 Using `start_detached()` here follows the _fire-and-forget_ style, meaning that we have no control over, or awareness
 of, the termination of the _`async-function`_ being spawned.
 
-At the end of the function, we are destroying the `work_context` and the `static_thread_pool`.
-But at that point, we don't know whether all the spawned _`async-function`_ s have completed.
-If there are still _`async-function`_ s that are not yet complete, this might lead to crashes.
+At the end of the function, we are destroying the `work_context` and the `static_thread_pool`. But at that point, we
+don't know whether all the spawned _`async-function`_ s have completed. If there are still _`async-function`_ s that are
+not yet complete, this might lead to crashes.
 
 _NOTE:_ As described in [@P2849R0], the `work_context` and `static_thread_pool` objects need to be _`async-object`_ s
 because they are used by _`async-function`_ s.
 
 [@P2300R7] doesn't give us out-of-the-box facilities to use in solving these types of problems.
 
-This paper proposes the `counting_scope` facility that would help us avoid the invalid behavior.
-With `counting_scope`, one might write safe code this way:
+This paper proposes the `counting_scope` facility that would help us avoid the invalid behavior. With `counting_scope`,
+one might write safe code this way:
 ```c++
 int main() {
     auto work = ex::use_resources( // NEW! @@_see_ P2849R0@@
@@ -140,21 +139,18 @@ Please see below for more examples.
 ## `counting_scope` is step forward towards Structured Concurrency
 
 Structured Programming [@Dahl72] transformed the software world by making it easier to reason about the code, and build
-large software from simpler constructs.
-We want to achieve the same effect on concurrent programming by ensuring that we _structure_ our concurrent code.
-[@P2300R7] makes a big step in that direction, but, by itself, it doesn't fully realize the principles of Structured
-Programming.
-More specifically, it doesn't always ensure that we can apply the _single entry, single exit point_ principle.
+large software from simpler constructs. We want to achieve the same effect on concurrent programming by ensuring that
+we _structure_ our concurrent code. [@P2300R7] makes a big step in that direction, but, by itself, it doesn't fully
+realize the principles of Structured Programming. More specifically, it doesn't always ensure that we can apply the
+_single entry, single exit point_ principle.
 
-The `start_detached` sender algorithm fails this principle by behaving like a `GOTO` instruction.
-By calling `start_detached` we essentially continue in two places: in the same function, and on different thread that
-executes the given work.
-Moreover, the lifetime of the work started by `start_detached` cannot be bound to the local context.
-This will prevent local reasoning, which will make the program harder to understand.
+The `start_detached` sender algorithm fails this principle by behaving like a `GOTO` instruction. By calling
+`start_detached` we essentially continue in two places: in the same function, and on different thread that executes the
+given work. Moreover, the lifetime of the work started by `start_detached` cannot be bound to the local context. This
+will prevent local reasoning, which will make the program harder to understand.
 
 To properly structure our concurrency, we need an abstraction that ensures that all the _`async-function`_ s being
-spawned are attached to an enclosing _`async-function`_.
-This is the goal of `counting_scope`.
+spawned are attached to an enclosing _`async-function`_. This is the goal of `counting_scope`.
 
 ## `counting_scope` may increase consensus for P2300
 
@@ -197,8 +193,8 @@ int main() {
         ) | then([&result](auto val){result = val});
 
       ex::spawn(scope, std::move(val));
-    }, 
-    make_deferred<system_execution_resource>(8), // create a global thread pool 
+    },
+    make_deferred<system_execution_resource>(8), // create a global thread pool
     make_deferred<counting_scope_resource>()); // NEW!
   this_thread::sync_wait(work);   // NEW!
 
@@ -210,8 +206,8 @@ int main() {
 
 ## Starting work nested within a framework
 In this example we use the `counting_scope` within a class to start work when the object receives a message and to wait
-for that work to complete before closing.
-`my_window::start()` starts the sender using storage reserved in `my_window` for this purpose.
+for that work to complete before closing. `my_window::start()` starts the sender using storage reserved in `my_window`
+for this purpose.
 ```c++
 using namespace std::execution;
 
@@ -245,12 +241,11 @@ void my_window::onClickClose() {
 
 In this example we use the `counting_scope` within lexical scope to construct an algorithm that performs parallel work.
 This uses the `let_value_with` [@letvwthunifex] algorithm implemented in [@libunifex] which simplifies in-place
-construction of a non-moveable object in the `let_value_with` algorithms' _`operation-state`_ object.
-Here `foo` launches 100 tasks that concurrently run on some scheduler provided to `foo`, through its connected
-receiver, and then the tasks are asynchronously joined.
-In this case the context the work is run on will be the `system_context`'s scheduler, from [@P2079R2].
-This structure emulates how we might build a parallel algorithm where each `some_work` might be operating on a fragment
-of data.
+construction of a non-moveable object in the `let_value_with` algorithms' _`operation-state`_ object. Here `foo`
+launches 100 tasks that concurrently run on some scheduler provided to `foo`, through its connected receiver, and then
+the tasks are asynchronously joined. In this case the context the work is run on will be the `system_context`'s
+scheduler, from [@P2079R2]. This structure emulates how we might build a parallel algorithm where each `some_work` might
+be operating on a fragment of data.
 ```c++
 using namespace std::execution;
 
@@ -278,12 +273,11 @@ sender auto foo(scheduler auto sch) {
 
 ## Listener loop in an HTTP server
 
-This example shows how one can write the listener loop in an HTTP server, with the help of coroutines.
-The HTTP server will continuously accept new connection and start work to handle the requests coming on the new
-connections.
-While the listening activity is bound in the scope of the loop, the lifetime of handling requests may exceed the scope
-of the loop.
-We use `counting_scope` to limit the lifetime of the request handling without blocking the acceptance of new requests.
+This example shows how one can write the listener loop in an HTTP server, with the help of coroutines. The HTTP server
+will continuously accept new connection and start work to handle the requests coming on the new connections. While the
+listening activity is bound in the scope of the loop, the lifetime of handling requests may exceed the scope of the
+loop. We use `counting_scope` to limit the lifetime of the request handling without blocking the acceptance of new
+requests.
 
 ```c++
 task<size_t> listener(int port, io_context& ctx, static_thread_pool& pool) {
@@ -375,14 +369,13 @@ after the spawned sender completes.
 This is similar to `start_detached()` from [@P2300R7], but the `counted_scope` keeps track of the spawned
 _`async-function`_ s.
 
-The given sender must complete with `void` or `stopped`.
-The given sender is not allowed to complete with an error; the user must explicitly handle the errors that might appear
-as part of the _`sender-expression`_ passed to `spawn()`.
+The given sender must complete with `void` or `stopped`. The given sender is not allowed to complete with an error; the
+user must explicitly handle the errors that might appear as part of the _`sender-expression`_ passed to `spawn()`.
 
-As `spawn()` starts the given sender synchronously, it is important that the user provides non-blocking senders.
-This matches user expectations that `spawn()` is asynchronous and avoids surprising blocking behavior at runtime.
-The reason for non-blocking start is that spawn must be non-blocking.
-Using `spawn()` with a sender generated by `on(sched, @_blocking-sender_@)` is a very useful pattern in this context.
+As `spawn()` starts the given sender synchronously, it is important that the user provides non-blocking senders. This
+matches user expectations that `spawn()` is asynchronous and avoids surprising blocking behavior at runtime. The reason
+for non-blocking start is that spawn must be non-blocking. Using `spawn()` with a sender generated by
+`on(sched, @_blocking-sender_@)` is a very useful pattern in this context.
 
 _NOTE:_ A query for non-blocking start will allow `spawn()` to be constrained to require non-blocking start.
 
@@ -414,8 +407,8 @@ sender `s` completes and all copies of the  _`spawn-future-sender`_ have been de
 This is similar to `ensure_started()` from [@P2300R7], but the `counted_scope` keeps track of the spawned
 _`async-function`_ s.
 
-Unlike `spawn()`, the sender given to `spawn_future()` is not constrained on a given shape.
-It may send different types of values, and it can complete with errors.
+Unlike `spawn()`, the sender given to `spawn_future()` is not constrained on a given shape. It may send different types
+of values, and it can complete with errors.
 
 It is safe to drop the sender returned from `spawn_future()` without starting it, because the `counting_scope` safely
 manages the destruction of the _`spawn-future-sender`_ state.
@@ -449,30 +442,26 @@ template <sender S>
 Returns a _`nest-sender`_ that, when started, adds the given sender to the count of senders that the `counting_scope`
 object will require to complete before it will destruct.
 
-A call to `nest()` does not start the given sender.
-A call to `nest()` is not expected to incur allocations.
+A call to `nest()` does not start the given sender. A call to `nest()` is not expected to incur allocations.
 
 The sender returned by a call to `nest()` holds a reference to the `counting_scope` in order to add the given sender to
-the count of senders when it is started.
-Connecting and starting the sender returned from `nest()` will connect and start the given sender and add the given
-sender to the count of senders that the `counting_scope` object will require to complete before it will destruct.
+the count of senders when it is started. Connecting and starting the sender returned from `nest()` will connect and
+start the given sender and add the given sender to the count of senders that the `counting_scope` object will require to
+complete before it will destruct.
 
-Similar to `spawn_future()`, `nest()` doesn't constrain the input sender to any specific shape.
-Any type of sender is accepted.
+Similar to `spawn_future()`, `nest()` doesn't constrain the input sender to any specific shape. Any type of sender is
+accepted.
 
-Unlike `spawn_future()` the returned sender does not prevent the scope from ending.
-It is safe to drop the returned sender without starting it.
-It is UB to start the returned sender after the `counting_scope` has been destroyed.
+Unlike `spawn_future()` the returned sender does not prevent the scope from ending. It is safe to drop the returned
+sender without starting it. It is UB to start the returned sender after the `counting_scope` has been destroyed.
 
 As `nest()` does not immediately start the given work, it is ok to pass in blocking senders.
 
 One can say that `nest()` is more fundamental than `spawn()` and `spawn_future()` as the latter two can be implemented
-in terms of `nest()`.
-In terms of performance, `nest()` does not introduce any penalty.
-`spawn()` is more expensive than `nest()` as it needs to allocate memory for the operation.
-`spawn_future()` is even more expensive than `spawn()`; the receiver needs to be type-erased and a possible race
-condition needs to be resolved.
-`nest()` does not require allocations, so it can be used in a free-standing environment.
+in terms of `nest()`. In terms of performance, `nest()` does not introduce any penalty. `spawn()` is more expensive than
+`nest()` as it needs to allocate memory for the operation. `spawn_future()` is even more expensive than `spawn()`; the
+receiver needs to be type-erased and a possible race condition needs to be resolved. `nest()` does not require
+allocations, so it can be used in a free-standing environment.
 
 Cancelling the returned sender, once it is connected and started, cancels `s` but does not cancel the `counting_scope`.
 
@@ -492,35 +481,33 @@ Design considerations
 
 ### Constraints on `set_value()`
 
-It makes sense for `spawn_future()` and `nest()` to accept senders with any type of completion signatures.
-The caller gets back a sender that can be chained with other senders, and it doesn't make sense to restrict the shape
-of this sender.
+It makes sense for `spawn_future()` and `nest()` to accept senders with any type of completion signatures. The caller
+gets back a sender that can be chained with other senders, and it doesn't make sense to restrict the shape of this
+sender.
 
 The same reasoning doesn't necessarily follow for `spawn()` as it returns `void` and the result of the spawned sender
-is dropped.
-There are two main alternatives:
+is dropped. There are two main alternatives:
 
 - do not constrain the shape of the input sender (i.e., dropping the results of the computation)
 - constrain the shape of the input sender
 
-The current proposal goes with the second alternative.
-The main reason is to make it more difficult and explicit to silently drop result.
-The caller can always transform the input sender before passing it to `spawn()` to drop the values manually.
+The current proposal goes with the second alternative. The main reason is to make it more difficult and explicit to
+silently drop result. The caller can always transform the input sender before passing it to `spawn()` to drop the
+values manually.
 
 > **Chosen:** `spawn()` accepts only senders that advertise `set_value()` (without any parameters) in the completion
 > signatures.
 
 ### Handling errors in `spawn()`
 
-The current proposal does not accept senders that can complete with error given to `spawn()`.
-This will prevent accidental error scenarios that will terminate the application.
-The user must deal with all possible errors before passing the sender to `counting_scope`.
-I.e., error handling must be explicit.
+The current proposal does not accept senders that can complete with error given to `spawn()`. This will prevent
+accidental error scenarios that will terminate the application. The user must deal with all possible errors before
+passing the sender to `counting_scope`. i.e., error handling must be explicit.
 
 Another alternative considered was to call `std::terminate()` when the sender completes with error.
 
-Another alternative is to silently drop the errors when receiving them.
-This is considered bad practice, as it will often lead to first spotting bugs in production.
+Another alternative is to silently drop the errors when receiving them. This is considered bad practice, as it will
+often lead to first spotting bugs in production.
 
 > **Chosen:** `spawn()` accepts only senders that do not call `set_error()`. Explicit error handling is preferred over
 > stopping the application, and over silently ignoring the error.
@@ -529,21 +516,19 @@ This is considered bad practice, as it will often lead to first spotting bugs in
 
 Similar to the error case, we have the alternative of allowing or forbidding `set_stopped()` as a completion signal.
 Because the goal of `counting_scope` is to track the lifetime of the work started through it, it shouldn't matter
-whether that the work completed with success or by being stopped.
-As it is assumed that sending the stop signal is the result of an explicit choice, it makes sense to allow senders that
-can terminate with `set_stopped()`.
+whether that the work completed with success or by being stopped. As it is assumed that sending the stop signal is the
+result of an explicit choice, it makes sense to allow senders that can terminate with `set_stopped()`.
 
 The alternative would require transforming the sender before passing it to spawn, something like
-`s.spawn(std::move(snd) | let_stopped([]{ return just(); ))`.
-This is considered boilerplate and not helpful, as the stopped scenarios should be implicit, and not require handling.
+`s.spawn(std::move(snd) | let_stopped([]{ return just(); ))`. This is considered boilerplate and not helpful, as the
+stopped scenarios should be implicit, and not require handling.
 
 > **Chosen:** `spawn()` accepts senders that complete with `set_stopped()`.
 
 ### No shape restrictions for the senders passed to `spawn_future()` and `nest()`
 
-Similarly to `spawn()`, we can constrain `spawn_future()` and `nest()` to accept only a limited set of senders.
-But, because we can attach continuations for these senders, we would be limiting the functionality that can be
-expressed.
+Similarly to `spawn()`, we can constrain `spawn_future()` and `nest()` to accept only a limited set of senders. But,
+because we can attach continuations for these senders, we would be limiting the functionality that can be expressed.
 For example, the continuation can handle different types of values and errors.
 
 > **Chosen:** `spawn_future()` and `nest()` accept senders with any completion signatures.
@@ -560,17 +545,17 @@ Essentially it does the same thing, but it can also attach the spawned sender to
 
 ## Supporting the pipe operator
 
-This paper doesn't support the pipe operator to be used in conjunction with `spawn()` and `spawn_future()`.
-One might think that it is useful to write code like the following:
+This paper doesn't support the pipe operator to be used in conjunction with `spawn()` and `spawn_future()`.  One might
+think that it is useful to write code like the following:
 
 ```c++
 std::move(snd1) | spawn(s); // returns void
 sender auto snd3 = std::move(snd2) | spawn_future(s) | then(...);
 ```
 
-In [@P2300R7] sender consumers do not have support for the pipe operator.
-As `spawn()` works similarly to `start_detached()` from [@P2300R7], which is a sender consumer, if we follow the same
-rationale, it makes sense not to support the pipe operator for `spawn()`.
+In [@P2300R7] sender consumers do not have support for the pipe operator. As `spawn()` works similarly to
+`start_detached()` from [@P2300R7], which is a sender consumer, if we follow the same rationale, it makes sense not to
+support the pipe operator for `spawn()`.
 
 On the other hand, `spawn_future()` is not a sender consumer, thus we might have considered adding pipe operator to it.
 To keep consistency with `spawn()`, at this point the paper doesn't support pipe operator for `spawn_future()`.
@@ -685,13 +670,13 @@ class counting_nest<? satisfies sender> {
   + completion_signatures_of_t< <<sender>>s > \nget_completion_signatures(environment)
   + <<operation>>counting_nest_impl connect(<<receiver>>r)
 }
-counting_nest::connect -d-> counting_nest_impl 
+counting_nest::connect -d-> counting_nest_impl
 
 class counting_spawn_future<? satisfies sender> {
   + completion_signatures_of_t< <<sender>>s > \nget_completion_signatures(environment)
   + <<operation>>counting_spawn_future_impl connect(<<receiver>>r)
 }
-counting_spawn_future::connect -d-> counting_spawn_future_impl 
+counting_spawn_future::connect -d-> counting_spawn_future_impl
 
 class counting_scope<? satisfies async-scope> {
   + <<sender>>counting_nest nest(<<sender>>s)
@@ -699,8 +684,8 @@ class counting_scope<? satisfies async-scope> {
   + <<sender>>counting_spawn_future spawn_future(<<sender>>s)
   - <<operation>>counting_impl* impl
 }
-counting_scope::nest -l-> counting_nest 
-counting_scope::spawn_future -r-> counting_spawn_future 
+counting_scope::nest -l-> counting_nest
+counting_scope::spawn_future -r-> counting_spawn_future
 
 class counting_item_impl<? satisfies operation> {
   + void start()
@@ -712,7 +697,7 @@ class counting_item<? satisfies sender> {
   + completion_signatures<set_value_t(counting_scope)> \nget_completion_signatures(environment)
   + <<operation>>counting_item_impl connect(<<receiver>>r)
 }
-counting_item::connect -u-> counting_item_impl 
+counting_item::connect -u-> counting_item_impl
 
 class counting_impl<? satisfies operation> {
   + void start()
@@ -728,12 +713,12 @@ class counting<? satisfies sequence-sender> {
   + completion_signatures<set_value_t(counting_scope)> \nget_completion_signatures(environment)
   + <<operation>>counting_impl sequence_connect(<<sequence-receiver>>r)
 }
-counting::sequence_connect -u-> counting_impl 
+counting::sequence_connect -u-> counting_impl
 
 class counting_scope_resource<? satisfies async-resource> {
   + <<sequence-sender>>counting run()
 }
-counting_scope_resource::run -u-> counting 
+counting_scope_resource::run -u-> counting
 
 ```
 
@@ -758,8 +743,8 @@ start
 
 :scope --count;
 
-if (count) equals (0) then 
-if (scope) is (unused) then 
+if (count) equals (0) then
+if (scope) is (unused) then
 :destruct scope;
 else
 ->scope is in use;
@@ -877,7 +862,7 @@ struct counting_scope_resource {
   // Option A or Option B from P2849R0
   @@_run-sender_@@
   /*@@_implementation-defined_@@*/ /*@@_customization-point_@@*/(
-    decays_to<self_t> auto&&, run_t) noexcept;  
+    decays_to<self_t> auto&&, run_t) noexcept;
 };
 
 }
@@ -922,8 +907,8 @@ struct counting_scope_resource {
 ## `counting_scope::spawn_future`
 
 1. `counting_scope::spawn_future` is used to eagerly start a sender in the context of the `counting_scope` object, and
-   returning a sender that will be triggered after the completion of the given sender.
-   The lifetime of the returned sender is not associated with `counting_scope`.
+   returning a sender that will be triggered after the completion of the given sender. The lifetime of the returned
+   sender is not associated with `counting_scope`.
 
 2. The returned sender has the same completion signatures as the input sender.
 
