@@ -28,24 +28,37 @@ Changes
 Introduction
 ============
 
-A major precept of [@P2300R7] is structured concurrency. The `start_detached` and `ensure_started` algorithms are
-motivated by some important scenarios. Not every _`async-function`_ has a clear chain of work to consume or block on
-the result. The problem with these algorithms is that they provide unstructured concurrency. This is an unnecessary and
-unwelcome and undesirable property for concurrency. Using these algorithms leads to problems with lifetimes that are
-often 'fixed' using `shared_ptr` for ad-hoc garbage collection.
+[@P2300R7] lays the groundwork for writing structured concurrent programs in C++ but it leaves three important scenarios
+unaddressed:
 
-This paper describes the `counting_scope` _`async-object`_. A `counting_scope` would be used to spawn many
-_`async-function`_ s safely inside an enclosing _`async-function`_.
+ 1. progressively structuring an existing, unstructured concurrent program;
+ 2. starting a dynamic number of parallel tasks without "losing track" of them; and
+ 3. opting in to eager execution of sender-shaped work when appropriate.
 
-The _`async-function`_ s spawned with a `counting_scope` can be running on any execution context. The `counting_scope`
-_`async-object`_ has only one concern, which is to provide an _`async-object`_ that will destruct only after all the
-_`async-function`_ s spawned by the `counting_scope` have completed.
+This paper describes the utilities needed to address the above scenarios within the following constraints:
+
+ * _No detached work by default;_ as specified in P2300R7, the `start_detached` and `ensure_started` algorithms invite
+   users to start concurrent work with no built-in way to know when that work has finished. Such so-called "detached
+   work" is undesirable; without a way to know when detached work is done, it is difficult know when it is safe to
+   destroy any resources referred to by the work. Ad hoc solutions to this shutdown problem add unnecessary complexity
+   that can be avoided by ensuring all concurrent work is "attached".
+ * ...
+
+The proposed solution comes in five parts:
+
+ * `concept async_scope`;
+ * `sender auto nest(sender auto&&, async_scope auto&&)`;
+ * `void spawn(sender auto&&, async_scope auto&&, Env&&)`;
+ * `sender auto spawn_future(sender auto&&, async_scope auto&&, Env&&)`; and
+ * `struct counting_scope`.
 
 ## Implementation experience
 
-The general concept of an async scope to manage work has been deployed broadly in Meta's folly [@asyncscopefolly] to
-safely launch awaitables in Folly's coro library [@corofolly] and in Meta's libunifex library [@asyncscopeunifex] where
-it is designed to be used with the sender/receiver pattern.
+The general concept of an async scope to manage work has been deployed broadly at Meta. Code written with Folly's
+coroutine library, [@follycoro], uses [@follyasyncscope] to safely launch awaitables. Most code written with Unifex, an
+implementation of an earlier version of the _Sender/Receiver_ model proposed in [@P2300R7], uses [@asyncscopeunifexv1],
+although experience with the v1 design led us to create [@asyncscopeunifexv2], which has a smaller interface and only
+one responsibility.
 
 ## RAII and _`async-object`_
 
@@ -989,23 +1002,29 @@ references:
       - family: Hoare
         given: C. A. R.
     publisher: Academic Press Ltd., 1972
-  - id: asyncscopefolly
-    citation-label: asyncscopefolly
+  - id: follyasyncscope
+    citation-label: "`folly::coro::AsyncScope`"
     type: header
-    title: "folly::coro::async_scope"
+    title: "folly::coro::AsyncScope"
     url: https://github.com/facebook/folly/blob/main/folly/experimental/coro/AsyncScope.h
     company: Meta Platforms, Inc
-  - id: corofolly
-    citation-label: corofolly
+  - id: follycoro
+    citation-label: "`folly::coro`"
     type: repository
     title: "folly::coro"
     url: https://github.com/facebook/folly/tree/main/folly/experimental/coro
     company: Meta Platforms, Inc
-  - id: asyncscopeunifex
-    citation-label: asyncscopeunifex
+  - id: asyncscopeunifexv1
+    citation-label: "`unifex::v1::async_scope`"
     type: header
-    title: "async_scope"
-    url: https://github.com/facebookexperimental/libunifex/blob/main/include/unifex/v2/async_scope.hpp
+    title: "unifex::v1::async_scope"
+    url: https://github.com/facebookexperimental/libunifex/blob/main/include/unifex/v1/async_scope.hpp
+    company: Meta Platforms, Inc
+  - id: asyncscopeunifexv2
+    citation-label: "`unifex::v2::async_scope`"
+    type: header
+    title: "unifex::v2::async_scope"
+    url: https://github.com/facebookexperimental/libunifex/blob/main/include/unifex/v1/async_scope.hpp
     company: Meta Platforms, Inc
   - id: letvwthunifex
     citation-label: letvwthunifex
