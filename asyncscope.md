@@ -60,21 +60,6 @@ implementation of an earlier version of the _Sender/Receiver_ model proposed in 
 although experience with the v1 design led us to create [@asyncscopeunifexv2], which has a smaller interface and only
 one responsibility.
 
-## RAII and _`async-object`_
-
-The definition of an _`async-object`_, and a description of how an _`async-object`_ attaches to an enclosing
-_`async-function`_, can be found in [@P2849R0]. An _`async-object`_ is attached to an enclosing _`async-function`_ in
-the same sense that a C++ object is attached to an enclosing C++ function. The enclosing _`async-function`_ always
-contains the construction use and destruction of all contained _`async-object`_ s.
-
-The paper that describes how to build an _`async-object`_ was written when years of implementation experience with
-`async_scope` led to the discovery of a general pattern for all _`async-object`_ s, including thread-pools, sockets,
-files, allocators, etc..
-
-Now the `counting_scope` is just the first _`async-object`_ proposed for standardization. The paper is greatly
-simplified by moving the material related to attaching a `counting_scope` to an enclosing _`async-function`_ to the
-[@P2849R0] paper.
-
 Motivation
 ==========
 
@@ -97,11 +82,11 @@ int main() {
     std::vector<work_item*> items = get_work_items();
     for (auto item : items) {
         // Spawn some work dynamically
-        ex::sender auto snd = ex::transfer_just(my_pool.get_scheduler(), item)
-                            | ex::then([&](work_item* item){ do_work(ctx, item); });
+        ex::sender auto snd = ex::transfer_just(my_pool.get_scheduler(), item) |
+                              ex::then([&](work_item* item) { do_work(ctx, item); });
         ex::start_detached(std::move(snd));
     }
-    // `ctx` and `my_pool` is destroyed
+    // `ctx` and `my_pool` are destroyed
 }
 ```
 
@@ -119,35 +104,92 @@ At the end of the function, we are destroying the `work_context` and the `static
 don't know whether all the spawned _`async-function`_ s have completed. If there are still _`async-function`_ s that are
 not yet complete, this might lead to crashes.
 
-_NOTE:_ As described in [@P2849R0], the `work_context` and `static_thread_pool` objects need to be _`async-object`_ s
-because they are used by _`async-function`_ s.
-
 [@P2300R7] doesn't give us out-of-the-box facilities to use in solving these types of problems.
 
 This paper proposes the `counting_scope` facility that would help us avoid the invalid behavior. With `counting_scope`,
 one might write safe code this way:
 ```c++
+namespace ex = std::execution;
+
+struct work_context;
+struct work_item;
+void do_work(work_context&, work_item*);
+std::vector<work_item*> get_work_items();
+
 int main() {
-    auto work = ex::use_resources( // NEW! @@_see_ P2849R0@@
-      [](work_context ctx, static_thread_pool my_pool, counting_scope my_work_scope){
-        std::vector<work_item*> items = get_work_items();
-        for ( auto item: items ) {
-            // Spawn some work dynamically
-            ex::sender auto snd = ex::transfer_just(my_pool.get_scheduler(), item)
-                                | ex::then([&](work_item* item){ do_work(ctx, item); });
-            ex::spawn(my_work_scope, std::move(snd));            // MODIFIED!
-        }
-      }, 
-      make_deferred<work_context_resource>(), // create a global context for the application
-      make_deferred<static_thread_pool_resource>(8), // create a global thread pool 
-      make_deferred<counting_scope_resource>()); // NEW!
-    this_thread::sync_wait(work);   // NEW!
+    static_thread_pool my_pool{8};
+    work_context ctx;         // create a global context for the application
+    ex::counting_scope scope; // create this *after* the resources it protects
+
+    std::vector<work_item*> items = get_work_items();
+    for (auto item : items) {
+        // Spawn some work dynamically
+        ex::sender auto snd = ex::transfer_just(my_pool.get_scheduler(), item) |
+                              ex::then([&](work_item* item) { do_work(ctx, item); });
+
+        // start `snd` as before, but associate the spawned work with `scope` so that it can be
+        // awaited before destroying the resources referenced by the work (i.e. `my_pool` and `ctx`)
+        ex::spawn(std::move(snd), scope); // NEW!
+    }
+
+    // wait for all nested work to finish
+    this_thread::sync_wait(scope.join()); // NEW!
+
+    // `ctx` and `my_pool` are destroyed *after* they are no longer referenced
 }
 ```
 
 The newly introduced `counting_scope_resource` object allows us to attach the dynamic work we are spawning to the
 enclosing `use_resources` _see_ [@P2849R0]. This structure ensures that the `static_thread_pool` and `work_context`
 destruct after the spawned _`async-function`_ s complete.
+
+Simplifying the above into something that fits in a Tony Table to highlight the differences gives us:
+
+::: cmptable
+
+### Before
+```cpp
+namespace ex = std::execution;
+
+struct context;
+ex::sender auto work(const context&);
+
+int main() {
+  context ctx;
+
+  ex::sender auto snd = work(ctx);
+
+  // fire and forget
+  ex::start_detached(std::move(snd));
+
+  // `ctx` is destroyed, perhaps before `snd` is done
+}
+```
+
+### After
+```cpp
+namespace ex = std::execution;
+
+struct context;
+ex::sender auto work(const context&);
+
+int main() {
+  context ctx;
+  ex::counting_scope scope;
+
+  ex::sender auto snd = work(ctx);
+
+  // fire, but don't forget
+  ex::spawn(std::move(snd), scope);
+
+  // wait for all work nested within scope to finish
+  this_thread::sync_wait(scope.join());
+
+  // `ctx` is destroyed once nothing references it
+}
+```
+
+:::
 
 Please see below for more examples.
 
