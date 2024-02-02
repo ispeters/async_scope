@@ -29,7 +29,7 @@ Introduction
 ============
 
 [@P2300R7] lays the groundwork for writing structured concurrent programs in C++ but it leaves three important scenarios
-unaddressed:
+under- or unaddressed:
 
  1. progressively structuring an existing, unstructured concurrent program;
  2. starting a dynamic number of parallel tasks without "losing track" of them; and
@@ -38,11 +38,15 @@ unaddressed:
 This paper describes the utilities needed to address the above scenarios within the following constraints:
 
  * _No detached work by default;_ as specified in P2300R7, the `start_detached` and `ensure_started` algorithms invite
-   users to start concurrent work with no built-in way to know when that work has finished. Such so-called "detached
-   work" is undesirable; without a way to know when detached work is done, it is difficult know when it is safe to
-   destroy any resources referred to by the work. Ad hoc solutions to this shutdown problem add unnecessary complexity
-   that can be avoided by ensuring all concurrent work is "attached".
- * ...
+   users to start concurrent work with no built-in way to know when that work has finished.
+   * Such so-called "detached work" is undesirable; without a way to know when detached work is done, it is difficult
+     know when it is safe to destroy any resources referred to by the work. Ad hoc solutions to this shutdown problem
+     add unnecessary complexity that can be avoided by ensuring all concurrent work is "attached".
+   * Experienced C++ programmers who "know" that async C++ "is just hard" also "know" that starting concurrent work
+     means starting detached work so it's useful as a teaching aid to remove the unnecessary option.
+ * _No dependencies besides [@P2300R7];_ it will be important for the success of [@P2300R7] that existing code bases
+   can migrate from unstructured concurrency to structured concurrency in an incremental way so tools for progressively
+   structuring code should not take on risk in the form of unnecessary dependencies.
 
 The proposed solution comes in five parts:
 
@@ -57,8 +61,11 @@ The proposed solution comes in five parts:
 The general concept of an async scope to manage work has been deployed broadly at Meta. Code written with Folly's
 coroutine library, [@follycoro], uses [@follyasyncscope] to safely launch awaitables. Most code written with Unifex, an
 implementation of an earlier version of the _Sender/Receiver_ model proposed in [@P2300R7], uses [@asyncscopeunifexv1],
-although experience with the v1 design led us to create [@asyncscopeunifexv2], which has a smaller interface and only
-one responsibility.
+although experience with the v1 design led to the creation of [@asyncscopeunifexv2], which has a smaller interface and
+only one responsibility.
+
+Note to self: this seems like an opportunity to talk about progressively structuring concurrent C++ within Meta, but
+that needs legal clearance.
 
 Motivation
 ==========
