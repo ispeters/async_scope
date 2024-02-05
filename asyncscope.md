@@ -231,38 +231,33 @@ Examples of use
 Use a `counting_scope` in combination with a `system_context` from [@P2079R2] to spawn work from within a task and join
 it later:
 ```c++
-using namespace std::execution;
-
-int result = 0;
+namespace ex = std::execution;
 
 int main() {
+    ex::system_context ctx;
+    int result = 0;
+    ex::counting_scope scope;
 
-  auto work = ex::use_resources( // NEW! @@_see_ P2849R0@@
-    [&result](system_context ctx, counting_scope scope){
-      scheduler auto sch = ctx.scheduler();
+    ex::scheduler auto sch = ctx.scheduler();
 
-      sender auto val = on(
-        sch, just() | then([&result, sch, scope](auto sched) {
-            int val = 13;
+    ex::sender auto val = ex::on(sch, ex::just() | ex::then([&result, sch, scope]() {
+        int val = 13;
 
-            auto print_sender = just() | then([val]{
-              std::cout << "Hello world! Have an int with value: " << val << "\n";
-            });
-            // spawn the print sender on sched to make sure it
-            // completes before shutdown
-            ex::spawn(scope, on(sch, std::move(print_sender)));
+        auto print_sender = ex::just() | ex::then([val] {
+            std::cout << "Hello world! Have an int with value: " << val << "\n";
+        });
 
-            return val;
-          })
-        ) | then([&result](auto val){result = val});
+        // spawn the print sender on sch to make sure it completes before shutdown
+        ex::spawn(scope, ex::on(sch, std::move(print_sender)));
 
-      ex::spawn(scope, std::move(val));
-    },
-    make_deferred<system_execution_resource>(8), // create a global thread pool
-    make_deferred<counting_scope_resource>()); // NEW!
-  this_thread::sync_wait(work);   // NEW!
+        return val;
+    })) | ex::then([&result](auto val) { result = val });
 
-  std::cout << "Result: " << result << "\n";
+    ex::spawn(scope, std::move(val));
+
+    this_thread::sync_wait(scope.join());
+
+    std::cout << "Result: " << result << "\n";
 }
 
 // The counting scope ensured that all work is safely joined, so result contains 13
