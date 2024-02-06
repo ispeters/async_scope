@@ -264,28 +264,24 @@ int main() {
 ```
 
 ## Starting work nested within a framework
+
+TODO: the idea behind this example is a good one, but the example itself is incomplete.
+
 In this example we use the `counting_scope` within a class to start work when the object receives a message and to wait
 for that work to complete before closing. `my_window::start()` starts the sender using storage reserved in `my_window`
 for this purpose.
 ```c++
-using namespace std::execution;
+namespace ex = std::execution;
 
-// 
+// …
 class my_window {
-  //..
+  // …
 
-  // async-construction creates the 
-  // async-object members
-  system_context ctx;
-  counting_scope scope{};
-
-  scheduler auto sch{ctx.scheduler()};
-};
-class my_window_resource {
-  //..
+  ex::system_scheduler sch;
+  ex::counting_scope scope{};
 };
 
-sender auto some_work(int id);
+ex::sender auto some_work(int id);
 
 void my_window::onMyMessage(int i) {
   ex::spawn(this->scope, on(this->sch, some_work(i)));
