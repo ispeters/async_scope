@@ -296,33 +296,30 @@ void my_window::onClickClose() {
 
 In this example we use the `counting_scope` within lexical scope to construct an algorithm that performs parallel work.
 This uses the `let_value_with` [@letvwthunifex] algorithm implemented in [@libunifex] which simplifies in-place
-construction of a non-moveable object in the `let_value_with` algorithms' _`operation-state`_ object. Here `foo`
+construction of a non-moveable object in the `let_value_with` algorithm's _`operation-state`_ object. Here `foo`
 launches 100 tasks that concurrently run on some scheduler provided to `foo`, through its connected receiver, and then
-the tasks are asynchronously joined. In this case the context the work is run on will be the `system_context`'s
-scheduler, from [@P2079R2]. This structure emulates how we might build a parallel algorithm where each `some_work` might
-be operating on a fragment of data.
+the tasks are asynchronously joined. This structure emulates how we might build a parallel algorithm where each
+`some_work` might be operating on a fragment of data.
 ```c++
-using namespace std::execution;
+namespace ex = std::execution;
 
-sender auto some_work(int work_index);
+ex::sender auto some_work(int work_index);
 
-sender auto foo(scheduler auto sch) {
-  return ex::use_resources( // NEW! @@_see_ P2849R0@@
-    [sch](counting_scope scope){
-      return schedule(sch)
-        | then([]{ std::cout << "Before tasks launch\n"; })
-        | then(
-          [sch, scope]{
-            // Create parallel work
-            for(int i = 0; i < 100; ++i)
-              ex::spawn(scope, on(sch, some_work(i)));
-            // Join the work with the help of the scope
-          })
-        ;
-    },
-    make_deferred<counting_scope_resource>()) // NEW!
-    | then([]{ std::cout << "After tasks complete\n"; })
-    ;
+ex::sender auto foo(ex::scheduler auto sch) {
+    return unifex::let_value_with([]() noexcept { return ex::counting_scope{}; },
+                   [sch](ex::counting_scope& scope) {
+                       return ex::schedule(sch) | ex::then([] {
+                           std::cout << "Before tasks launch\n";
+                       }) | ex::then([sch, scope] {
+                           // Create parallel work
+                           for (int i = 0; i < 100; ++i)
+                               ex::spawn(scope, ex::on(sch, some_work(i)));
+                       }) | ex::let_value([&scope]() noexcept {
+                           // Join the work with the help of the scope
+                           return scope.join();
+                       });
+                   }) |
+           ex::then([] { std::cout << "After tasks complete\n"; });
 }
 ```
 
