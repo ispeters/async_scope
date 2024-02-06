@@ -332,34 +332,35 @@ loop. We use `counting_scope` to limit the lifetime of the request handling with
 requests.
 
 ```c++
+namespace ex = std::execution;
+
 task<size_t> listener(int port, io_context& ctx, static_thread_pool& pool) {
-  size_t count{0};
-  // Continue only after all requests are handled
-  co_await use_resources(// NEW! @@_see_ P2849R0@@
-    [&count, ctx, pool](listening_socket listen_sock, counting_scope work_scope) -> task<> {
-      while (!ctx.is_stopped()) {
+    size_t count{0};
+    listening_socket listen_sock{port};
+    ex::counting_scope work_scope;
+
+    while (!ctx.is_stopped()) {
         // Accept a new connection
         connection conn = co_await async_accept(ctx, listen_sock);
         count++;
 
         // Create work to handle the connection in the scope of `work_scope`
         conn_data data{std::move(conn), ctx, pool};
-        sender auto snd
-          = just()
-          | let_value([data = std::move(data)]() {
-                return handle_connection(data);
-            })
-          ;
-        work_ex::spawn(scope, std::move(snd));
-      }
-      co_return ;
-    },
-    make_deferred<listening_socket_resource>(port),
-    make_deferred<counting_scope_resource>()); // NEW!
-  // At this point, all the request handling is complete
-  co_return count;
+        ex::sender auto snd = ex::just(std::move(data)) |
+                              ex::let_value([](auto& data) { return handle_connection(data); });
+        ex::spawn(scope, std::move(snd));
+    }
+
+    // Continue only after all requests are handled
+    co_await work_scope.join();
+
+    // At this point, all the request handling is complete
+    co_return count;
 }
 ```
+
+[@libunifex] has a very similar example HTTP server at [@iouringserver] that compiles and runs on Linux-based machines
+with `io_uring` support.
 
 Async Scope, usage guide
 ========================
@@ -1075,9 +1076,15 @@ references:
     title: "libunifex"
     url: https://github.com/facebookexperimental/libunifex/
     company: Meta Platforms, Inc
+  - id: iouringserver
+    citation-label: "io_uring HTTP server"
+    type: sourcefile
+    title: "io_uring HTTP server"
+    url: https://github.com/facebookexperimental/libunifex/blob/main/examples/linux/http_server_io_uring_test.cpp
+    company: Meta Platforms, Inc
   - id: asyncscopestdexec
     citation-label: asyncscopestdexec
-    type: repository
+    type: header
     title: "async_scope"
     url: https://github.com/NVIDIA/stdexec/blob/main/include/exec/async_scope.hpp
     company: NVIDIA Corporation
