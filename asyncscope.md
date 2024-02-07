@@ -377,28 +377,54 @@ More on these items can be found below in the sections below.
 ## Definitions
 
 ```cpp
+
+sender auto nest(sender auto&& sender, auto&& scope) noexcept(/* TODO */);
+
+template <class Scope, class Sender>
+concept async_scope = sender<Sender> && requires(Scope&& scope, Sender&& snd) {
+    { nest(std::forward<Sender>(snd), std::forward<Scope>(scope)) } -> ex::sender;
+};
+
+template <sender Sender, async_scope<Sender> Scope, class Env = empty_env_t>
+  // requires: Sender is sender_of<void> with no errors
+void spawn(Sender&& snd, Scope&& scope, Env env = {});
+
+template <sender Sender, async_scope<Sender> Scope>
+struct @@_future-sender_@@; // exposition-only
+
+template <sender Sender, async_scope<Sender> Scope, class Env = empty_env_t>
+@@_future-sender_@@<Sender, Scope> spawn_future(Sender&& snd, Scope&& scope, Env env = {});
+
 struct counting_scope {
-  using self_t = counting_scope; /*@@_exposition-only_@@*/
-  counting_scope();
-  ~counting_scope();
-  counting_scope(const self_t&) = delete;
-  counting_scope(self_t&&) = delete;
-  self_t& operator=(const self_t&) = delete;
-  self_t& operator=(self_t&&) = delete;
+    counting_scope() noexcept;
+    ~counting_scope();
 
-  void
-  /*@@_implementation-defined_@@*/ /*@@_customization-point_@@*/(
-    decays_to<self_t> auto&&, spawn_t, sender_to<@@_spawn-receiver_@@> auto&& s) noexcept;
+    counting_scope(const counting_scope&) = delete;
+    counting_scope(counting_scope&&) = delete;
+    counting_scope& operator=(const counting_scope&) = delete;
+    counting_scope& operator=(counting_scope&&) = delete;
 
-  template <sender_to<@@_spawn-future-receiver_@@> S>
-  @@_spawn-future-sender_@@<S>
-  /*@@_implementation-defined_@@*/ /*@@_customization-point_@@*/(
-    decays_to<self_t> auto&&, spawn_future_t, S&& s) noexcept;
+    template <sender S>
+    struct @@_nest-sender_@@; // exposition-only
 
-  template <sender S>
-  @@_nest-sender_@@<S>
-  /*@@_implementation-defined_@@*/ /*@@_customization-point_@@*/(
-    decays_to<self_t> auto&&, nest_t, S&& s) noexcept;
+    // TODO: This is intended to customize the nest algorithm such that, for some type S, sender<S>
+    //       implies async_scope<counting_scope&, S>
+    template <sender S>
+    [[nodiscard]] @@_nest-sender_@@<std::remove_cvref_t<S>> nest(S&& s) & noexcept(
+            std::is_nothrow_constructible_v<std::remove_cvref_t<S>, S>);
+
+    struct @@_join-sender_@@; // exposition-only
+
+    [[nodiscard]] @@_join-sender_@@ join() noexcept;
+
+    // observers in the spirit of std::weak_ptr<T>::expired() and std::shared_ptr<T>::use_count();
+    // the values must be correct when computed but may be stale by the time they can be observed
+
+    [[nodiscard]] bool joined() const noexcept;
+
+    [[nodiscard]] bool join_started() const noexcept;
+
+    [[nodiscard]] size_t use_count() const noexcept;
 };
 ```
 
