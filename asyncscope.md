@@ -428,6 +428,65 @@ struct counting_scope {
 };
 ```
 
+## `execution::nest`
+
+```c++
+sender auto nest(sender auto&& sender, auto&& scope) noexcept(/* TODO */);
+```
+
+ 1. `nest` is a sender adaptor (see [exec.adapt] in [@P2300R7]) that associates an input sender with an async scope in a
+    scope-defined way and returns an output sender such that, when the association is successful:
+    * running the output sender runs the input sender; and
+    * the scope has the opportunity to observe and react to the lifecycle of the input sender.
+ 2. The name `nest` denotes a customization point object. For some subexpressions `s` and `a`, let `S` be
+    `decltype((s))`. If `S` does not satisfy `sender` then `nest` is ill-formed. Otherwise, the expression `nest(s, a)`
+    is expression-equivalent to:
+    1. `a.nest(s)`, if that expression is valid.
+       * _Mandates:_ the type of the above expression satisfies `sender`.
+       * Given that `nest(s, a)` returns a sender, `s2`:
+         * _Mandates:_ `s2`'s completions are the same as `s1`'s completions _except_ that `scope`'s definition of
+           `nest` may add a stopped completion to `s2`'s completions.
+         * If `a` is rejecting associations with new senders for non-exceptional reasons, `s2` should be a sender that
+           completes with a stopped completion.
+    2. Otherwise, `nest` is ill-formed.
+ 3. Evaluating `nest(s, a)` may modify the state of `a` (but not `s`) before the returned sender is connected to a
+    receiver, or before the resulting operation state is started.
+
+Returns a _`nest-sender`_ that, when started, adds the given sender to the count of senders that the `counting_scope`
+object will require to complete before it will destruct.
+
+A call to `nest()` does not start the given sender. A call to `nest()` is not expected to incur allocations.
+
+The sender returned by a call to `nest()` holds a reference to the `counting_scope` in order to add the given sender to
+the count of senders when it is started. Connecting and starting the sender returned from `nest()` will connect and
+start the given sender and add the given sender to the count of senders that the `counting_scope` object will require to
+complete before it will destruct.
+
+Similar to `spawn_future()`, `nest()` doesn't constrain the input sender to any specific shape. Any type of sender is
+accepted.
+
+Unlike `spawn_future()` the returned sender does not prevent the scope from ending. It is safe to drop the returned
+sender without starting it. It is UB to start the returned sender after the `counting_scope` has been destroyed.
+
+As `nest()` does not immediately start the given work, it is ok to pass in blocking senders.
+
+One can say that `nest()` is more fundamental than `spawn()` and `spawn_future()` as the latter two can be implemented
+in terms of `nest()`. In terms of performance, `nest()` does not introduce any penalty. `spawn()` is more expensive than
+`nest()` as it needs to allocate memory for the operation. `spawn_future()` is even more expensive than `spawn()`; the
+receiver needs to be type-erased and a possible race condition needs to be resolved. `nest()` does not require
+allocations, so it can be used in a free-standing environment.
+
+Cancelling the returned sender, once it is connected and started, cancels `s` but does not cancel the `counting_scope`.
+
+Usage example:
+```c++
+...
+sender auto snd = s.nest(key_work());
+for ( int i=0; i<10; i++)
+    spawn(s, on(sched, other_work(i)));
+return on(sched, std::move(snd));
+```
+
 ## Lifetime
 
 The `counting_scope` keeps a counter of how many spawned _`async-function`_ s have not completed.
@@ -507,50 +566,6 @@ sender auto snd = s.spawn_future(on(sched, key_work()))
 for ( int i=0; i<10; i++)
     spawn(s, on(sched, other_work(i)));
 return when_all(s.on_empty(), std::move(snd));
-```
-
-## `nest()`
-
-```c++
-template <sender S>
-@@_nest-sender_@@<S>
-/*@@_implementation-defined_@@*/ /*@@_customization-point_@@*/(
-  decays_to<self_t> auto&&, nest_t, S&& s) noexcept;
-```
-
-Returns a _`nest-sender`_ that, when started, adds the given sender to the count of senders that the `counting_scope`
-object will require to complete before it will destruct.
-
-A call to `nest()` does not start the given sender. A call to `nest()` is not expected to incur allocations.
-
-The sender returned by a call to `nest()` holds a reference to the `counting_scope` in order to add the given sender to
-the count of senders when it is started. Connecting and starting the sender returned from `nest()` will connect and
-start the given sender and add the given sender to the count of senders that the `counting_scope` object will require to
-complete before it will destruct.
-
-Similar to `spawn_future()`, `nest()` doesn't constrain the input sender to any specific shape. Any type of sender is
-accepted.
-
-Unlike `spawn_future()` the returned sender does not prevent the scope from ending. It is safe to drop the returned
-sender without starting it. It is UB to start the returned sender after the `counting_scope` has been destroyed.
-
-As `nest()` does not immediately start the given work, it is ok to pass in blocking senders.
-
-One can say that `nest()` is more fundamental than `spawn()` and `spawn_future()` as the latter two can be implemented
-in terms of `nest()`. In terms of performance, `nest()` does not introduce any penalty. `spawn()` is more expensive than
-`nest()` as it needs to allocate memory for the operation. `spawn_future()` is even more expensive than `spawn()`; the
-receiver needs to be type-erased and a possible race condition needs to be resolved. `nest()` does not require
-allocations, so it can be used in a free-standing environment.
-
-Cancelling the returned sender, once it is connected and started, cancels `s` but does not cancel the `counting_scope`.
-
-Usage example:
-```c++
-...
-sender auto snd = s.nest(key_work());
-for ( int i=0; i<10; i++)
-    spawn(s, on(sched, other_work(i)));
-return on(sched, std::move(snd));
 ```
 
 Design considerations
