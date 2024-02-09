@@ -470,22 +470,20 @@ When `nest()` returns an unassociated sender:
 
 ## `execution::async_scope`
 
-1. An async scope represents a means of keeping track of senders that have been associated with the scope.
+```cpp
+template <class Scope, class Sender>
+  concept async_scope =
+    // only senders can be nested within scopes
+    sender<Sender> &&
+    // a scope is anything that can nest senders within itself
+    requires(Scope&& scope, Sender&& snd) {
+      { nest(std::forward<Sender>(snd), std::forward<Scope>(scope)) } -> sender;
+    };
+```
 
-   ```cpp
-   template <class Scope, class Sender>
-     concept async_scope =
-       // only senders can be nested within scopes
-       sender<Sender> &&
-       // a scope is anything that can nest senders within itself
-       requires(Scope&& scope, Sender&& snd) {
-         { nest(std::forward<Sender>(snd), std::forward<Scope>(scope)) } -> sender;
-       };
-   ```
-
-## Lifetime
-
-The `counting_scope` keeps a counter of how many spawned _`async-function`_ s have not completed.
+As described above, an async scope is a a type that imlpements a bookkeeping policy for senders. The `nest()` algorithm
+is the means by which senders are submitted as the subjects of such a policy so any type that permits senders to be
+`nest()`ed with it satisfies the `async_scope` concept.
 
 ## `execution::spawn()`
 
@@ -600,6 +598,10 @@ for ( int i=0; i<10; i++)
     spawn(s, on(sched, other_work(i)));
 return on(sched, std::move(snd));
 ```
+
+## Lifetime
+
+The `counting_scope` keeps a counter of how many spawned _`async-function`_ s have not completed.
 
 Design considerations
 =====================
