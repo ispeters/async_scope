@@ -365,12 +365,20 @@ with `io_uring` support.
 Async Scope, usage guide
 ========================
 
-The requirements for the async scope are:
+An async scope is a type that implements a "bookkeeping policy" for senders that have been `nest()`ed within the scope.
+Depending on the policy, different guarantees can be provided in terms of the lifetimes of the scope and any nested
+senders. The `counting_scope` described in this paper defines a policy that has proven useful while progressively
+adding structure to existing, unstructured code at Meta, but other useful policies are possible. By defining `spawn()`
+and `spawn_future()` in terms of the more fundamental `nest()`, and leaving the definition of `nest()` to the scope,
+this paper's design leaves the set of policy open to extension by user code or future standards.
 
- - An _`async-scope`_ must allow an arbitrary sender to be nested within the scope without eagerly starting the sender
-   (`nest()`).
- - An _`async-scope`_ must constrain `spawn()` to accept only senders that complete with `void`.
- - An _`async-scope`_ must start the given sender before `spawn()` and `spawn_future()` exit.
+An async scope's implementation of `nest()`:
+
+ - must allow an arbitrary sender to be nested within the scope without eagerly starting the sender;
+ - must not return a sender that adds new value or error completions to the completions of the sender being nested;
+ - may fail to nest a new sender by returning an "unnested" sender that completes with `set_stopped` when run;
+ - may fail to nest a new sender by eagerly throwing an exception during the call to `nest()`; and
+ - is expected to be "cheap" like other sender adaptor objects.
 
 More on these items can be found below in the sections below.
 
@@ -378,12 +386,14 @@ More on these items can be found below in the sections below.
 
 ```cpp
 
-sender auto nest(sender auto&& sender, auto&& scope) noexcept(/* TODO */);
+sender auto nest(sender auto&& sender, auto&& scope) noexcept(@@_see below_@@);
 
 template <class Scope, class Sender>
-concept async_scope = sender<Sender> && requires(Scope&& scope, Sender&& snd) {
-    { nest(std::forward<Sender>(snd), std::forward<Scope>(scope)) } -> sender;
-};
+concept async_scope =
+    sender<Sender> &&
+    requires(Scope&& scope, Sender&& snd) {
+      { nest(std::forward<Sender>(snd), std::forward<Scope>(scope)) } -> sender;
+    };
 
 struct @@_spawn-env_@@; // exposition-only
 
