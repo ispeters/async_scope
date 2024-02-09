@@ -444,31 +444,29 @@ struct counting_scope {
 ## `execution::nest`
 
 ```c++
-sender auto nest(sender auto&& sender, auto&& scope) noexcept(/* TODO */);
+sender auto nest(sender auto&& sender, auto&& scope) noexcept(/* @@_see below_@@ */);
 ```
 
- 1. `nest` is a sender adaptor (see [exec.adapt] in [@P2300R7]) that associates an input sender with an async scope in a
-    scope-defined way and returns an output sender such that, when the association is successful:
-    * running the output sender runs the input sender; and
-    * the scope has the opportunity to observe and react to the lifecycle of the input sender.
- 2. The name `nest` denotes a customization point object. For some subexpressions `s` and `a`, let `S` be
-    `decltype((s))`. If `S` does not satisfy `sender` then `nest` is ill-formed. Otherwise, the expression `nest(s, a)`
-    is expression-equivalent to:
-    1. `a.nest(s)`, if that expression is valid.
-       * _Mandates:_ the type of the above expression satisfies `sender`.
-       * Given that `nest(s, a)` returns a sender, `s2`:
-         * _Mandates:_ `s2`'s completions are the same as `s1`'s completions _except_ that `scope`'s definition of
-           `nest` may add a stopped completion to `s2`'s completions.
-         * If `a` is rejecting associations with new senders for non-exceptional reasons, `s2` should be a sender that
-           completes with a stopped completion.
-    2. Otherwise, `nest` is ill-formed.
- 3. Evaluating `nest(s, a)` may modify the state of `a` (but not `s`) before the returned sender is connected to a
-    receiver, or before the resulting operation state is started.
+Attempts to associate the given sender with the given scope in a scope-defined way. When successful, the return value
+is an "associated sender" with the same behaviour and possible completions as the input sender, plus the additional,
+scope-specific behaviours that are necessary to implement the scope's bookkeeping policy. When the attempt fails,
+`nest()` may either eagerly throw an exception, or return a "unassociated sender" that, when started, unconditionally
+completes with `set_stopped()`.
 
-It is expected that associating a sender, `s`, with an async scope, `a`, by invoking `nest(s, a)` will:
+A call to `nest()` does not start the given sender and is not expected to incur allocations.
 
- * allow `a` to "keep track" of `s` so that `s`'s work does not become detached; and
- * not allocate.
+When `nest()` returns an associated sender:
+
+ - connecting and starting the associated sender connects and starts the given sender;
+ - the associated sender is multi-shot if the input sender is multi-shot and single-shot otherwise; and
+ - the associated sender has exactly the same completions as the input sender.
+
+When `nest()` returns an unassociated sender:
+
+ - the input sender is discarded and will never be connected or started;
+ - the unassociated sender is multi-shot; and
+ - the unassociated sender may only complete with `set_stopped()`.
+
 
 ## `execution::async_scope`
 
