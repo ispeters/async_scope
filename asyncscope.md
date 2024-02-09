@@ -370,13 +370,14 @@ Depending on the policy, different guarantees can be provided in terms of the li
 senders. The `counting_scope` described in this paper defines a policy that has proven useful while progressively
 adding structure to existing, unstructured code at Meta, but other useful policies are possible. By defining `spawn()`
 and `spawn_future()` in terms of the more fundamental `nest()`, and leaving the definition of `nest()` to the scope,
-this paper's design leaves the set of policy open to extension by user code or future standards.
+this paper's design leaves the set of policies open to extension by user code or future standards.
 
 An async scope's implementation of `nest()`:
 
  - must allow an arbitrary sender to be nested within the scope without eagerly starting the sender;
  - must not return a sender that adds new value or error completions to the completions of the sender being nested;
- - may fail to nest a new sender by returning an "unnested" sender that completes with `set_stopped` when run;
+ - may fail to nest a new sender by returning an "unnested" sender that completes with `set_stopped` when run without
+   running the sender that failed to nest;
  - may fail to nest a new sender by eagerly throwing an exception during the call to `nest()`; and
  - is expected to be "cheap" like other sender adaptor objects.
 
@@ -386,7 +387,7 @@ More on these items can be found below in the sections below.
 
 ```cpp
 
-sender auto nest(sender auto&& sender, auto&& scope) noexcept(@@_see below_@@);
+sender auto nest(sender auto&& sender, auto&& scope) noexcept(/* @@_see below_@@ */);
 
 template <class Scope, class Sender>
 concept async_scope =
@@ -395,22 +396,18 @@ concept async_scope =
       { nest(std::forward<Sender>(snd), std::forward<Scope>(scope)) } -> sender;
     };
 
-struct @@_spawn-env_@@; // exposition-only
-
 template <class Sender, class Env>
-concept @@_spawnable-sender_@@ = // exposition-only
-    sender_in<Sender, Env> &&
-    same_as<tuple<>, value_types_of_t<Sender, Env, tuple, type_identity_t>> &&
-    same_as<tuple<>, error_types_of_t<Sender, Env, tuple>>;
+concept @@_spawnable-sender_@@ = // @@_exposition-only_@@
+    /* @@_see below_@@ */;
 
-template <sender Sender, async_scope<Sender> Scope, class Env = @@_spawn-env_@@>
+template <sender Sender, async_scope<Sender> Scope, class Env = empty_env>
   requires @@_spawnable-sender_@@<Sender, Env>
 void spawn(Sender&& snd, Scope&& scope, Env env = {});
 
 template <sender Sender, async_scope<Sender> Scope>
-struct @@_future-sender_@@; // exposition-only
+struct @@_future-sender_@@; // @@_exposition-only_@@
 
-template <sender Sender, async_scope<Sender> Scope, class Env = empty_env_t>
+template <sender Sender, async_scope<Sender> Scope, class Env = empty_env>
 @@_future-sender_@@<Sender, Scope> spawn_future(Sender&& snd, Scope&& scope, Env env = {});
 
 struct counting_scope {
@@ -423,15 +420,13 @@ struct counting_scope {
     counting_scope& operator=(counting_scope&&) = delete;
 
     template <sender S>
-    struct @@_nest-sender_@@; // exposition-only
+    struct @@_nest-sender_@@; // @@_exposition-only_@@
 
-    // TODO: This is intended to customize the nest algorithm such that, for some type S, sender<S>
-    //       implies async_scope<counting_scope&, S>
     template <sender S>
     [[nodiscard]] @@_nest-sender_@@<std::remove_cvref_t<S>> nest(S&& s) & noexcept(
             std::is_nothrow_constructible_v<std::remove_cvref_t<S>, S>);
 
-    struct @@_join-sender_@@; // exposition-only
+    struct @@_join-sender_@@; // @@_exposition-only_@@
 
     [[nodiscard]] @@_join-sender_@@ join() noexcept;
 
