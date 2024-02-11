@@ -386,8 +386,9 @@ More on these items can be found below in the sections below.
 ## Definitions
 
 ```cpp
-
-sender auto nest(sender auto&& sender, auto&& scope) noexcept(/* @@_see below_@@ */);
+template <sender Sender>
+auto nest(Sender&& snd, auto&& scope) noexcept(noexcept(scope.nest(std::forward<Sender>(snd)))
+    -> decltype(scope.nest(std::forward<Sender>(snd)));
 
 template <class Scope, class Sender>
 concept async_scope =
@@ -396,12 +397,20 @@ concept async_scope =
       { nest(std::forward<Sender>(snd), std::forward<Scope>(scope)) } -> sender;
     };
 
-template <class Sender, class Env>
-concept @@_spawnable-sender_@@ = // @@_exposition-only_@@
-    /* @@_see below_@@ */;
+namespace { // @@_exposition-only_@@
+
+template <class Env>
+struct @@_spawn-receiver_@@ { // @@_exposition-only_@@
+    void set_value() noexcept;
+    void set_stopped() noexcept;
+
+    @@_see below_@@ get_env() const noexcept;
+};
+
+}
 
 template <sender Sender, async_scope<Sender> Scope, class Env = empty_env>
-  requires @@_spawnable-sender_@@<Sender, Env>
+  requires sender_to<Sender, @@_spawn-receiver_@@<Env>>
 void spawn(Sender&& snd, Scope&& scope, Env env = {});
 
 template <sender Sender, async_scope<Sender> Scope>
@@ -444,7 +453,9 @@ struct counting_scope {
 ## `execution::nest`
 
 ```c++
-sender auto nest(sender auto&& sender, auto&& scope) noexcept(/* @@_see below_@@ */);
+template <sender Sender>
+auto nest(Sender&& snd, auto&& scope) noexcept(noexcept(scope.nest(std::forward<Sender>(snd)))
+    -> decltype(scope.nest(std::forward<Sender>(snd)));
 ```
 
 Attempts to associate the given sender with the given scope in a scope-defined way. When successful, the return value
@@ -481,40 +492,59 @@ template <class Scope, class Sender>
     };
 ```
 
-As described above, an async scope is a a type that imlpements a bookkeeping policy for senders. The `nest()` algorithm
-is the means by which senders are submitted as the subjects of such a policy so any type that permits senders to be
+As described above, an async scope is a type that implements a bookkeeping policy for senders. The `nest()` algorithm is
+the means by which senders are submitted as the subjects of such a policy so any type that permits senders to be
 `nest()`ed with it satisfies the `async_scope` concept.
 
 ## `execution::spawn()`
 
 ```c++
-template <sender Sender, async_scope<Sender> Scope, class Env = @@_spawn-env_@@>
-  requires @@_spawnable-sender_@@<Sender, Env>
+namespace { // @@_exposition-only_@@
+
+template <class Env>
+struct @@_spawn-receiver_@@ { // @@_exposition-only_@@
+    void set_value() noexcept;
+    void set_stopped() noexcept;
+
+    @@_see below_@@ get_env() const noexcept;
+};
+
+}
+
+template <sender Sender, async_scope<Sender> Scope, class Env = empty_env>
+  requires sender_to<Sender, @@_spawn-receiver_@@<Env>>
 void spawn(Sender&& snd, Scope&& scope, Env env = {});
 ```
 
-Eagerly launches work on the `counting_scope`.
+Invokes `nest(std::forward<Sender>(snd), std::forward<Scope>(scope))` to associate the given sender with the given scope
+and then eagerly starts the resulting sender.
 
-This involves a dynamic allocation of the spawned sender's _`operation-state`_. The _`operation-state`_ is destroyed
-after the spawned sender completes.
+Starting the nested sender involves a dynamic allocation of the sender's _`operation-state`_. If the given environment,
+`env`, provides an _Allocator_ by responding to `get_allocator(env)` then the resulting _Allocator_ is used to allocate
+the _`operation-state`_; otherwise, the allocation is done with a `std::allocator<>`. The _`operation-state`_ is
+constructed by connecting the nested sender to a _`spawn-receiver`_. A _`spawn-receiver`_, `sr`, responds to
+`get_env(sr)` with an environment, `senv`, that behaves as if it delegates all queries other than `get_allocator()` to
+`env`; the result of `get_allocator(senv)` is a copy of the _Allocator_ used to allocate the _`operation-state`_. The
+_`operation-state`_ is destroyed and deallocated after the spawned sender completes.
 
-This is similar to `start_detached()` from [@P2300R7], but the `counted_scope` keeps track of the spawned
-_`async-function`_ s.
+This is similar to `start_detached()` from [@P2300R7], but the scope may observe and participate in the lifecycle of the
+work described by the sender. The `counting_scope` described in this paper uses this opportunity to keep a count of
+nested senders that haven't finished, and to prevent new work from being started once the `counting_scope`'s
+_`join-sender`_ has been started.
 
-The given sender must complete with `void` or `stopped`. The given sender is not allowed to complete with an error; the
-user must explicitly handle the errors that might appear as part of the _`sender-expression`_ passed to `spawn()`.
+The given sender must complete with `void` or `stopped` and may not complete with an error; the user must explicitly
+handle the errors that might appear as part of the _`sender-expression`_ passed to `spawn()`.
 
-As `spawn()` starts the given sender synchronously, it is important that the user provides non-blocking senders. This
-matches user expectations that `spawn()` is asynchronous and avoids surprising blocking behavior at runtime. The reason
-for non-blocking start is that spawn must be non-blocking. Using `spawn()` with a sender generated by
-`on(sched, @_blocking-sender_@)` is a very useful pattern in this context.
+User expectations will be that `spawn()` is asynchronous and so, to uphold the principle of least surprise, `spawn()`
+should only be given non-blocking senders. Using `spawn()` with a sender generated by `on(sched, @_blocking-sender_@)`
+is a very useful pattern in this context.
 
 _NOTE:_ A query for non-blocking start will allow `spawn()` to be constrained to require non-blocking start.
 
 Usage example:
 ```c++
 ...
-for (int i=0; i<100; i++)
+for (int i = 0; i < 100; i++)
     spawn(s, on(sched, some_work(i)));
 ```
 
