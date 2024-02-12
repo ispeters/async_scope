@@ -386,6 +386,31 @@ More on these items can be found below in the sections below.
 ## Definitions
 
 ```cpp
+namespace { // @@_exposition-only_@@
+
+template <class Env>
+struct @@_spawn-env_@@; // @@_exposition-only_@@
+
+template <class Env>
+struct @@_spawn-receiver_@@ { // @@_exposition-only_@@
+    void set_value() noexcept;
+    void set_stopped() noexcept;
+
+    @@_spawn-env_@@<Env> get_env() const noexcept;
+};
+
+template <class Env>
+struct @@_future-env_@@; // @@_exposition-only_@@
+
+template <@@_valid-completion-signatures_@@ Sigs>
+struct @@_future-sender_@@; // @@_exposition-only_@@
+
+template <sender Sender, class Env>
+using @@_future-sender-t_@@ = // @@_exposition-only_@@
+    @@_future-sender_@@<completion_signatures_of_t<Sender, @@_future-env_@@<Env>>>;
+
+}
+
 template <sender Sender>
 auto nest(Sender&& snd, auto&& scope) noexcept(noexcept(scope.nest(std::forward<Sender>(snd)))
     -> decltype(scope.nest(std::forward<Sender>(snd)));
@@ -397,27 +422,12 @@ concept async_scope =
       { nest(std::forward<Sender>(snd), std::forward<Scope>(scope)) } -> sender;
     };
 
-namespace { // @@_exposition-only_@@
-
-template <class Env>
-struct @@_spawn-receiver_@@ { // @@_exposition-only_@@
-    void set_value() noexcept;
-    void set_stopped() noexcept;
-
-    @@_see below_@@ get_env() const noexcept;
-};
-
-}
-
 template <sender Sender, async_scope<Sender> Scope, class Env = empty_env>
   requires sender_to<Sender, @@_spawn-receiver_@@<Env>>
 void spawn(Sender&& snd, Scope&& scope, Env env = {});
 
-template <sender Sender, async_scope<Sender> Scope>
-struct @@_future-sender_@@; // @@_exposition-only_@@
-
 template <sender Sender, async_scope<Sender> Scope, class Env = empty_env>
-@@_future-sender_@@<Sender, Scope> spawn_future(Sender&& snd, Scope&& scope, Env env = {});
+@@_future-sender-t_@@<Sender, Env> spawn_future(Sender&& snd, Scope&& scope, Env env = {});
 
 struct counting_scope {
     counting_scope() noexcept;
@@ -502,11 +512,14 @@ the means by which senders are submitted as the subjects of such a policy so any
 namespace { // @@_exposition-only_@@
 
 template <class Env>
+struct @@_spawn-env_@@; // @@_exposition-only_@@
+
+template <class Env>
 struct @@_spawn-receiver_@@ { // @@_exposition-only_@@
     void set_value() noexcept;
     void set_stopped() noexcept;
 
-    @@_see below_@@ get_env() const noexcept;
+    @@_spawn-env_@@<Env> get_env() const noexcept;
 };
 
 }
@@ -522,10 +535,12 @@ and then eagerly starts the resulting sender.
 Starting the nested sender involves a dynamic allocation of the sender's _`operation-state`_. If the given environment,
 `env`, provides an _Allocator_ by responding to `get_allocator(env)` then the resulting _Allocator_ is used to allocate
 the _`operation-state`_; otherwise, the allocation is done with a `std::allocator<>`. The _`operation-state`_ is
-constructed by connecting the nested sender to a _`spawn-receiver`_. A _`spawn-receiver`_, `sr`, responds to
-`get_env(sr)` with an environment, `senv`, that behaves as if it delegates all queries other than `get_allocator()` to
-`env`; the result of `get_allocator(senv)` is a copy of the _Allocator_ used to allocate the _`operation-state`_. The
-_`operation-state`_ is destroyed and deallocated after the spawned sender completes.
+constructed by connecting the nested sender to a _`spawn-receiver`_. The _`operation-state`_ is destroyed and
+deallocated after the spawned sender completes.
+
+A _`spawn-receiver`_, `sr`, responds to `get_env(sr)` with an instance of a `@@_spawn-env_@@<Env>`, `senv`, that behaves
+as if it delegates all queries other than `get_allocator()` to `env`. The result of `get_allocator(senv)` is a copy of
+the _Allocator_ used to allocate the _`operation-state`_.
 
 This is similar to `start_detached()` from [@P2300R7], but the scope may observe and participate in the lifecycle of the
 work described by the sender. The `counting_scope` described in this paper uses this opportunity to keep a count of
@@ -549,28 +564,54 @@ for (int i = 0; i < 100; i++)
 ```
 
 
-## `spawn_future()`
+## `execution::spawn_future()`
 
 ```c++
-template <sender_to<@@_spawn-future-receiver_@@> S>
-@@_spawn-future-sender_@@<S>
-/*@@_implementation-defined_@@*/ /*@@_customization-point_@@*/(
-  decays_to<self_t> auto&&, spawn_future_t, S&& s) noexcept;
+namespace { // @@_exposition-only_@@
+
+template <class Env>
+struct @@_future-env_@@; // @@_exposition-only_@@
+
+template <@@_valid-completion-signatures_@@ Sigs>
+struct @@_future-sender_@@; // @@_exposition-only_@@
+
+template <sender Sender, class Env>
+using @@_future-sender-t_@@ = // @@_exposition-only_@@
+    @@_future-sender_@@<completion_signatures_of_t<Sender, @@_future-env_@@<Env>>>;
+
+}
+
+template <sender Sender, async_scope<Sender> Scope, class Env = empty_env>
+@@_future-sender-t_@@<Sender, Env> spawn_future(Sender&& snd, Scope&& scope, Env env = {});
 ```
 
-Eagerly launches work on the `counting_scope` and returns a _`spawn-future-sender`_ that provides access to the result
-of the spawned sender.
+Invokes `nest(std::forward<Sender>(snd), std::forward<Scope>(scope))` to associate the given sender with the given scope,
+eagerly starts the resulting sender, and returns a _`future-sender`_ that provides access to the result of the given
+sender.
 
-This involves a dynamic allocation of the _`spawn-future-sender`_ state, which includes the given sender `s` 's
-_`operation-state`_, and synchronization to resolve the race between the production of the given sender `s` 's result
-and the consumption of the given sender `s` 's result. The _`spawn-future-sender`_ state is destroyed after the given
-sender `s` completes and all copies of the  _`spawn-future-sender`_ have been destructed.
+Similar to `spawn()`, starting the nested sender involves a dynamic allocation of some state. `spawn_future()` chooses
+an _Allocator_ for this allocation in the same way `spawn()` does: use the result of `get_allocator(env)` if that is a
+valid expression, otherwise use a `std::allocator<>`.
 
-This is similar to `ensure_started()` from [@P2300R7], but the `counted_scope` keeps track of the spawned
-_`async-function`_ s.
+Unlike `spawn()`, the dynamically allocated state contains more than just an _`operation-state`_ for the nested sender;
+the state must also contain storage for the result of the nested sender, however it eventually completes, and
+synchronization facilities for resolving the race between the nested sender's production of its result and the returned
+sender's consumption or abandonment of that result.
+
+The receiver, `fr`, that is connected to the nested sender to construct the _`operation-state`_ responds to
+`get_env(fr)` with an instance of `@@_future-env_@@<Env>`, `fenv`, that behaves as if it delegates all queries other
+than `get_allocator()` and `get_stop_token()` to `env`. The result of `get_allocator(fenv)` is a copy of the _Allocator_
+used to allocate the _`operation-state`_. The result of `get_stop_token(fenv)`... (TODO)
+
+This is similar to `ensure_started()` from [@P2300R7], but the scope may observe and participate in the lifecycle of the
+work described by the sender. The `counting_scope` described in this paper uses this opportunity to keep a count of
+nested senders that haven't finished, and to prevent new work from being started once the `counting_scope`'s
+_`join-sender`_ has been started.
 
 Unlike `spawn()`, the sender given to `spawn_future()` is not constrained on a given shape. It may send different types
 of values, and it can complete with errors.
+
+TODO: edit below here
 
 It is safe to drop the sender returned from `spawn_future()` without starting it, because the `counting_scope` safely
 manages the destruction of the _`spawn-future-sender`_ state.
@@ -585,11 +626,10 @@ If the given sender `s` completes with an error, but the returned sender is drop
 Usage example:
 ```c++
 ...
-sender auto snd = s.spawn_future(on(sched, key_work()))
-                | then(continue_fun);
-for ( int i=0; i<10; i++)
-    spawn(s, on(sched, other_work(i)));
-return when_all(s.on_empty(), std::move(snd));
+sender auto snd = spawn_future(on(sched, key_work()), s) | then(continue_fun);
+for (int i = 0; i < 10; i++)
+    spawn(on(sched, other_work(i)), s);
+return when_all(s.join(), std::move(snd));
 ```
 
 ## `execution::counting_scope
