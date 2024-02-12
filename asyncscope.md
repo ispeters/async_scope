@@ -538,9 +538,9 @@ the _`operation-state`_; otherwise, the allocation is done with a `std::allocato
 constructed by connecting the nested sender to a _`spawn-receiver`_. The _`operation-state`_ is destroyed and
 deallocated after the spawned sender completes.
 
-A _`spawn-receiver`_, `sr`, responds to `get_env(sr)` with an instance of a `@@_spawn-env_@@<Env>`, `senv`, that behaves
-as if it delegates all queries other than `get_allocator()` to `env`. The result of `get_allocator(senv)` is a copy of
-the _Allocator_ used to allocate the _`operation-state`_.
+A _`spawn-receiver`_, `sr`, responds to `get_env(sr)` with an instance of a `@@_spawn-env_@@<Env>`, `senv`. The result
+of `get_allocator(senv)` is a copy of the _Allocator_ used to allocate the _`operation-state`_. For all other queries,
+`Q`, the result of `Q(fenv)` is `Q(env)`.
 
 This is similar to `start_detached()` from [@P2300R7], but the scope may observe and participate in the lifecycle of the
 work described by the sender. The `counting_scope` described in this paper uses this opportunity to keep a count of
@@ -598,10 +598,23 @@ the state must also contain storage for the result of the nested sender, however
 synchronization facilities for resolving the race between the nested sender's production of its result and the returned
 sender's consumption or abandonment of that result.
 
-The receiver, `fr`, that is connected to the nested sender to construct the _`operation-state`_ responds to
-`get_env(fr)` with an instance of `@@_future-env_@@<Env>`, `fenv`, that behaves as if it delegates all queries other
-than `get_allocator()` and `get_stop_token()` to `env`. The result of `get_allocator(fenv)` is a copy of the _Allocator_
-used to allocate the _`operation-state`_. The result of `get_stop_token(fenv)`... (TODO)
+Also unlike `spawn()`, `spawn_future()` returns a _`future-sender`_ rather than `void`. The returned sender, `fs`, is a
+handle to the spawned work that can be used to consume or abandon the result of that work. When `fs` is connected and
+started, it waits for the spawned sender to complete and then completes itself with the spawned sender's result. If `fs`
+is destroyed before being connected, or if `fs` *is* connected but then the resulting _`operation-state`_ is destroyed
+before being started, then a stop request is sent to the spawned sender in an effort to short-circuit the computation of
+a result that will not be observed. If `fs` receives a stop request from its receiver before the spawned sender
+completes, the stop request is forwarded to the spawned sender and then `fs` completes; if the spawned sender happens to
+complete between `fs` forwarding the stop request and completing itself then `fs` may complete with the result of the
+spawned sender as if the stop request was never received but, otherwise, `fs` completes with `stopped` and the result of
+the spawned sender is ignored. The completion signatures of `fs` include `set_stopped()` and all the completion
+signatures of the spawned sender.
+
+The receiver, `fr`, that is connected to the nested sender responds to `get_env(fr)` with an instance of
+`@@_future-env_@@<Env>`, `fenv`. The result of `get_allocator(fenv)` is a copy of the _Allocator_ used to allocate the
+dynamically allocated state. The result of `get_stop_token(fenv)` is a stop token that will be "triggered" (i.e. signal
+that stop is requested) by the returned _`future-sender`_ when it is dropped or receives a stop request itself. For all
+other queries, `Q`, the result of `Q(fenv)` is `Q(env)`.
 
 This is similar to `ensure_started()` from [@P2300R7], but the scope may observe and participate in the lifecycle of the
 work described by the sender. The `counting_scope` described in this paper uses this opportunity to keep a count of
@@ -611,25 +624,19 @@ _`join-sender`_ has been started.
 Unlike `spawn()`, the sender given to `spawn_future()` is not constrained on a given shape. It may send different types
 of values, and it can complete with errors.
 
-TODO: edit below here
+_NOTE:_ there is a race between the completion of the given sender and the start of the returned sender. The spawned
+sender and the returned _`future-sender`_ use the synchronization facilities in the dynamically allocated state to
+resolve this race.
 
-It is safe to drop the sender returned from `spawn_future()` without starting it, because the `counting_scope` safely
-manages the destruction of the _`spawn-future-sender`_ state.
-
-_NOTE:_ there is a race between the completion of the given sender and the start of the returned sender. The race will
-be resolved by the _`spawn-future-sender`_ state.
-
-Cancelling the returned sender, cancels the given sender `s`, but does not cancel any other spawned sender.
-
-If the given sender `s` completes with an error, but the returned sender is dropped, the error is dropped too.
+Cancelling the returned sender requests cancellation of the given sender, `snd`, but does not affect any other senders.
 
 Usage example:
 ```c++
 ...
-sender auto snd = spawn_future(on(sched, key_work()), s) | then(continue_fun);
+sender auto snd = spawn_future(on(sched, key_work()), scope) | then(continue_fun);
 for (int i = 0; i < 10; i++)
-    spawn(on(sched, other_work(i)), s);
-return when_all(s.join(), std::move(snd));
+    spawn(on(sched, other_work(i)), scope);
+return when_all(scope.join(), std::move(snd));
 ```
 
 ## `execution::counting_scope
