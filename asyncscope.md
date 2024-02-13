@@ -639,7 +639,67 @@ for (int i = 0; i < 10; i++)
 return when_all(scope.join(), std::move(snd));
 ```
 
-## `execution::counting_scope
+## `execution::counting_scope`
+
+```cpp
+struct counting_scope {
+    counting_scope() noexcept;
+    ~counting_scope();
+
+    counting_scope(const counting_scope&) = delete;
+    counting_scope(counting_scope&&) = delete;
+    counting_scope& operator=(const counting_scope&) = delete;
+    counting_scope& operator=(counting_scope&&) = delete;
+
+    template <sender S>
+    struct @@_nest-sender_@@; // @@_exposition-only_@@
+
+    template <sender S>
+    [[nodiscard]] @@_nest-sender_@@<std::remove_cvref_t<S>> nest(S&& s) & noexcept(
+            std::is_nothrow_constructible_v<std::remove_cvref_t<S>, S>);
+
+    struct @@_join-sender_@@; // @@_exposition-only_@@
+
+    [[nodiscard]] @@_join-sender_@@ join() noexcept;
+
+    // observers in the spirit of std::weak_ptr<T>::expired() and std::shared_ptr<T>::use_count();
+    // the values must be correct when computed but may be stale by the time they can be observed
+
+    [[nodiscard]] bool joined() const noexcept;
+
+    [[nodiscard]] bool join_started() const noexcept;
+
+    [[nodiscard]] size_t use_count() const noexcept;
+};
+```
+
+`counting_scope` is an async scope that is biased towards being used in generally-unstructured code to progressively add
+structure. The most obvious, user-facing consequence of this bias is that misuse will more likely lead to deadlock than
+use-after-free errors. Use-after-free bugs are often easier to diagnose than deadlocks, but our experience at Meta is
+that it is easier to figure out where to synchronously `join()` a scope than it is to ensure that all `spawn()`ed work
+is properly scoped within any particular object's lifetime. Indeed, the central problem in progressively structuring
+unstructured code is determining appropriate bounds for each asynchronous task when those bounds are not clear; a
+`counting_scope` that relies on surrounding code being well-structured to be used safely is of limited use in
+mostly-unstructured code.
+
+A `counting_scope` starts in an "open" state; starting the _`join-sender`_ returned from `join()` transitions the scope
+to a "closed" state. Calls to `nest()` a sender in an open scope will succeed (ignoring exceptions thrown while copying
+or moving the input sender) and increment the scope's count of "outstanding" senders; calls to `nest()` a sender in a
+closed scope will fail by discarding the sender and returning a _`nest-sender`_ that unconditionally completes with
+`stopped`. The _`join-sender`_ completes successfully once the scope's count of outstanding senders has dropped to zero.
+
+The evaluation of whether the scope is currently open or closed happens eagerly during the
+execution of `nest()`, which means that, under the standard assumption that the arguments to `nest()` are valid for the
+duration of `nest()`'s execution, the _`nest-sender`_ returned from `nest()` is always safe to connect and start,
+regardless of the relative ordering of any concurrent attempts to close and destroy the scope.
+
+A `counting_scope` is uncopyable and immovable so its copy and move operators are explicitly deleted.
+
+### `counting_scope::counting_scope()`
+
+### `counting_scope::~counting_scope()`
+
+### `counting_scope::nest()`
 
 Returns a _`nest-sender`_ that, when started, adds the given sender to the count of senders that the `counting_scope`
 object will require to complete before it will destruct.
@@ -676,9 +736,13 @@ for ( int i=0; i<10; i++)
 return on(sched, std::move(snd));
 ```
 
-## Lifetime
+### `counting_scope::join()`
 
-The `counting_scope` keeps a counter of how many spawned _`async-function`_ s have not completed.
+### `counting_scope::joined()`
+
+### `counting_scope::join_started()`
+
+### `counting_scope::use_count()`
 
 Design considerations
 =====================
