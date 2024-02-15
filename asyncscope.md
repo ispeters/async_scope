@@ -748,41 +748,60 @@ A `counting_scope` is uncopyable and immovable so its copy and move operators ar
 
 ### `counting_scope::counting_scope()`
 
+```cpp
+counting_scope::counting_scope() noexcept;
+```
+
+Initializes a `counting_scope` in the open state with no outstanding senders.
+
 ### `counting_scope::~counting_scope()`
+
+```cpp
+counting_scope::~counting_scope();
+```
+
+Checks that the `counting_scope` is in the joined state and invokes `std::terminate()` if not.
 
 ### `counting_scope::nest()`
 
-Returns a _`nest-sender`_ that, when started, adds the given sender to the count of senders that the `counting_scope`
-object will require to complete before it will destruct.
+```cpp
+template <sender S>
+struct @@_nest-sender_@@; // @@_exposition-only_@@
 
-A call to `nest()` does not start the given sender. A call to `nest()` is not expected to incur allocations.
+template <sender S>
+[[nodiscard]] @@_nest-sender_@@<std::remove_cvref_t<S>> nest(S&& s) & noexcept(
+        std::is_nothrow_constructible_v<std::remove_cvref_t<S>, S>);
+```
 
-The sender returned by a call to `nest()` holds a reference to the `counting_scope` in order to add the given sender to
-the count of senders when it is started. Connecting and starting the sender returned from `nest()` will connect and
-start the given sender and add the given sender to the count of senders that the `counting_scope` object will require to
-complete before it will destruct.
+Atomically increments the scope's count of outstanding senders if and only if the scope is in the open state and then
+returns a _`nest-sender`_.
+
+If the atomic increment succeeded then the return value will be an associated _`nest-sender`_ that contains a reference
+to `this` (the associated scope) and a copy of the input sender, `s`, that is copy- or move-constructed from `s`. If
+this copy or move throws then, before the exception is allowed to escape to the caller, the atomic increment needs to be
+undone to provide the strong exception guarantee; if decrementing the count brings the outstanding count to zero *and*
+the scope has transitioned to the closed/joining state then there is a started _`join-sender`_ that needs to be notified
+that it can complete.
+
+If the atomic increment failed then the return value will be an unassociated _`nest-sender`_ and no exceptions are
+possible. In this case, the return value does not store a reference to `this` and the given sender, `s`, is discarded.
+
+A call to `nest()` does not start the given sender. A call to `nest()` is not expected to incur allocations other than
+whatever might be required to move or copy `s`.
 
 Similar to `spawn_future()`, `nest()` doesn't constrain the input sender to any specific shape. Any type of sender is
 accepted.
 
-Unlike `spawn_future()` the returned sender does not prevent the scope from ending. It is safe to drop the returned
-sender without starting it. It is UB to start the returned sender after the `counting_scope` has been destroyed.
-
 As `nest()` does not immediately start the given work, it is ok to pass in blocking senders.
 
-One can say that `nest()` is more fundamental than `spawn()` and `spawn_future()` as the latter two can be implemented
-in terms of `nest()`. In terms of performance, `nest()` does not introduce any penalty. `spawn()` is more expensive than
-`nest()` as it needs to allocate memory for the operation. `spawn_future()` is even more expensive than `spawn()`; the
-receiver needs to be type-erased and a possible race condition needs to be resolved. `nest()` does not require
-allocations, so it can be used in a free-standing environment.
-
-Cancelling the returned sender, once it is connected and started, cancels `s` but does not cancel the `counting_scope`.
+`nest()` is lvalue-ref qualified as it would be inappropriate to nest senders in a temporary---the temporary's
+destructor would unconditionally invoke `std::terminate()` as there would be no way to move it into the joined state.
 
 Usage example:
 ```c++
 ...
 sender auto snd = s.nest(key_work());
-for ( int i=0; i<10; i++)
+for (int i = 0; i < 10; i++)
     spawn(s, on(sched, other_work(i)));
 return on(sched, std::move(snd));
 ```
