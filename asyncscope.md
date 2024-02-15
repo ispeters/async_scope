@@ -690,25 +690,59 @@ struct counting_scope {
 };
 ```
 
-`counting_scope` is an async scope that is biased towards being used in generally-unstructured code to progressively add
-structure. The most obvious, user-facing consequence of this bias is that misuse will more likely lead to deadlock than
-use-after-free errors. Use-after-free bugs are often easier to diagnose than deadlocks, but our experience at Meta is
-that it is easier to figure out where to synchronously `join()` a scope than it is to ensure that all `spawn()`ed work
-is properly scoped within any particular object's lifetime. Indeed, the central problem in progressively structuring
-unstructured code is determining appropriate bounds for each asynchronous task when those bounds are not clear; a
-`counting_scope` that relies on surrounding code being well-structured to be used safely is of limited use in
-mostly-unstructured code.
+A `counting_scope` goes through three states during its lifetime:
 
-A `counting_scope` starts in an "open" state; starting the _`join-sender`_ returned from `join()` transitions the scope
-to a "closed" state. Calls to `nest()` a sender in an open scope will succeed (ignoring exceptions thrown while copying
-or moving the input sender) and increment the scope's count of "outstanding" senders; calls to `nest()` a sender in a
-closed scope will fail by discarding the sender and returning a _`nest-sender`_ that unconditionally completes with
-`stopped`. The _`join-sender`_ completes successfully once the scope's count of outstanding senders has dropped to zero.
+1. open
+2. closed/joining
+3. joined
 
-The evaluation of whether the scope is currently open or closed happens eagerly during the
-execution of `nest()`, which means that, under the standard assumption that the arguments to `nest()` are valid for the
-duration of `nest()`'s execution, the _`nest-sender`_ returned from `nest()` is always safe to connect and start,
-regardless of the relative ordering of any concurrent attempts to close and destroy the scope.
+Instances start in the open state after being constructed. Connecting and starting a _`join-sender`_ returned from
+`join()` transitions the scope to the closed/joining state. Merely calling `join()` or connecting the _`join-sender`_
+does not change the scope's state---the _`operation-state`_ must be started to close the scope. The scope transitions
+from the closed/joining state to the joined state when the _`join-sender`_ completes. A scope must be in the joined
+state when its destructor starts; otherwise, the destructor invokes `std::terminate()`.
+
+While a scope is open, calls to `nest(snd, scope)` will succeed (unless an exception is thrown by `snd`'s copy- or
+move-constructor while constructing the _`nest-sender`_). Each time a call to `nest(snd, scope)` succeeds, two things
+happen:
+
+1. the scope's count of outstanding senders is incremented before `nest()` returns, and
+2. the given sender, `snd`, is wrapped in a _`nest-sender`_ and returned.
+
+When a call to `nest()` succeeds, the returned _`nest-sender`_ is an associated sender that acts like an RAII handle:
+the scope's internal count is incremented when the sender is created and decremented when the sender is "done with the
+scope", which happens when the sender is destroyed, its _`operation-state`_ is destroyed, or its _`operation-state`_ is
+completed. Moving a _`nest-sender`_ transfers responsibility for decrementing the count from the old instance to the new
+one. Copying a _`nest-sender`_ is permitted if the sender it's wrapping is copyable, but the copy may "fail" since
+copying requires incrementing the scope's count, which is only allowed when the scope is open; if copying fails, the new
+sender is an unassociated sender that behaves as if it were the result of a failed call to `nest()`.
+
+While a scope is closed or joined, calls to `nest(snd, scope)` will always fail by discarding the given sender and
+returning an unassociated _`nest-sender`_. Failed calls to `nest()` do not change the scope's count. Unassociated
+_`nest-senders`_ do not have a reference to the scope they came from and always complete with `set_stopped` when
+connected and started. Copying or moving an unassociated sender produces another unassociated sender.
+
+The state transitions of a `counting_scope` mean that it can be used to protect asynchronous work from use-after-free
+errors. Given a resource, `res`, and a `counting_scope`, `scope`, obeying the following policy is enough to ensure that
+there are no attempts to use `res` after its lifetime ends:
+
+- all senders that refer to `res` are nested within `scope`; and
+- `scope` is destroyed (and therefore joined) before `res` is destroyed.
+
+Under the standard assumption that the arguments to `nest()` are and remain valid while evaluating `nest()`, it is
+always safe to invoke any supported operation on the returned _`nest-sender`_. Furthermore, if all senders returned from
+`nest()` are eventually started or discarded then the `join()` operation always eventually finishes because the number
+of outstanding senders nested within the corresponding scope is monotonically decreasing. Conversely, "leaking" a
+_`nest-sender`_ will cause the `join()` operation to deadlock.
+
+The risk of deadlock is explicitly preferred in this design over the risk of use-after-free errors because
+`counting_scope` is an async scope that is biased towards being used to progressively add structure to
+generally-unstructured code. We've found that the central problem in progressively structuring unstructured code is
+determining appropriate bounds for each asynchronous task when those bounds are not clear; it is easier to figure out
+where to synchronously `join()` a scope than it is to ensure that all `spawn()`ed work is properly scoped within any
+particular object's lifetime. So, although it is generally easier to diagnose use-after-free errors than it is to
+diagnose deadlocks, we've found that it's easier to *avoid* deadlocks with this design than it is to avoid
+use-after-free errors with other designs.
 
 A `counting_scope` is uncopyable and immovable so its copy and move operators are explicitly deleted.
 
