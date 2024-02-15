@@ -1357,7 +1357,7 @@ references:
     citation-label: "`unifex::v2::async_scope`"
     type: header
     title: "unifex::v2::async_scope"
-    url: https://github.com/facebookexperimental/libunifex/blob/main/include/unifex/v1/async_scope.hpp
+    url: https://github.com/facebookexperimental/libunifex/blob/main/include/unifex/v2/async_scope.hpp
     company: Meta Platforms, Inc
   - id: letvwthunifex
     citation-label: letvwthunifex
