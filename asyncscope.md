@@ -810,11 +810,50 @@ return on(sched, std::move(snd));
 
 ### `counting_scope::join()`
 
+```cpp
+struct @@_join-sender_@@; // @@_exposition-only_@@
+
+[[nodiscard]] @@_join-sender_@@ join() noexcept;
+```
+
 ### `counting_scope::joined()`
+
+```cpp
+[[nodiscard]] bool joined() const noexcept;
+```
+
+Returns `true` if the scope is in the joined state (i.e. a _`join-sender`_ returned from `join()` has been connected,
+started, and completed, which implies that the count of outstanding senders has dropped to zero).
+
+`joined()` returning `true` implies that `join_started()` will also return `true` and `use_count()` will return `0`.
+
+_Note:_ if `joined()` returns `true` then it will never again return `false` however, it's possible for a return of
+`false` to be stale by the time it is observed since another thread of execution may be racing to complete a waiting
+_`join-sender`_.
 
 ### `counting_scope::join_started()`
 
+```cpp
+[[nodiscard]] bool join_started() const noexcept;
+```
+
+Returns `true` if the scope is in the closed/joining state or the joined state (i.e. returns `true` if a _`join-sender`_
+has been connected and started) and `false` otherwise.
+
+_Note:_ if `join_started()` returns `true` then it will never again return `false` however, it's possible for a return
+of `false` to be stale by the time it is observed since another thread of execution may be racing to start a
+_`join-sender`_.
+
 ### `counting_scope::use_count()`
+
+```cpp
+[[nodiscard]] size_t use_count() const noexcept;
+```
+
+Returns the number of senders that have been associated with this scope that have not yet completed.
+
+_Note:_ it is likely that the return value is stale by the time it's observed since another thread of execution may be
+racing to nest a new sender or complete an old one.
 
 Design considerations
 =====================
