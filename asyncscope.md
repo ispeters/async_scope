@@ -978,6 +978,53 @@ Naming
 
 As is often true, naming is a difficult task.
 
+## `nest()`
+
+This provides a way to build a sender that is associated with a "scope", which is a type that implements and enforces
+some bookkeeping policy regarding the senders nested within it. `nest()` does not allocate state, call connect, or call
+start. `nest()` is the basis operation for async scopes. `spawn()` and `spawn_future()` use `nest()` to associate a
+given sender with a given scope, and then they allocate, connect, and start the given sender.
+
+It would be good for the name to indicate that it is a simple operation (insert, add, embed, extend might communicate
+allocation, which `nest()` does not do).
+
+alternatives: `wrap()`, `attach()`
+
+## `async_scope`
+
+This is a concept that is satisfied by types that support nesting senders within themselves. It is primarily useful for
+constraining the arguments to `spawn()` and `spawn_future()` to give useful error messages for invalid invocations.
+
+Since concepts don't support existential quantifiers and thus can't express "type `T` is an `async_scope` if there
+exists a sender, `s`, for which `t.nest(s)` is valid", the `async_scope` concept must be parameterized on both the type
+of the scope and the type of some particular sender and thus describes whether *this* scope type is an `async_scope` in
+combination with *this* sender type. Given this limitation, perhaps the name should convey something about the fact that
+it is checking the relationship between two types rather than checking something about the scope's type alone. Nothing
+satisfying comes to mind.
+
+alternatives: don't name it and leave it as _`exposition-only`_
+
+## `spawn()`
+
+This provides a way to start a sender that produces `void` and to associate the resulting async work with an async scope
+that can implement a bookkeeping policy that may help ensure the async work is complete before destroying any resources
+it is using. This allocates, connects, and starts the given sender.
+
+It would be good for the name to indicate that it is an expensive operation.
+
+alternatives: `connect_and_start()`, `spawn_detached()`, `fire_and_remember()`
+
+## `spawn_future()`
+
+This provides a way to start work and later ask for the result. This will allocate, connect, start, and resolve the race
+(using synchronization primitives) between the completion of the given sender and the start of the returned sender.
+Since the type of the receiver supplied to the result sender is not known when the given sender starts, the receiver
+will be type-erased when it is connected.
+
+It would be good for the name to be ugly, to indicate that it is a more expensive operation than `spawn()`.
+
+alternatives: `spawn_with_result()`
+
 ## `counting_scope`
 
 A `counting_scope` represents the root of a set of nested lifetimes.
@@ -992,437 +1039,64 @@ contain values. This container contains a set of active senders (an active sende
 
 alternatives: `async_scope`
 
-## `nest()`
-
-This provides a way to build a sender that, when started, adds to the count of spawned and nested senders that
-`counting_scope` maintains. `nest()` does not allocate state, call connect or call start. `nest()` is the basis
-operation for `counting_scope`. `spawn()` and `spawn_future()` use `nest()` to add to the count that `counting_scope`
-maintains, and then they allocate, connect, and start the returned _`nest-sender`_.
-
-It would be good for the name to indicate that it is a simple operation (insert, add, embed, extend might communicate
-allocation, which `nest()` does not do).
-
-alternatives: `wrap()`
-
-## `spawn()`
-
-This provides a way to start a sender that produces `void` and add to the count that `counting_scope` maintains of
-nested and spwned senders. This allocates, connects and starts the given sender.
-
-It would be good for the name to indicate that it is an expensive operation.
-
-alternatives: `connect_and_start()`
+### `counting_scope::join()`
 
-## `spawn_future()`
+This method returns a sender that, when started, prevents new senders from being nested within the scope and then waits
+for the scope's count of outstanding senders to drop to zero before completing. It is somewhat analogous to
+`std::thread::join()` but does not block.
 
-This provides a way to start work and later ask for the result. This will allocate, connect, start and resolve the race
-(using synchronization primitives) between the completion of the given sender and the start of the returned sender.
-Since the type of the receiver supplied to the result sender is not known when the given sender starts, the receiver
-will be type-erased when it is connected.
+`join()` must be invoked, and the returned sender must be connected, started, and completed, before the scope may be
+destroyed so it may be useful to convey some of this importance in the name, although `std::thread` has similar
+requirements for its `join()`.
 
-It would be good for the name to be ugly, to indicate that it is a more expensive operation than `spawn()`.
+`join()` is the biggest wart in this design; the need to manually manage the end of a scope's lifetime stands out as
+less-than-ideal in C++, and there is some real risk that users will write deadlocks with `join()` so perhaps `join()`
+should have a name that conveys danger.
 
-alternatives: `spawn_with_result()`
+alternatives: `complete()`, `close()`
 
-Diagrams
-========
+### `counting_scope::joined()`
 
-```plantuml
-!pragma layout smetana
-title counting_scope classes
-
-class counting_nest_impl<? satisfies operation> {
-  + void start()
-  - <<operation>>counting_impl* impl
-  - <<receiver>>r
-}
+This method starts returning `true` once the _`join-sender`_ completes and it means "`join()` was called and its work
+has finished". The name should be the past participle of whichever verb is chosen for `join()` (e.g. `completed()` or
+`closed()`).
 
-class counting_spawn_future_impl<? satisfies operation> {
-  + void start()
-  - <<operation>>counting_impl* impl
-  - <<receiver>>r
-}
+The result of `joined()` may be stale before it can be observed, like `std::weak_ptr<>::expired()`, so users may find
+the name more obvious if it communicated this staleness.
 
-class counting_nest<? satisfies sender> {
-  + completion_signatures_of_t< <<sender>>s > \nget_completion_signatures(environment)
-  + <<operation>>counting_nest_impl connect(<<receiver>>r)
-}
-counting_nest::connect -d-> counting_nest_impl
+alternatives: `completed()`, `closed()`
 
-class counting_spawn_future<? satisfies sender> {
-  + completion_signatures_of_t< <<sender>>s > \nget_completion_signatures(environment)
-  + <<operation>>counting_spawn_future_impl connect(<<receiver>>r)
-}
-counting_spawn_future::connect -d-> counting_spawn_future_impl
+### `counting_scope::join_started()`
 
-class counting_scope<? satisfies async-scope> {
-  + <<sender>>counting_nest nest(<<sender>>s)
-  + void spawn(<<sender>>s)
-  + <<sender>>counting_spawn_future spawn_future(<<sender>>s)
-  - <<operation>>counting_impl* impl
-}
-counting_scope::nest -l-> counting_nest
-counting_scope::spawn_future -r-> counting_spawn_future
+This method starts returning `true` once the _`join-sender`_ has been started and it means that the scope will no longer
+permit new senders to be associated with it via calls to `nest()`. The name was chosen for its directness:
+`join_started()` is true when the `join()` operation has started.
 
-class counting_item_impl<? satisfies operation> {
-  + void start()
-  - <<operation>>counting_impl* impl
-  - <<receiver>>r
-}
+Like `join()`, the result may be stale before it can be observed.
 
-class counting_item<? satisfies sender> {
-  + completion_signatures<set_value_t(counting_scope)> \nget_completion_signatures(environment)
-  + <<operation>>counting_item_impl connect(<<receiver>>r)
-}
-counting_item::connect -u-> counting_item_impl
+alternatives: `joining()`, `closing()`, `completing()`
 
-class counting_impl<? satisfies operation> {
-  + void start()
-  - <<sequence-receiver>>r
-  - int count
-}
-counting_scope::impl -d-* counting_impl
-counting_item_impl::impl -u-* counting_impl
-counting_nest_impl::impl -r-* counting_impl
-counting_spawn_future_impl::impl -l-* counting_impl
+### `counting_scope::use_count()`
 
-class counting<? satisfies sequence-sender> {
-  + completion_signatures<set_value_t(counting_scope)> \nget_completion_signatures(environment)
-  + <<operation>>counting_impl sequence_connect(<<sequence-receiver>>r)
-}
-counting::sequence_connect -u-> counting_impl
+This method returns the scope's count of outstanding senders (i.e. the number of senders that have been associated with
+the scope via calls to `nest()` and that haven't been discarded or completed, yet).
 
-class counting_scope_resource<? satisfies async-resource> {
-  + <<sequence-sender>>counting run()
-}
-counting_scope_resource::run -u-> counting
+Like `join()` and `join_started()`, the result may be stale before it can be observed. Unlike those two methods, there
+isn't a simple rule like "once it hits zero it stays there" since new work may always be added to the scope so long as
+the _`join-sender`_ hasn't been started.
 
-```
+The name was chosen by analogy with `std::shared_ptr<>::use_count()`; both represent reference counts that may be
+immediately stale and for which the 1 -> 0 transition is significant.
 
-```plantuml
-!pragma layout smetana
-title counting_scope nest() activity
+alternatives: `outstanding_senders()`
 
-start
-:async-invoke nest(scope, func);
+Acknowledgements
+================
 
-:nest(scope, func) [enter];
+Thanks to Andrew Royes for unwavering support for the development and deployment of Unifex at Meta and for recognizing
+the importance of contributing this paper to the C++ Standard.
 
-:scope ++count;
-
-:async-invoke func;
-
-:func [enter];
-
-:func [result];
-
-:nest(scope, func) [result];
-
-:scope --count;
-
-if (count) equals (0) then
-if (scope) is (unused) then
-:destruct scope;
-else
-->scope is in use;
-endif
-else
-->count > 0;
-endif
-end
-```
-
-```plantuml
-!pragma layout smetana
-title counting_scope spawn() activity
-
-start
-:invoke spawn(scope, func);
-
-:spawn(scope, func) [enter];
-
-:allocate state for \n  connect(\n    nest(scope, func), spawn-receiver) ;
-
-:async-invoke nest(scope, func);
-
-:spawn(scope, func) [return void];
-
-:nest(scope, func) [enter];
-
-:nest(scope, func) [result];
-
-end
-```
-
-```plantuml
-!pragma layout smetana
-title counting_scope spawn_future() activity
-
-start
-:invoke spawn-future = spawn_future(scope, func);
-
-:spawn_future(scope, func) [enter];
-
-:allocate state for \n  connect(\n    nest(scope, func), \n    spawn-future-receiver) ;
-
-:async-invoke nest(scope, func);
-
-:spawn_future(scope, func) [return spawn-future];
-
-:nest(scope, func) [enter];
-
-:nest(scope, func) [result];
-
-:stored-result = result;
-
-:async-invoke spawn-future;
-
-:spawn-future [enter];
-
-:spawn-future [stored-result];
-
-end
-```
-
-Specification
-=============
-
-## Synopsis
-
-```cpp
-namespace std::execution {
-
-namespace { // @@_exposition-only_@@
-    template <class Env>
-    struct @@_spawn-receiver_@@ { // @@_exposition-only_@@
-        void set_value() && noexcept;
-        void set_stopped() && noexcept;
-
-        Env get_env() noexcept;
-    };
-    template <typename S>
-    struct @@_nest-sender_@@; // @@_exposition-only_@@
-    template <typename S>
-    struct @@_spawn-future-sender_@@; // @@_exposition-only_@@
-
-    template <class Sender, class Env>
-    concept @@_spawnable-sender_@@ = // @@_exposition-only_@@
-        sender_to<Sender, @@_spawn-receiver_@@<Env>>;
-}
-
-sender auto nest(sender auto&& sender, auto&& scope) noexcept(/* TODO */);
-
-template <class Scope, class Sender>
-concept async_scope = sender<Sender> && requires(Scope&& scope, Sender&& snd) {
-    { nest(std::forward<Sender>(snd), std::forward<Scope>(scope)) } -> sender;
-};
-
-template <sender Sender, async_scope<Sender> Scope, class Env = empty_env>
-  requires @@_spawnable-sender_@@<Sender, Env>
-void spawn(Sender&& snd, Scope&& scope, Env env = {});
-
-template <sender Sender, async_scope<Sender> Scope>
-struct @@_future-sender_@@; // exposition-only
-
-template <sender Sender, async_scope<Sender> Scope, class Env = empty_env_t>
-@@_future-sender_@@<Sender, Scope> spawn_future(Sender&& snd, Scope&& scope, Env env = {});
-
-struct counting_scope {
-    counting_scope() noexcept;
-    ~counting_scope();
-
-    counting_scope(const counting_scope&) = delete;
-    counting_scope(counting_scope&&) = delete;
-    counting_scope& operator=(const counting_scope&) = delete;
-    counting_scope& operator=(counting_scope&&) = delete;
-
-    template <sender S>
-    struct @@_nest-sender_@@; // exposition-only
-
-    // TODO: This is intended to customize the nest algorithm such that, for some type S, sender<S>
-    //       implies async_scope<counting_scope&, S>
-    template <sender S>
-    [[nodiscard]] @@_nest-sender_@@<std::remove_cvref_t<S>> nest(S&& s) & noexcept(
-            std::is_nothrow_constructible_v<std::remove_cvref_t<S>, S>);
-
-    struct @@_join-sender_@@; // exposition-only
-
-    [[nodiscard]] @@_join-sender_@@ join() noexcept;
-
-    // observers in the spirit of std::weak_ptr<T>::expired() and std::shared_ptr<T>::use_count();
-    // the values must be correct when computed but may be stale by the time they can be observed
-
-    [[nodiscard]] bool joined() const noexcept;
-
-    [[nodiscard]] bool join_started() const noexcept;
-
-    [[nodiscard]] size_t use_count() const noexcept;
-};
-
-}
-```
-
-## `execution::nest`
-
-```cpp
-sender auto nest(sender auto&& sender, auto&& scope) noexcept(/* TODO */);
-```
-
- 1. `nest` is a sender adaptor (see [exec.adapt] in [@P2300R7]) that associates an input sender with an async scope in a
-    scope-defined way and returns an output sender such that, when the association is successful:
-    * running the output sender runs the input sender; and
-    * the scope has the opportunity to observe and react to the lifecycle of the input sender.
- 2. The name `nest` denotes a customization point object. For some subexpressions `s` and `a`, let `S` be
-    `decltype((s))`. If `S` does not satisfy `sender` then `nest` is ill-formed. Otherwise, the expression `nest(s, a)`
-    is expression-equivalent to:
-    1. `a.nest(s)`, if that expression is valid.
-       * _Mandates:_ the type of the above expression satisfies `sender`.
-       * Given that `nest(s, a)` returns a sender, `s2`:
-         * _Mandates:_ `s2`'s completions are the same as `s1`'s completions _except_ that `scope`'s definition of
-           `nest` may add a stopped completion to `s2`'s completions.
-         * If `a` is rejecting associations with new senders for non-exceptional reasons, `s2` should be a sender that
-           completes with a stopped completion.
-    2. Otherwise, `nest` is ill-formed.
- 3. Evaluating `nest(s, a)` may modify the state of `a` (but not `s`) before the returned sender is connected to a
-    receiver, or before the resulting operation state is started.
-
-It is expected that associating a sender, `s`, with an async scope, `a`, by invoking `nest(s, a)` will:
-
- * allow `a` to "keep track" of `s` so that `s`'s work does not become detached; and
- * not allocate.
-
-## `execution::async_scope`
-
-1. An async scope represents a means of keeping track of senders that have been associated with the scope.
-
-   ```cpp
-   template <class Scope, class Sender>
-     concept async_scope =
-       // only senders can be nested within scopes
-       sender<Sender> &&
-       // a scope is anything that can nest senders within itself
-       requires(Scope&& scope, Sender&& snd) {
-         { nest(std::forward<Sender>(snd), std::forward<Scope>(scope)) } -> sender;
-       };
-   ```
-
-## `execution::spawn`
-
-```cpp
-template <sender Sender, async_scope<Sender> Scope, class Env = empty_env>
-  requires @@_spawnable-sender_@@<Sender, Env>
-void spawn(Sender&& snd, Scope&& scope, Env env = {});
-```
-
-1. `spawn` is used to eagerly start a sender while giving the scope the opportunity to observe the lifetime of the
-   sender's execution.
-2. Let `r` be a receiver of type _`spawn-receiver`_`<Env>` such that `get_env(r)` returns a copy of `env`.
-3. Let `op_t` be `decltype(connect(nest(std::forward<Sender>(snd), std::forward<Scope>(scope), std::move(r))))`.
-4. Let `alloc` be an allocator for instances of `op_t` constructed as so:
-   1. If `get_allocator(env)` is not a valid expression then `alloc` is a default-constructed `std::allocator<op_t>`.
-   2. Otherwise, let `env_alloc_t` be `decltype(get_allocator(env))` and let `env_traits_t` be
-      `std::allocator_traits<env_alloc_t>`.
-      1. Let `alloc_t` be `typename env_traits_t::template rebind_alloc<op_t>`.
-      2. `alloc` is `alloc_t{get_allocator(env)}`.
-2. _Effects_:
-   - Space for an `op_t` will be allocated with `alloc`; if the allocation throws then the exception is passed to the
-     caller.
-   - In the newly allocated space, construct an _`operation-state`_ object `op` by invoking
-     `connect(nest(std::forward<Sender>(snd), std::forward<Scope>(scope), std::move(r)))`.
-   - If an exception occurs while creating `op`, the allocated space will be deallocated with `alloc` and then the
-     exception will be passed to the caller.
-   - If no exception is thrown while creating `op` then `start(op)` is called (before `spawn()` returns).
-   - If `op` is started then `r` is responsible for destroying `op` and deallocating its storage; when `set_value(r)` or
-     `set_stopped(r)` is called:
-     1. Construct an allocator, `alloc`, as before.
-     2. Evaluate `op`'s destructor.
-     3. Use `alloc` to deallocate `op`'s storage.
-
-## `execution::spawn_future`
-
-1. `counting_scope::spawn_future` is used to eagerly start a sender in the context of the `counting_scope` object, and
-   returning a sender that will be triggered after the completion of the given sender. The lifetime of the returned
-   sender is not associated with `counting_scope`.
-
-2. The returned sender has the same completion signatures as the input sender.
-
-3. _Effects_:
-   - An _`operation-state`_ object `op` will be created by connecting the given sender to a receiver `recv`.
-   - If an exception occurs while trying to create `op` in its proper storage space, the exception will be passed to
-     the caller.
-   - If no exception is thrown while creating `op` and stop was not requested on our stop source, then:
-     - `start(op)` is called (before `spawn_future` returns).
-     - The lifetime of `op` extends at least until `recv` is called with a completion notification.
-     - If `rsnd` is the returned sender, then using it has the following effects:
-       - Let `ext_op` be the _`operation-state`_ object returned by connecting `rsnd` to a receiver `ext_recv`.
-       - If `ext_op` is started, the completion notifications received by `recv` will be forwarded to `ext_recv`,
-         regardless whether the completion notification happened before starting `ext_op` or not.
-       - It is safe not to connect `rsnd` or not to start `ext_op`.
-     - The `counting_scope` will not be _empty_ until one of the following is true:
-       - `rsnd` is destroyed without being connected
-       - `rsnd` is connected but `ext_op` is destroyed without being started
-       - If `rsnd` is connected to a receiver to return `ext_op`, `ext_op` is started, and `recv` is notified about the
-         completion of the given sender
-   - `recv` supports the `get_stop_token()` query customization point object; this will return a stop token object that
-     will be stopped when:
-     - the `counting_scope` object is stopped (i.e., by using `counting_scope::request_stop()`;
-     - if `rsnd` supports  `get_stop_token()` query customization point object, when stop is requested to the object
-       `get_stop_token(rsnd)`.
-
-4. _Note_: the receiver `recv` will help the `counting_scope` object to keep track of how many operations are running
-   at a given time.
-
-5. _Note_: the type of completion signal that `op` will use does not influence the behavior of `counting_scope` (i.e.,
-   `counting_scope` object behaves the same way if the sender describes a work that ends with success, error or
-   cancellation).
-
-6. _Note_: cancelling the sender returned by this function will not have an effect about the `counting_scope` object.
-
-## `counting_scope::counting_scope`
-
-1. `counting_scope::counting_scope` constructs the `counting_scope` object, in the empty state.
-2. _Note_: It is always safe to call the destructor immediately after the constructor, without adding any work to the
-   `counting_scope` object.
-
-## `counting_scope::~counting_scope`
-
-1. `counting_scope::~counting_scope` destructs the `counting_scope` object, freeing all resources
-
-2. The destructor will call `terminate()` if there is outstanding work in the `counting_scope` object (i.e., work
-   created by `nest()`, `spawn()` and `spawn_future()` did not complete).
-
-3. _Note_: It is always safe to call the destructor after the sender returned by `on_empty()` sent the completion
-   signal, provided that there were no calls to `nest()`, `spawn()` and `spawn_future()` since the _`on-empty-sender`_
-   was started.
-
-
-## `counting_scope::nest`
-
-1. `counting_scope::nest` is used to produce a _`nest-sender`_ that, when started, nests the sender within the lifetime
-   of the `counting_scope` object.  The given sender will be started when the _`nest-sender`_ is started.
-
-2. The returned sender has the same completion signatures as the input sender.
-
-3. _Effects_:
-   - If `rsnd` is the returned _`nest-sender`_, then using it has the following effects:
-     - Let `op` be the _`operation-state`_ object returned by connecting the given sender to a receiver `recv`.
-     - Let `ext_op` be the _`operation-state`_ object returned by connecting `rsnd` to a receiver `ext_recv`.
-     - Let `op` be stored in `ext_op`.
-     - If `ext_op` is started, then `op` is started and the completion notifications received by `recv` will be
-       forwarded to `ext_recv`.
-     - _Note_: as `op` is stored in `ext_op`, calling `nest()` cannot start the given sender.
-     - Once `rsnd` is connected and `ext_op` started the `counting_scope` will not be empty until `recv` is notified
-       about the completion of the given sender.
-   - `recv` supports the `get_stop_token()` query customization point object; this will return a stop token object that
-     will be stopped when:
-     - the `counting_scope` object is stopped (i.e., by using `counting_scope::request_stop()`;
-     - if `rsnd` supports  `get_stop_token()` query customization point object, when stop is requested to the object
-       `get_stop_token(rsnd)`.
-
-4. _Note_: the type of completion signal that `op` will use does not influence the behavior of `counting_scope` (i.e.,
-   `counting_scope` object behaves the same way if the sender completes with success, error or cancellation).
-
-5. _Note_: cancelling the sender returned by this function will not cancel the `counting_scope` object.
+Thanks to Eric Niebler for the encouragement and support it took to get this paper published.
 
 ---
 references:
@@ -1486,16 +1160,5 @@ references:
     title: "async_scope"
     url: https://github.com/NVIDIA/stdexec/blob/main/include/exec/async_scope.hpp
     company: NVIDIA Corporation
-  - id: P2849R0
-    citation-label: P2849R0
-    type: paper
-    title: "async-resource - aka async-RAII"
-    author:
-      - family: Shoop
-        given: Kirk
-      - family: Voutilainen
-        given: Ville
-    url: https://wg21.link/P2849R0
-
 
 ---
