@@ -35,30 +35,33 @@ Introduction
 [@P2300R7] lays the groundwork for writing structured concurrent programs in C++ but it leaves three important scenarios
 under- or unaddressed:
 
- 1. progressively structuring an existing, unstructured concurrent program;
- 2. starting a dynamic number of parallel tasks without "losing track" of them; and
- 3. opting in to eager execution of sender-shaped work when appropriate.
+1. progressively structuring an existing, unstructured concurrent program;
+2. starting a dynamic number of parallel tasks without "losing track" of them; and
+3. opting in to eager execution of sender-shaped work when appropriate.
 
 This paper describes the utilities needed to address the above scenarios within the following constraints:
 
- * _No detached work by default;_ as specified in P2300R7, the `start_detached` and `ensure_started` algorithms invite
-   users to start concurrent work with no built-in way to know when that work has finished.
-   * Such so-called "detached work" is undesirable; without a way to know when detached work is done, it is difficult
-     know when it is safe to destroy any resources referred to by the work. Ad hoc solutions to this shutdown problem
-     add unnecessary complexity that can be avoided by ensuring all concurrent work is "attached".
-   * Experienced C++ programmers who "know" that async C++ "is just hard" also "know" that starting concurrent work
-     means starting detached work so it's useful as a teaching aid to remove the unnecessary option.
- * _No dependencies besides [@P2300R7];_ it will be important for the success of [@P2300R7] that existing code bases
-   can migrate from unstructured concurrency to structured concurrency in an incremental way so tools for progressively
-   structuring code should not take on risk in the form of unnecessary dependencies.
+- _No detached work by default;_ as specified in P2300R7, the `start_detached` and `ensure_started` algorithms invite
+  users to start concurrent work with no built-in way to know when that work has finished.
+  - Such so-called "detached work" is undesirable; without a way to know when detached work is done, it is difficult
+    know when it is safe to destroy any resources referred to by the work. Ad hoc solutions to this shutdown problem
+    add unnecessary complexity that can be avoided by ensuring all concurrent work is "attached".
+  - [@P2300R7]'s introduction of structured concurrency to C++ will make async programming with C++ much easier but
+    experienced C++ programmers typically believe that async C++ is "just hard" and that starting async work *means*
+    starting detached work (even if they are not thinking about the distinction between attached and detached work) so
+    adapting to a post-[@P2300R7] world will require unlearning many deprecated patterns. It is thus useful as a
+    teaching aid to remove the unnecessary temptation of falling back on old habits.
+- _No dependencies besides [@P2300R7];_ it will be important for the success of [@P2300R7] that existing code bases
+  can migrate from unstructured concurrency to structured concurrency in an incremental way so tools for progressively
+  structuring code should not take on risk in the form of unnecessary dependencies.
 
 The proposed solution comes in five parts:
 
- * `concept async_scope`;
- * `sender auto nest(sender auto&&, async_scope auto&&)`;
- * `void spawn(sender auto&&, async_scope auto&&, Env&&)`;
- * `sender auto spawn_future(sender auto&&, async_scope auto&&, Env&&)`; and
- * `struct counting_scope`.
+- `sender auto nest(sender auto&& snd, auto&& scope)`;
+- `template <class Scope, class Sender> concept async_scope`;
+- `void spawn(sender auto&& snd, async_scope auto&& scope, auto&& env)`;
+- `sender auto spawn_future(sender auto&& snd, async_scope auto&& scope, auto&& env)`; and
+- `struct counting_scope`.
 
 ## Implementation experience
 
@@ -80,7 +83,7 @@ Motivation
 
 Let us assume the following code:
 
-```c++
+```cpp
 namespace ex = std::execution;
 
 struct work_context;
@@ -111,17 +114,17 @@ equivalent) to dynamically spawn work. [@P2300R7] doesn't provide any facilities
 sender (i.e., something like `when_all` but with a dynamic number of input senders).
 
 Using `start_detached()` here follows the _fire-and-forget_ style, meaning that we have no control over, or awareness
-of, the termination of the _`async-function`_ being spawned.
+of, the completion of the async work that is being spawned.
 
 At the end of the function, we are destroying the `work_context` and the `static_thread_pool`. But at that point, we
-don't know whether all the spawned _`async-function`_ s have completed. If there are still _`async-function`_ s that are
-not yet complete, this might lead to crashes.
+don't know whether all the spawned async work has completed. If any of the async work is incomplete, this might lead to
+crashes.
 
 [@P2300R7] doesn't give us out-of-the-box facilities to use in solving these types of problems.
 
 This paper proposes the `counting_scope` facility that would help us avoid the invalid behavior. With `counting_scope`,
 one might write safe code this way:
-```c++
+```cpp
 namespace ex = std::execution;
 
 struct work_context;
@@ -151,10 +154,6 @@ int main() {
     // `ctx` and `my_pool` are destroyed *after* they are no longer referenced
 }
 ```
-
-The newly introduced `counting_scope_resource` object allows us to attach the dynamic work we are spawning to the
-enclosing `use_resources` _see_ [@P2849R0]. This structure ensures that the `static_thread_pool` and `work_context`
-destruct after the spawned _`async-function`_ s complete.
 
 Simplifying the above into something that fits in a Tony Table to highlight the differences gives us:
 
@@ -219,8 +218,8 @@ The `start_detached` sender algorithm fails this principle by behaving like a `G
 given work. Moreover, the lifetime of the work started by `start_detached` cannot be bound to the local context. This
 will prevent local reasoning, which will make the program harder to understand.
 
-To properly structure our concurrency, we need an abstraction that ensures that all the _`async-function`_ s being
-spawned are attached to an enclosing _`async-function`_. This is the goal of `counting_scope`.
+To properly structure our concurrency, we need an abstraction that ensures that all async work that is spawned has a
+defined, observable, and controllable lifetime. This is the goal of `counting_scope`.
 
 ## `counting_scope` may increase consensus for P2300
 
@@ -236,7 +235,7 @@ Examples of use
 
 Use a `counting_scope` in combination with a `system_context` from [@P2079R2] to spawn work from within a task and join
 it later:
-```c++
+```cpp
 namespace ex = std::execution;
 
 int main() {
@@ -272,9 +271,9 @@ int main() {
 ## Starting work nested within a framework
 
 In this example we use the `counting_scope` within a class to start work when the object receives a message and to wait
-for that work to complete before closing. `my_window::start()` starts the sender using storage reserved in `my_window`
-for this purpose.
-```c++
+for that work to complete before closing.
+
+```cpp
 namespace ex = std::execution;
 
 struct my_window {
@@ -319,7 +318,7 @@ construction of a non-moveable object in the `let_value_with` algorithm's _`oper
 launches 100 tasks that concurrently run on some scheduler provided to `foo`, through its connected receiver, and then
 the tasks are asynchronously joined. This structure emulates how we might build a parallel algorithm where each
 `some_work` might be operating on a fragment of data.
-```c++
+```cpp
 namespace ex = std::execution;
 
 ex::sender auto some_work(int work_index);
@@ -350,7 +349,7 @@ listening activity is bound in the scope of the loop, the lifetime of handling r
 loop. We use `counting_scope` to limit the lifetime of the request handling without blocking the acceptance of new
 requests.
 
-```c++
+```cpp
 namespace ex = std::execution;
 
 task<size_t> listener(int port, io_context& ctx, static_thread_pool& pool) {
@@ -452,6 +451,7 @@ struct counting_scope {
     counting_scope() noexcept;
     ~counting_scope();
 
+    // counting_scope is immovable and uncopyable
     counting_scope(const counting_scope&) = delete;
     counting_scope(counting_scope&&) = delete;
     counting_scope& operator=(const counting_scope&) = delete;
@@ -481,7 +481,7 @@ struct counting_scope {
 
 ## `execution::nest`
 
-```c++
+```cpp
 template <sender Sender>
 auto nest(Sender&& snd, auto&& scope) noexcept(noexcept(scope.nest(std::forward<Sender>(snd)))
     -> decltype(scope.nest(std::forward<Sender>(snd)));
@@ -505,7 +505,7 @@ When `nest()` returns an unassociated sender:
 
  - the input sender is discarded and will never be connected or started;
  - the unassociated sender is multi-shot; and
- - the unassociated sender may only complete with `set_stopped()`.
+ - the unassociated sender must only complete with `set_stopped()`.
 
 
 ## `execution::async_scope`
@@ -527,7 +527,7 @@ the means by which senders are submitted as the subjects of such a policy so any
 
 ## `execution::spawn()`
 
-```c++
+```cpp
 namespace { // @@_exposition-only_@@
 
 template <class Env>
@@ -576,7 +576,7 @@ is a very useful pattern in this context.
 _NOTE:_ A query for non-blocking start will allow `spawn()` to be constrained to require non-blocking start.
 
 Usage example:
-```c++
+```cpp
 ...
 for (int i = 0; i < 100; i++)
     spawn(s, on(sched, some_work(i)));
@@ -585,7 +585,7 @@ for (int i = 0; i < 100; i++)
 
 ## `execution::spawn_future()`
 
-```c++
+```cpp
 namespace { // @@_exposition-only_@@
 
 template <class Env>
@@ -650,7 +650,7 @@ resolve this race.
 Cancelling the returned sender requests cancellation of the given sender, `snd`, but does not affect any other senders.
 
 Usage example:
-```c++
+```cpp
 ...
 sender auto snd = spawn_future(on(sched, key_work()), scope) | then(continue_fun);
 for (int i = 0; i < 10; i++)
@@ -721,8 +721,8 @@ sender is an unassociated sender that behaves as if it were the result of a fail
 
 While a scope is closed or joined, calls to `nest(snd, scope)` will always fail by discarding the given sender and
 returning an unassociated _`nest-sender`_. Failed calls to `nest()` do not change the scope's count. Unassociated
-_`nest-senders`_ do not have a reference to the scope they came from and always complete with `set_stopped` when
-connected and started. Copying or moving an unassociated sender produces another unassociated sender.
+_`nest-senders`_ do not have a reference to the scope they came from and always complete with `stopped` when connected
+and started. Copying or moving an unassociated sender produces another unassociated sender.
 
 The state transitions of a `counting_scope` mean that it can be used to protect asynchronous work from use-after-free
 errors. Given a resource, `res`, and a `counting_scope`, `scope`, obeying the following policy is enough to ensure that
@@ -800,7 +800,7 @@ As `nest()` does not immediately start the given work, it is ok to pass in block
 destructor would unconditionally invoke `std::terminate()` as there would be no way to move it into the joined state.
 
 Usage example:
-```c++
+```cpp
 ...
 sender auto snd = s.nest(key_work());
 for (int i = 0; i < 10; i++)
@@ -890,7 +890,7 @@ Essentially it does the same thing, but it can also attach the spawned sender to
 This paper doesn't support the pipe operator to be used in conjunction with `spawn()` and `spawn_future()`.  One might
 think that it is useful to write code like the following:
 
-```c++
+```cpp
 std::move(snd1) | spawn(s); // returns void
 sender auto snd3 = std::move(snd2) | spawn_future(s) | then(...);
 ```
@@ -1154,7 +1154,7 @@ Specification
 
 ## Synopsis
 
-```c++
+```cpp
 namespace std::execution {
 
 namespace { // @@_exposition-only_@@
@@ -1229,7 +1229,7 @@ struct counting_scope {
 
 ## `execution::nest`
 
-```c++
+```cpp
 sender auto nest(sender auto&& sender, auto&& scope) noexcept(/* TODO */);
 ```
 
