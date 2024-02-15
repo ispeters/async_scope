@@ -269,30 +269,43 @@ int main() {
 
 ## Starting work nested within a framework
 
-TODO: the idea behind this example is a good one, but the example itself is incomplete.
-
 In this example we use the `counting_scope` within a class to start work when the object receives a message and to wait
 for that work to complete before closing. `my_window::start()` starts the sender using storage reserved in `my_window`
 for this purpose.
 ```c++
 namespace ex = std::execution;
 
-// …
-class my_window {
-  // …
+struct my_window {
+    class close_message {};
 
-  ex::system_scheduler sch;
-  ex::counting_scope scope{};
+    ex::sender auto some_work(int message);
+
+    ex::sender auto some_work(close_message message);
+
+    void onMessage(int i) {
+        ++count;
+        ex::spawn(scope, ex::on(sch, some_work(i)));
+    }
+
+    void onClickClose() {
+        ++count;
+        ex::spawn(scope, ex::on(sch, some_work(close_message{})));
+    }
+
+    ex::system_scheduler sch;
+    ex::counting_scope& scope;
+    int count{0};
 };
 
-ex::sender auto some_work(int id);
-
-void my_window::onMyMessage(int i) {
-  ex::spawn(this->scope, on(this->sch, some_work(i)));
-}
-
-void my_window::onClickClose() {
-  this->post(close_message{});
+int main() {
+    // keep track of all spawned work
+    ex::counting_scope scope;
+    ex::system_context ctx;
+    my_window window{ctx.get_scheduler(), scope};
+    // wait for all work nested within scope to finish
+    this_thread::sync_wait(scope.join());
+    // all resources are now safe to destroy
+    return window.count;
 }
 ```
 
