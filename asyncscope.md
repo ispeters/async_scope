@@ -1,20 +1,24 @@
 ---
 title: "`async_scope` -- Creating scopes for non-sequential concurrency"
 subtitle: "Draft Proposal"
-document: D2519R0
+document: D3149R0
 date: today
 audience:
   - "SG1 Parallelism and Concurrency"
   - "LEWG Library Evolution"
 author:
+  - name: Ian Petersen
+    email: <ispeters@meta.com>
+  - name: Ján Ondrušek
+    email: <ondrusek@meta.com>
+  - name: Jessica Wong
+    email: <jesswong@meta.com>
   - name: Kirk Shoop
     email: <kirk.shoop@gmail.com>
   - name: Lee Howes
     email: <lwh@fb.com>
   - name: Lucian Radu Teodorescu
     email: <lucteo@lucteo.ro>
-  - name: Ian Petersen
-    email: <ispeters@meta.com>
 toc: true
 ---
 
