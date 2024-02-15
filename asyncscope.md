@@ -68,8 +68,10 @@ implementation of an earlier version of the _Sender/Receiver_ model proposed in 
 although experience with the v1 design led to the creation of [@asyncscopeunifexv2], which has a smaller interface and
 only one responsibility.
 
-Note to self: this seems like an opportunity to talk about progressively structuring concurrent C++ within Meta, but
-that needs legal clearance.
+TODO: we have some implementation experience to share regarding our efforts to progressively add structure to an
+existing library at Meta that needs legal review before it can be made public and the review won't be complete before
+the mailing deadline. We'll include the experience in another revision, which we expect to be ready before the Tokyo
+meeting.
 
 Motivation
 ==========
