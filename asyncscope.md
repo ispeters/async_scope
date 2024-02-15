@@ -781,12 +781,22 @@ returns a _`nest-sender`_.
 If the atomic increment succeeded then the return value will be an associated _`nest-sender`_ that contains a reference
 to `this` (the associated scope) and a copy of the input sender, `s`, that is copy- or move-constructed from `s`. If
 this copy or move throws then, before the exception is allowed to escape to the caller, the atomic increment needs to be
-undone to provide the strong exception guarantee; if decrementing the count brings the outstanding count to zero *and*
-the scope has transitioned to the closed/joining state then there is a started _`join-sender`_ that needs to be notified
-that it can complete.
+undone with a decrement to provide the strong exception guarantee.
 
 If the atomic increment failed then the return value will be an unassociated _`nest-sender`_ and no exceptions are
 possible. In this case, the return value does not store a reference to `this` and the given sender, `s`, is discarded.
+
+An associated _`nest-sender`_ is a kind of RAII handle to the scope; it is responsible for decrementing the scope's
+count of outstanding senders in its destructor unless that responsibility is first given to some other object.
+Move-construction and move-assignment transfer the decrement responsibility to the destination instance. Connecting an
+instance to a receiver transfers the decrement responsibility to the resulting _`operation-state`_, which must meet the
+responsibility when the operation completes or is destroyed, whichever comes first (note: if the _`operation-state`_
+is started, then the decrement should happen *after* invoking a completion method on its receiver to ensure that any
+reference produced by the nested sender is not dangling at the time of invocation). Whenever the balancing decrement
+happens (including if it happens as a side effect of allowing an exception to escape from `nest()`), it's possible that
+the scope has transitioned to the closed/joining state since the _`nest-sender`_ was constructed, which means that there
+is a _`join-sender`_ waiting to complete so, if the decrement brings the count of outstanding senders to zero then the
+waiting _`join-sender`_ needs to be notified that the scope is now joined and the sender can complete.
 
 A call to `nest()` does not start the given sender. A call to `nest()` is not expected to incur allocations other than
 whatever might be required to move or copy `s`.
@@ -816,16 +826,26 @@ struct @@_join-sender_@@; // @@_exposition-only_@@
 [[nodiscard]] @@_join-sender_@@ join() noexcept;
 ```
 
+Returns a _`join-sender`_. When the _`join-sender`_ is connected to a receiver, `r`, it produces an
+_`operation-state`_, `o`. When `o` is started, the scope moves from the open state to the closed/joining state. `o`
+completes with `set_value()` when the scope moves from the closed/joining state to the closed state, which happens when
+the scope's count of outstanding senders drops to zero. `o` may complete synchronously if it happens to observe that the
+count of outstanding senders is already zero when started; otherwise, `o` completes on the execution context it was
+started on by asking its receiver, `r`, for a scheduler, `sch`, with `get_scheduler(get_env(r))` and then starting the
+sender returned from `schedule(sch)`.
+
 ### `counting_scope::joined()`
 
 ```cpp
 [[nodiscard]] bool joined() const noexcept;
 ```
 
-Returns `true` if the scope is in the joined state (i.e. a _`join-sender`_ returned from `join()` has been connected,
-started, and completed, which implies that the count of outstanding senders has dropped to zero).
+Returns `true` if the scope is in the joined state (i.e. a _`join-sender`_ returned from `join()` has been connected and
+started, and the count of outstanding senders has dropped to zero).
 
 `joined()` returning `true` implies that `join_started()` will also return `true` and `use_count()` will return `0`.
+
+`joined()` must not introduce data races but need not synchronize with anything.
 
 _Note:_ if `joined()` returns `true` then it will never again return `false` however, it's possible for a return of
 `false` to be stale by the time it is observed since another thread of execution may be racing to complete a waiting
@@ -840,6 +860,8 @@ _`join-sender`_.
 Returns `true` if the scope is in the closed/joining state or the joined state (i.e. returns `true` if a _`join-sender`_
 has been connected and started) and `false` otherwise.
 
+`join_started()` must not introduce data races but need not synchronize with anything.
+
 _Note:_ if `join_started()` returns `true` then it will never again return `false` however, it's possible for a return
 of `false` to be stale by the time it is observed since another thread of execution may be racing to start a
 _`join-sender`_.
@@ -851,6 +873,8 @@ _`join-sender`_.
 ```
 
 Returns the number of senders that have been associated with this scope that have not yet completed.
+
+`use_count()` must not introduce data races but need not synchronize with anything.
 
 _Note:_ it is likely that the return value is stale by the time it's observed since another thread of execution may be
 racing to nest a new sender or complete an old one.
