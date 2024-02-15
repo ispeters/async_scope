@@ -1,7 +1,6 @@
 ---
 title: "`async_scope` -- Creating scopes for non-sequential concurrency"
-subtitle: "Draft Proposal"
-document: D3149R0
+document: P3149R0
 date: today
 audience:
   - "SG1 Parallelism and Concurrency"
@@ -143,8 +142,9 @@ int main() {
         ex::sender auto snd = ex::transfer_just(my_pool.get_scheduler(), item) |
                               ex::then([&](work_item* item) { do_work(ctx, item); });
 
-        // start `snd` as before, but associate the spawned work with `scope` so that it can be
-        // awaited before destroying the resources referenced by the work (i.e. `my_pool` and `ctx`)
+        // start `snd` as before, but associate the spawned work with `scope` so that it can
+        // be awaited before destroying the resources referenced by the work (i.e. `my_pool`
+        // and `ctx`)
         ex::spawn(std::move(snd), scope); // NEW!
     }
 
@@ -174,7 +174,8 @@ int main() {
   // fire and forget
   ex::start_detached(std::move(snd));
 
-  // `ctx` is destroyed, perhaps before `snd` is done
+  // `ctx` is destroyed, perhaps before
+  // `snd` is done
 }
 ```
 
@@ -194,10 +195,12 @@ int main() {
   // fire, but don't forget
   ex::spawn(std::move(snd), scope);
 
-  // wait for all work nested within scope to finish
+  // wait for all work nested within scope
+  // to finish
   this_thread::sync_wait(scope.join());
 
-  // `ctx` is destroyed once nothing references it
+  // `ctx` is destroyed once nothing
+  // references it
 }
 ```
 
@@ -365,7 +368,9 @@ task<size_t> listener(int port, io_context& ctx, static_thread_pool& pool) {
         // Create work to handle the connection in the scope of `work_scope`
         conn_data data{std::move(conn), ctx, pool};
         ex::sender auto snd = ex::just(std::move(data)) |
-                              ex::let_value([](auto& data) { return handle_connection(data); });
+                              ex::let_value([](auto& data) {
+                                return handle_connection(data);
+                              });
         ex::spawn(scope, std::move(snd));
     }
 
@@ -430,7 +435,8 @@ using @@_future-sender-t_@@ = // @@_exposition-only_@@
 }
 
 template <sender Sender>
-auto nest(Sender&& snd, auto&& scope) noexcept(noexcept(scope.nest(std::forward<Sender>(snd)))
+auto nest(Sender&& snd, auto&& scope)
+    noexcept(noexcept(scope.nest(std::forward<Sender>(snd)))
     -> decltype(scope.nest(std::forward<Sender>(snd)));
 
 template <class Scope, class Sender>
@@ -468,8 +474,9 @@ struct counting_scope {
 
     [[nodiscard]] @@_join-sender_@@ join() noexcept;
 
-    // observers in the spirit of std::weak_ptr<T>::expired() and std::shared_ptr<T>::use_count();
-    // the values must be correct when computed but may be stale by the time they can be observed
+    // observers in the spirit of std::weak_ptr<T>::expired() and
+    // std::shared_ptr<T>::use_count(); the values must be correct
+    // when computed but may be stale by the time they can be observed
 
     [[nodiscard]] bool joined() const noexcept;
 
@@ -681,8 +688,9 @@ struct counting_scope {
 
     [[nodiscard]] @@_join-sender_@@ join() noexcept;
 
-    // observers in the spirit of std::weak_ptr<T>::expired() and std::shared_ptr<T>::use_count();
-    // the values must be correct when computed but may be stale by the time they can be observed
+    // observers in the spirit of std::weak_ptr<T>::expired() and
+    // std::shared_ptr<T>::use_count(); the values must be correct
+    // when computed but may be stale by the time they can be observed
 
     [[nodiscard]] bool joined() const noexcept;
 
