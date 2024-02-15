@@ -925,7 +925,7 @@ whether that the work completed with success or by being stopped. As it is assum
 result of an explicit choice, it makes sense to allow senders that can terminate with `set_stopped()`.
 
 The alternative would require transforming the sender before passing it to spawn, something like
-`s.spawn(std::move(snd) | let_stopped([]{ return just(); ))`. This is considered boilerplate and not helpful, as the
+`s.spawn(std::move(snd) | let_stopped(just))`. This is considered boilerplate and not helpful, as the
 stopped scenarios should be implicit, and not require handling.
 
 > **Chosen:** `spawn()` accepts senders that complete with `set_stopped()`.
@@ -940,13 +940,17 @@ For example, the continuation can handle different types of values and errors.
 
 ## P2300's `start_detached()`
 
-The `spawn()` method in this paper can be used as a replacement for `start_detached` proposed in [@P2300R7].
-Essentially it does the same thing, but it can also attach the spawned sender to the enclosing _`async-function`_.
+The `spawn()` method in this paper can be used as a replacement for `start_detached` proposed in [@P2300R7]. Essentially
+it does the same thing, but it also provides the given scope the opportunity to apply its bookkeeping policy to the
+given sender, which, in the case of `counting_scope`, ensures the program can wait for spawned work to complete before
+destroying any resources references by that work.
 
 ## P2300's `ensure_started()`
 
 The `spawn_future()` method in this paper can be used as a replacement for `ensure_started` proposed in [@P2300R7].
-Essentially it does the same thing, but it can also attach the spawned sender to the enclosing _`async-function`_.
+Essentially it does the same thing, but it also provides the given scope the opportunity to apply its bookkeeping policy
+to the given sender, which, in the case of `counting_scope`, ensures the program can wait for spawned work to complete
+before destroying any resources references by that work.
 
 ## Supporting the pipe operator
 
@@ -963,43 +967,11 @@ In [@P2300R7] sender consumers do not have support for the pipe operator. As `sp
 support the pipe operator for `spawn()`.
 
 On the other hand, `spawn_future()` is not a sender consumer, thus we might have considered adding pipe operator to it.
-To keep consistency with `spawn()`, at this point the paper doesn't support pipe operator for `spawn_future()`.
 
-If `spawn_future()` was an algorithm and the `spawn_future()` method was removed from `counting_scope`, then the pipe
-operator would be a natural and obvious fit.
+On the third hand, Unifex supports the pipe operator for both of its equivalent algorithms (`unifex::spawn_detached()`
+and `unifex::spawn_future()`) and Unifex users have not been confused by this choice.
 
-Q & A
-=====
-
-## Why does the `counting_scope` after all nested and spawned sender complete?
-
-- `stop_callback` is not a destructor because:
-  - `request_stop()` is **asking** for early completion.
-  - `request_stop()` does not end the lifetime of the operation, `set_value()`, `set_error()` and `set_stopped()` end
-    the lifetime -- those are the destructors for an operation.
-  - `request_stop()` might result in completion with `set_stopped()`, but `set_value()` and `set_error()` are equally
-    valid.
-
-`request_stop()` should not be called from a destructor because:
-If a sync context intends to ask for early completion of an async operation, then it needs to wait for that operation
-to actually complete before continuing (`set_value()`, `set_error()` and `set_stopped()` are the destructors for the
-async operation), and sync destructors must not block.
-
-Principles that discourage blocking in the destructor:
-
-- Blocking must be explicit (exiting a sync scope is implicit -- and `shared_ptr` makes it even more scary as the
-  destructor will potentially run at a different callstack and executino resource each time).
-- Blocking must be grepable.
-- Blocking must be rare.
-- Blocking must be composable.
-- Blocking is like `reinterpret_cast<>` -- the name should be long and scary.
-- `join()` is grepable and explicit, it is not rare, it is not composable (There is a separate blocking wait for each
-  object. One blocking wait for many different things to complete would be better)-- this is why _`async-resource`_ will
-  attach to the enclosing _`async-function`_.
-
-Every _`async-function`_ will join with non-blocking primitives and `sync_wait()` will be used to block some
-composition of those non-blocking primitives. The _`async-function`_ being stopped would complete before any
-_`async-resource`_ it is using completes -- without any blocking.
+To keep consistency with `spawn()` this paper doesn't support pipe operator for `spawn_future()`.
 
 Naming
 ======
