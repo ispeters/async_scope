@@ -81,10 +81,11 @@ We decided to adopt Unifex and refactor towards a more structured architecture t
 :::cmptable
 ### Before
 ```cpp
-// Abstraction for thread that has the ability to execute units of work.
+// Abstraction for thread that has the ability
+// to execute units of work.
 class Executor {
  public:
-  virtual void add(Func function)    noexcept = 0;
+  virtual void add(Func function) noexcept = 0;
 };
 
 // Example class
@@ -103,7 +104,8 @@ class Foo {
 
 ### After
 ```cpp
-// Utility class for executing async work on an async_scope and on the provided executor
+// Utility class for executing async work on an 
+// async_scope and on the provided executor
 class ExecutorAsyncScopePair {
   unifex::v1::async_scope scope_;
   ExecutorScheduler exec_
