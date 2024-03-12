@@ -44,7 +44,7 @@ under- or unaddressed:
 
 This paper describes the utilities needed to address the above scenarios within the following constraints:
 
-- _No detached work by default;_ as specified in P2300R7, the `start_detached` and `ensure_started` algorithms invite
+- _No detached work by default;_ as specified in [@P2300R7], the `start_detached` and `ensure_started` algorithms invite
   users to start concurrent work with no built-in way to know when that work has finished.
   - Such so-called "detached work" is undesirable; without a way to know when detached work is done, it is difficult
     know when it is safe to destroy any resources referred to by the work. Ad hoc solutions to this shutdown problem
@@ -81,7 +81,7 @@ to the increasing cost of debugging deadlocks and crashes resulting from race co
 
 We decided to adopt Unifex and refactor towards a more structured architecture to address these problems
 systematically. Converting an unstructured production codebase to a structured one is such a large project that it
-needs to be done in phases. As we began to convert callbacks to sender/tasks, we quickly realized that we needed a safe
+needs to be done in phases. As we began to convert callbacks to senders/tasks, we quickly realized that we needed a safe
 place to start structured asynchronous work in an unstructured environment. We addressed this need with
 `unifex::v1::async_scope` paired with an executor to address a recurring pattern:
 
@@ -167,7 +167,7 @@ an obstacle that engineers didn’t want to deal with.
 Over time, we also found redundancies in the way `v1::async_scope` and other algorithms were implemented and identified
 other use cases that could benefit from a different kind of async scope. This motivated us to create `v2::async_scope`
 which only has one responsibility (scope), and `nest` which helped us improve maintainability and flexibility of
-unifex.
+Unifex.
 
 The unstructured nature of `cleanup()`/`complete()` in a partially structured codebase introduced deadlocks when
 engineers nested the `cleanup()`/`complete()` sender in the scope being joined. This risk of deadlock remains with
@@ -330,13 +330,6 @@ will prevent local reasoning, which will make the program harder to understand.
 
 To properly structure our concurrency, we need an abstraction that ensures that all async work that is spawned has a
 defined, observable, and controllable lifetime. This is the goal of `counting_scope`.
-
-## `counting_scope` may increase consensus for P2300
-
-Although [@P2300R7] is generally considered a strong improvement on concurrency in C++, various people voted against
-introducing this into the C++ standard.
-
-This paper is intended to increase consensus for [@P2300R7].
 
 Examples of use
 ===============
@@ -849,8 +842,23 @@ there are no attempts to use `res` after its lifetime ends:
 Under the standard assumption that the arguments to `nest()` are and remain valid while evaluating `nest()`, it is
 always safe to invoke any supported operation on the returned _`nest-sender`_. Furthermore, if all senders returned from
 `nest()` are eventually started or discarded then the `join()` operation always eventually finishes because the number
-of outstanding senders nested within the corresponding scope is monotonically decreasing. Conversely, "leaking" a
-_`nest-sender`_ will cause the `join()` operation to deadlock.
+of outstanding senders nested within the corresponding scope is monotonically decreasing. Conversely, the `join()`
+operation will never terminate if there are any associated _`nest-senders`_ that never become "done with the scope"
+(i.e. that remain either unconnected or unstarted until after the `join()` is expected to complete). For example:
+
+```cpp
+void deadlock() {
+    namespace ex = std::execution;
+
+    ex::counting_scope scope;
+
+    ex::sender auto s = ex::nest(ex::just(), scope);
+
+    // never completes because s's continued existence keeps the scope open
+    std::this_thread::sync_wait(scope.join());
+}
+```
+
 
 The risk of deadlock is explicitly preferred in this design over the risk of use-after-free errors because
 `counting_scope` is an async scope that is biased towards being used to progressively add structure to
