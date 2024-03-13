@@ -1,6 +1,6 @@
 ---
 title: "`async_scope` -- Creating scopes for non-sequential concurrency"
-document: D3149R1
+document: P3149R1
 date: today
 audience:
   - "SG1 Parallelism and Concurrency"
@@ -27,10 +27,11 @@ Changes
 ## R1
 
 - Add implementation experience
+- Incorporate pre-meeting feedback from Eric Niebler
 
 ## R0
 
-- first revision
+- First revision
 
 Introduction
 ============
@@ -658,15 +659,19 @@ void spawn(Sender&& snd, Scope&& scope, Env env = {});
 Invokes `nest(std::forward<Sender>(snd), std::forward<Scope>(scope))` to associate the given sender with the given scope
 and then eagerly starts the resulting sender.
 
-Starting the nested sender involves a dynamic allocation of the sender's _`operation-state`_. If the given environment,
-`env`, provides an _Allocator_ by responding to `get_allocator(env)` then the resulting _Allocator_ is used to allocate
-the _`operation-state`_; otherwise, the allocation is done with a `std::allocator<>`. The _`operation-state`_ is
-constructed by connecting the nested sender to a _`spawn-receiver`_. The _`operation-state`_ is destroyed and
-deallocated after the spawned sender completes.
+Starting the nested sender involves a dynamic allocation of the sender's _`operation-state`_. The following algorithm
+determines which _Allocator_ to use for this allocation:
+
+ - If `get_allocator(env)` is valid and returns an _Allocator_ then choose that _Allocator_.
+ - Otherwise, if `get_allocator(get_env(snd))` is valid and returns an _Allocator_ then choose that _Allocator_.
+ - Otherwise, choose `std::allocator<>`.
+
+The _`operation-state`_ is constructed by connecting the nested sender to a _`spawn-receiver`_. The _`operation-state`_
+is destroyed and deallocated after the spawned sender completes.
 
 A _`spawn-receiver`_, `sr`, responds to `get_env(sr)` with an instance of a `@@_spawn-env_@@<Env>`, `senv`. The result
 of `get_allocator(senv)` is a copy of the _Allocator_ used to allocate the _`operation-state`_. For all other queries,
-`Q`, the result of `Q(fenv)` is `Q(env)`.
+`Q`, the result of `Q(senv)` is `Q(env)`.
 
 This is similar to `start_detached()` from [@P2300R7], but the scope may observe and participate in the lifecycle of the
 work described by the sender. The `counting_scope` described in this paper uses this opportunity to keep a count of
@@ -717,7 +722,8 @@ sender.
 
 Similar to `spawn()`, starting the nested sender involves a dynamic allocation of some state. `spawn_future()` chooses
 an _Allocator_ for this allocation in the same way `spawn()` does: use the result of `get_allocator(env)` if that is a
-valid expression, otherwise use a `std::allocator<>`.
+valid expression, otherwise use the result of `get_allocator(get_env(snd))` if that is a valid expression, otherwise use
+a `std::allocator<>`.
 
 Unlike `spawn()`, the dynamically allocated state contains more than just an _`operation-state`_ for the nested sender;
 the state must also contain storage for the result of the nested sender, however it eventually completes, and
@@ -869,7 +875,8 @@ particular object's lifetime. So, although it is generally easier to diagnose us
 diagnose deadlocks, we've found that it's easier to *avoid* deadlocks with this design than it is to avoid
 use-after-free errors with other designs.
 
-A `counting_scope` is uncopyable and immovable so its copy and move operators are explicitly deleted.
+A `counting_scope` is uncopyable and immovable so its copy and move operators are explicitly deleted. `counting_scope`
+could be made movable but it would cost an allocation so this is not proposed.
 
 ### `counting_scope::counting_scope()`
 
@@ -955,7 +962,9 @@ completes with `set_value()` when the scope moves from the closed/joining state 
 the scope's count of outstanding senders drops to zero. `o` may complete synchronously if it happens to observe that the
 count of outstanding senders is already zero when started; otherwise, `o` completes on the execution context it was
 started on by asking its receiver, `r`, for a scheduler, `sch`, with `get_scheduler(get_env(r))` and then starting the
-sender returned from `schedule(sch)`.
+sender returned from `schedule(sch)`. This requirement to complete on the receiver's scheduler restricts which receivers
+a _`join-sender`_ may be connected to in exchange for determinism; the alternative would have the _`join-sender`_
+completing on the execution context of whichever nested operation happens to be the last one to complete.
 
 ### `counting_scope::joined()`
 
