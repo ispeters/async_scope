@@ -24,6 +24,13 @@ toc: true
 Changes
 =======
 
+## R2
+- Remove counting_scope::joined(), counting_scope::join_started(), and counting_scope::use_count() on advice of SG1 straw poll: 
+:::cmptable
+### SF ### F ### N ### A ### SA
+    ?      ?     2     0     1
+::::
+
 ## R1
 
 - Add implementation experience
@@ -574,16 +581,6 @@ struct counting_scope {
     struct @@_join-sender_@@; // @@_exposition-only_@@
 
     [[nodiscard]] @@_join-sender_@@ join() noexcept;
-
-    // observers in the spirit of std::weak_ptr<T>::expired() and
-    // std::shared_ptr<T>::use_count(); the values must be correct
-    // when computed but may be stale by the time they can be observed
-
-    [[nodiscard]] bool joined() const noexcept;
-
-    [[nodiscard]] bool join_started() const noexcept;
-
-    [[nodiscard]] size_t use_count() const noexcept;
 };
 ```
 
@@ -793,16 +790,6 @@ struct counting_scope {
     struct @@_join-sender_@@; // @@_exposition-only_@@
 
     [[nodiscard]] @@_join-sender_@@ join() noexcept;
-
-    // observers in the spirit of std::weak_ptr<T>::expired() and
-    // std::shared_ptr<T>::use_count(); the values must be correct
-    // when computed but may be stale by the time they can be observed
-
-    [[nodiscard]] bool joined() const noexcept;
-
-    [[nodiscard]] bool join_started() const noexcept;
-
-    [[nodiscard]] size_t use_count() const noexcept;
 };
 ```
 
@@ -965,51 +952,6 @@ started on by asking its receiver, `r`, for a scheduler, `sch`, with `get_schedu
 sender returned from `schedule(sch)`. This requirement to complete on the receiver's scheduler restricts which receivers
 a _`join-sender`_ may be connected to in exchange for determinism; the alternative would have the _`join-sender`_
 completing on the execution context of whichever nested operation happens to be the last one to complete.
-
-### `counting_scope::joined()`
-
-```cpp
-[[nodiscard]] bool joined() const noexcept;
-```
-
-Returns `true` if the scope is in the joined state (i.e. a _`join-sender`_ returned from `join()` has been connected and
-started, and the count of outstanding senders has dropped to zero).
-
-`joined()` returning `true` implies that `join_started()` will also return `true` and `use_count()` will return `0`.
-
-`joined()` must not introduce data races but need not synchronize with anything.
-
-_Note:_ if `joined()` returns `true` then it will never again return `false` however, it's possible for a return of
-`false` to be stale by the time it is observed since another thread of execution may be racing to complete a waiting
-_`join-sender`_.
-
-### `counting_scope::join_started()`
-
-```cpp
-[[nodiscard]] bool join_started() const noexcept;
-```
-
-Returns `true` if the scope is in the closed/joining state or the joined state (i.e. returns `true` if a _`join-sender`_
-has been connected and started) and `false` otherwise.
-
-`join_started()` must not introduce data races but need not synchronize with anything.
-
-_Note:_ if `join_started()` returns `true` then it will never again return `false` however, it's possible for a return
-of `false` to be stale by the time it is observed since another thread of execution may be racing to start a
-_`join-sender`_.
-
-### `counting_scope::use_count()`
-
-```cpp
-[[nodiscard]] size_t use_count() const noexcept;
-```
-
-Returns the number of senders that have been associated with this scope that have not yet completed.
-
-`use_count()` must not introduce data races but need not synchronize with anything.
-
-_Note:_ it is likely that the return value is stale by the time it's observed since another thread of execution may be
-racing to nest a new sender or complete an old one.
 
 Design considerations
 =====================
@@ -1186,41 +1128,6 @@ less-than-ideal in C++, and there is some real risk that users will write deadlo
 should have a name that conveys danger.
 
 alternatives: `complete()`, `close()`
-
-### `counting_scope::joined()`
-
-This method starts returning `true` once the _`join-sender`_ completes and it means "`join()` was called and its work
-has finished". The name should be the past participle of whichever verb is chosen for `join()` (e.g. `completed()` or
-`closed()`).
-
-The result of `joined()` may be stale before it can be observed, like `std::weak_ptr<>::expired()`, so users may find
-the name more obvious if it communicated this staleness.
-
-alternatives: `completed()`, `closed()`
-
-### `counting_scope::join_started()`
-
-This method starts returning `true` once the _`join-sender`_ has been started and it means that the scope will no longer
-permit new senders to be associated with it via calls to `nest()`. The name was chosen for its directness:
-`join_started()` is true when the `join()` operation has started.
-
-Like `join()`, the result may be stale before it can be observed.
-
-alternatives: `joining()`, `closing()`, `completing()`
-
-### `counting_scope::use_count()`
-
-This method returns the scope's count of outstanding senders (i.e. the number of senders that have been associated with
-the scope via calls to `nest()` and that haven't been discarded or completed, yet).
-
-Like `join()` and `join_started()`, the result may be stale before it can be observed. Unlike those two methods, there
-isn't a simple rule like "once it hits zero it stays there" since new work may always be added to the scope so long as
-the _`join-sender`_ hasn't been started.
-
-The name was chosen by analogy with `std::shared_ptr<>::use_count()`; both represent reference counts that may be
-immediately stale and for which the 1 -> 0 transition is significant.
-
-alternatives: `outstanding_senders()`
 
 Acknowledgements
 ================
