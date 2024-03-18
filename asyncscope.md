@@ -25,11 +25,13 @@ Changes
 =======
 
 ## R2
-- Remove counting_scope::joined(), counting_scope::join_started(), and counting_scope::use_count() on advice of SG1 straw poll: 
-:::cmptable
-### SF ### F ### N ### A ### SA
-    ?      ?     2     0     1
-::::
+- Remove `counting_scope::joined()`, `counting_scope::join_started()`, and `counting_scope::use_count()` on advice of SG1 straw poll: 
+
++---+---+---+---+---+
+|SF |F  |N  |A  |SA |
++==:+==:+==:+==:+==:+
+|10 |14 |2  |0  |1  |
++---+---+---+---+---+
 
 ## R1
 
