@@ -1,6 +1,6 @@
 ---
 title: "`async_scope` -- Creating scopes for non-sequential concurrency"
-document: P3149R1
+document: D3149R2
 date: today
 audience:
   - "SG1 Parallelism and Concurrency"
