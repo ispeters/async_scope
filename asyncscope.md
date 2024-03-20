@@ -909,13 +909,21 @@ An associated _`nest-sender`_ is a kind of RAII handle to the scope; it is respo
 count of outstanding senders in its destructor unless that responsibility is first given to some other object.
 Move-construction and move-assignment transfer the decrement responsibility to the destination instance. Connecting an
 instance to a receiver transfers the decrement responsibility to the resulting _`operation-state`_, which must meet the
-responsibility when the operation completes or is destroyed, whichever comes first (note: if the _`operation-state`_
-is started, then the decrement should happen *after* invoking a completion method on its receiver to ensure that any
-reference produced by the nested sender is not dangling at the time of invocation). Whenever the balancing decrement
-happens (including if it happens as a side effect of allowing an exception to escape from `nest()`), it's possible that
-the scope has transitioned to the closed/joining state since the _`nest-sender`_ was constructed, which means that there
-is a _`join-sender`_ waiting to complete so, if the decrement brings the count of outstanding senders to zero then the
-waiting _`join-sender`_ needs to be notified that the scope is now joined and the sender can complete.
+responsibility when it destroys its "child operation" (i.e. the _`operation-state`_ constructed when connecting the
+sender, `s`, that was originally passed to `nest()`); it's expected that the child operation will be destroyed as a side
+effect of the _`nest-sender`_'s _`operation-state`_'s destructor.
+
+Note: the timing of when to decrement the scope's count is chosen to avoid exposing user code to dangling references.
+Decrementing the scope's count may move the scope from the closed/joining state to the joined state, which would allow
+the waiting _`join-sender`_ to complete, potentially leading to the destruction of a resource protected by the scope. In
+general, it's possible that the _`nest-sender`_'s receiver or the child operation's destructor may dereference pointers
+to the protected resource so their execution must be completed before the scope moves to the joined state.
+
+Whenever the balancing decrement happens (including if it happens as a side effect of allowing an exception to escape
+from `nest()`), it's possible that the scope has transitioned to the closed/joining state since the _`nest-sender`_ was
+constructed, which means that there is a _`join-sender`_ waiting to complete so, if the decrement brings the count of
+outstanding senders to zero then the waiting _`join-sender`_ needs to be notified that the scope is now joined and the
+sender can complete.
 
 A call to `nest()` does not start the given sender. A call to `nest()` is not expected to incur allocations other than
 whatever might be required to move or copy `s`.
