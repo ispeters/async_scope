@@ -25,6 +25,7 @@ Changes
 =======
 
 ## R2
+- Add a fourth state to counting_scope so that it can be used as a data-member safely
 - Update `counting_scope::nest()` to explain when the scope's count of outstanding senders is decremented and remove `counting_scope::joined()`, `counting_scope::join_started()`, and `counting_scope::use_count()` on advice of SG1 straw poll:
  
 forward P3149R1 to LEWG for inclusion in C++26 after P2300 is included in C++26, with notes:
@@ -806,24 +807,28 @@ struct counting_scope {
 };
 ```
 
-A `counting_scope` goes through three states during its lifetime:
+A `counting_scope` goes through four states during its lifetime:
 
 1. open
-2. closed/joining
-3. joined
+2. unused/used
+3. closed/joining
+4. joined
 
-Instances start in the open state after being constructed. Connecting and starting a _`join-sender`_ returned from
-`join()` transitions the scope to the closed/joining state. Merely calling `join()` or connecting the _`join-sender`_
-does not change the scope's state---the _`operation-state`_ must be started to close the scope. The scope transitions
-from the closed/joining state to the joined state when the _`join-sender`_ completes. A scope must be in the joined
-state when its destructor starts; otherwise, the destructor invokes `std::terminate()`.
+Instances start in the open and unused state after being constructed. This is the only time the scope's state can be 
+set to unused. Connecting and starting a _`join-sender`_ returned from `join()` transitions the scope to the closed/joining 
+state. Merely calling `join()` or connecting the _`join-sender`_ does not change the scope's state---the _`operation-state`_ 
+must be started to close the scope. The scope transitions from the closed/joining state to the joined state when the 
+_`join-sender`_ completes. A scope must be in the joined or unused state when its destructor starts; otherwise, the destructor 
+invokes `std::terminate()`. This will ensure that `counting_scope` can be used safely as a data-member type while preserving 
+structured functionality.
 
 While a scope is open, calls to `nest(snd, scope)` will succeed (unless an exception is thrown by `snd`'s copy- or
-move-constructor while constructing the _`nest-sender`_). Each time a call to `nest(snd, scope)` succeeds, two things
+move-constructor while constructing the _`nest-sender`_). Each time a call to `nest(snd, scope)` succeeds, three things
 happen:
 
-1. the scope's count of outstanding senders is incremented before `nest()` returns, and
-2. the given sender, `snd`, is wrapped in a _`nest-sender`_ and returned.
+1. the scope's unused/used state is transitioned to used,
+2. the scope's count of outstanding senders is incremented before `nest()` returns, and
+3. the given sender, `snd`, is wrapped in a _`nest-sender`_ and returned.
 
 When a call to `nest()` succeeds, the returned _`nest-sender`_ is an associated sender that acts like an RAII handle:
 the scope's internal count is incremented when the sender is created and decremented when the sender is "done with the
@@ -843,7 +848,9 @@ errors. Given a resource, `res`, and a `counting_scope`, `scope`, obeying the fo
 there are no attempts to use `res` after its lifetime ends:
 
 - all senders that refer to `res` are nested within `scope`; and
-- `scope` is destroyed (and therefore joined) before `res` is destroyed.
+- `scope` is destroyed (and therefore joined or unused) before `res` is destroyed.
+
+When a scope is open and unused, destroying the scope will still be safe since the scope does not have any resources to protect.
 
 Under the standard assumption that the arguments to `nest()` are and remain valid while evaluating `nest()`, it is
 always safe to invoke any supported operation on the returned _`nest-sender`_. Furthermore, if all senders returned from
@@ -884,7 +891,7 @@ could be made movable but it would cost an allocation so this is not proposed.
 counting_scope::counting_scope() noexcept;
 ```
 
-Initializes a `counting_scope` in the open state with no outstanding senders.
+Initializes a `counting_scope` in the open and unused state with no outstanding senders.
 
 ### `counting_scope::~counting_scope()`
 
@@ -892,7 +899,7 @@ Initializes a `counting_scope` in the open state with no outstanding senders.
 counting_scope::~counting_scope();
 ```
 
-Checks that the `counting_scope` is in the joined state and invokes `std::terminate()` if not.
+Checks that the `counting_scope` is in the joined or unused state and invokes `std::terminate()` if not.
 
 ### `counting_scope::nest()`
 
