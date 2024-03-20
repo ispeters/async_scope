@@ -25,13 +25,21 @@ Changes
 =======
 
 ## R2
-- Remove `counting_scope::joined()`, `counting_scope::join_started()`, and `counting_scope::use_count()` on advice of SG1 straw poll: 
+- Update `counting_scope::nest()` to explain when the scope's count of outstanding senders is decremented and remove `counting_scope::joined()`, `counting_scope::join_started()`, and `counting_scope::use_count()` on advice of SG1 straw poll:
+ 
+forward P3149R1 to LEWG for inclusion in C++26 after P2300 is included in C++26, with notes:
 
+- the point of refcount decrement to be moved after the child operation state is destroyed
+- a future paper should explore the design for cancellation of scopes
+- observers (joined, join_started, use_count) can be removed
 +---+---+---+---+---+
 |SF |F  |N  |A  |SA |
 +==:+==:+==:+==:+==:+
 |10 |14 |2  |0  |1  |
 +---+---+---+---+---+
+Consensus
+
+SA: we are moving something without wide implementation experience, the version with experience has cancellation of scopes
 
 ## R1
 
