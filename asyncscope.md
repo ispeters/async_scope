@@ -30,9 +30,9 @@ Changes
  
 forward P3149R1 to LEWG for inclusion in C++26 after P2300 is included in C++26, with notes:
 
-- the point of refcount decrement to be moved after the child operation state is destroyed
-- a future paper should explore the design for cancellation of scopes
-- observers (joined, join_started, use_count) can be removed
+1. the point of refcount decrement to be moved after the child operation state is destroyed
+2. a future paper should explore the design for cancellation of scopes
+3. observers (joined, join_started, use_count) can be removed
 
 
 +---+---+---+---+---+
@@ -40,7 +40,6 @@ forward P3149R1 to LEWG for inclusion in C++26 after P2300 is included in C++26,
 +==:+==:+==:+==:+==:+
 |10 |14 |2  |0  |1  |
 +---+---+---+---+---+
-
 Consensus
 
 SA: we are moving something without wide implementation experience, the version with experience has cancellation of scopes
