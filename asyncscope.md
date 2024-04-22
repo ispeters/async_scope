@@ -280,7 +280,7 @@ int main() {
         // and `ctx`)
         try {
 	    ex::spawn(std::move(snd), scope); // NEW!
-    	} catch (Exception) {
+    	} catch (...) {
 	    // do something to handle exception    
         }
      }
@@ -332,7 +332,7 @@ int main() {
   // fire, but don't forget
   try {
       ex::spawn(std::move(snd), scope);
-  } catch (Exception) {
+  } catch (...) {
       // do something to handle exception
   }
 
@@ -380,13 +380,12 @@ int main() {
 
     ex::scheduler auto sch = ctx.scheduler();
 
-    ex::sender auto val = ex::on(sch, ex::just() | ex::let_with_async_scope([sch](auto scope) {
+    ex::sender auto val = ex::on(sch, ex::let_with_async_scope([sch](auto scope) {
         int val = 13;
 
         auto print_sender = ex::just() | ex::then([val] {
             std::cout << "Hello world! Have an int with value: " << val << "\n";
-        });
-        
+        });     
         // spawn the print sender on sch to make sure it completes before shutdown
         ex::spawn(scope, ex::on(sch, std::move(print_sender)));
 
@@ -398,7 +397,8 @@ int main() {
     std::cout << "Result: " << result << "\n";
 }
 
-// 'let_with_async_scope' ensured that all work is completed, so result contains 13
+// 'let_with_async_scope' ensures that if all work is completed successfully, the result will be 13
+// `sync_wait` will throw whatever exception is thrown by the callable passed to `let_with_async_scope`
 ```
 
 ## Starting work nested within a framework
@@ -437,7 +437,7 @@ int main() {
     ex::system_context ctx;
     try {
         my_window window{ctx.get_scheduler(), scope};
-    } catch (Exception) {
+    } catch (...) {
     	// do something with exception
     }   
     // wait for all work nested within scope to finish
@@ -449,7 +449,7 @@ int main() {
 
 ## Starting parallel work
 
-In this example we use `let_value_with_async_scope` to construct an algorithm that performs parallel work. Here `foo`
+In this example we use `let_with_async_scope` to construct an algorithm that performs parallel work. Here `foo`
 launches 100 tasks that concurrently run on some scheduler provided to `foo`, through its connected receiver, and then
 the tasks are asynchronously joined. This structure emulates how we might build a parallel algorithm where each
 `some_work` might be operating on a fragment of data.
@@ -459,7 +459,7 @@ namespace ex = std::execution;
 ex::sender auto some_work(int work_index);
 
 ex::sender auto foo(ex::scheduler auto sch) {
-    return unifex::let_value_with_async_scope([sch](ex::counting_scope scope) {
+    return unifex::let_with_async_scope([sch](auto scope) {
                        return ex::schedule(sch) | ex::then([] {
                            std::cout << "Before tasks launch\n";
                        }) | ex::then([sch, &scope] {
@@ -501,7 +501,7 @@ task<size_t> listener(int port, io_context& ctx, static_thread_pool& pool) {
                               });
         try {
 	    ex::spawn(scope, std::move(snd));
-	} catch (Exception) {
+	} catch (...) {
             // do something with exception
 	}
     }
