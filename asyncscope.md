@@ -24,8 +24,6 @@ toc: true
 Changes
 =======
 
-<<<<<<< HEAD
-=======
 ## R3
 - Update slide code to be exception safe
 
