@@ -24,6 +24,11 @@ toc: true
 Changes
 =======
 
+<<<<<<< HEAD
+=======
+## R3
+- Update slide code to be exception safe
+
 ## R2
 - Update `counting_scope::nest()` to explain when the scope's count of outstanding senders is decremented and remove
   `counting_scope::joined()`, `counting_scope::join_started()`, and `counting_scope::use_count()` on advice of SG1 straw
@@ -275,8 +280,12 @@ int main() {
         // start `snd` as before, but associate the spawned work with `scope` so that it can
         // be awaited before destroying the resources referenced by the work (i.e. `my_pool`
         // and `ctx`)
-        ex::spawn(std::move(snd), scope); // NEW!
-    }
+        try {
+	    ex::spawn(std::move(snd), scope); // NEW!
+    	} catch (Exception) {
+	    // do something to handle exception    
+        }
+     }
 
     // wait for all nested work to finish
     this_thread::sync_wait(scope.join()); // NEW!
@@ -323,7 +332,11 @@ int main() {
   ex::sender auto snd = work(ctx);
 
   // fire, but don't forget
-  ex::spawn(std::move(snd), scope);
+  try {
+      ex::spawn(std::move(snd), scope);
+  } catch (Exception) {
+      // do something to handle exception
+  }
 
   // wait for all work nested within scope
   // to finish
@@ -359,39 +372,35 @@ Examples of use
 
 ## Spawning work from within a task
 
-Use a `counting_scope` in combination with a `system_context` from [@P2079R2] to spawn work from within a task and join
-it later:
+Use a `let_with_async_scope` in combination with a `system_context` from [@P2079R2] to spawn work from within a task:
 ```cpp
 namespace ex = std::execution;
 
 int main() {
     ex::system_context ctx;
     int result = 0;
-    ex::counting_scope scope;
 
     ex::scheduler auto sch = ctx.scheduler();
 
-    ex::sender auto val = ex::on(sch, ex::just() | ex::then([&result, sch, &scope]() {
+    ex::sender auto val = ex::on(sch, ex::just() | ex::let_with_async_scope([sch](auto scope) {
         int val = 13;
 
         auto print_sender = ex::just() | ex::then([val] {
             std::cout << "Hello world! Have an int with value: " << val << "\n";
         });
-
+        
         // spawn the print sender on sch to make sure it completes before shutdown
         ex::spawn(scope, ex::on(sch, std::move(print_sender)));
 
-        return val;
+        return ex::just(val);
     })) | ex::then([&result](auto val) { result = val });
 
-    ex::spawn(scope, std::move(val));
-
-    this_thread::sync_wait(scope.join());
+    this_thread::sync_wait(std::move(val));
 
     std::cout << "Result: " << result << "\n";
 }
 
-// The counting scope ensured that all work is safely joined, so result contains 13
+// 'let_with_async_scope' ensured that all work is completed, so result contains 13
 ```
 
 ## Starting work nested within a framework
@@ -428,7 +437,11 @@ int main() {
     // keep track of all spawned work
     ex::counting_scope scope;
     ex::system_context ctx;
-    my_window window{ctx.get_scheduler(), scope};
+    try {
+        my_window window{ctx.get_scheduler(), scope};
+    } catch (Exception) {
+    	// do something with exception
+    }   
     // wait for all work nested within scope to finish
     this_thread::sync_wait(scope.join());
     // all resources are now safe to destroy
@@ -438,9 +451,7 @@ int main() {
 
 ## Starting parallel work
 
-In this example we use the `counting_scope` within lexical scope to construct an algorithm that performs parallel work.
-This uses the `let_value_with` [@letvwthunifex] algorithm implemented in [@libunifex] which simplifies in-place
-construction of a non-moveable object in the `let_value_with` algorithm's _`operation-state`_ object. Here `foo`
+In this example we use `let_value_with_async_scope` to construct an algorithm that performs parallel work. Here `foo`
 launches 100 tasks that concurrently run on some scheduler provided to `foo`, through its connected receiver, and then
 the tasks are asynchronously joined. This structure emulates how we might build a parallel algorithm where each
 `some_work` might be operating on a fragment of data.
@@ -450,17 +461,13 @@ namespace ex = std::execution;
 ex::sender auto some_work(int work_index);
 
 ex::sender auto foo(ex::scheduler auto sch) {
-    return unifex::let_value_with([]() noexcept { return ex::counting_scope{}; },
-                   [sch](ex::counting_scope& scope) {
+    return unifex::let_value_with_async_scope([sch](ex::counting_scope scope) {
                        return ex::schedule(sch) | ex::then([] {
                            std::cout << "Before tasks launch\n";
                        }) | ex::then([sch, &scope] {
                            // Create parallel work
                            for (int i = 0; i < 100; ++i)
                                ex::spawn(scope, ex::on(sch, some_work(i)));
-                       }) | ex::let_value([&scope]() noexcept {
-                           // Join the work with the help of the scope
-                           return scope.join();
                        });
                    }) |
            ex::then([] { std::cout << "After tasks complete\n"; });
@@ -494,7 +501,11 @@ task<size_t> listener(int port, io_context& ctx, static_thread_pool& pool) {
                               ex::let_value([](auto& data) {
                                 return handle_connection(data);
                               });
-        ex::spawn(scope, std::move(snd));
+        try {
+	    ex::spawn(scope, std::move(snd));
+	} catch (Exception) {
+            // do something with exception
+	}
     }
 
     // Continue only after all requests are handled
