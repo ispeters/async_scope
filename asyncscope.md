@@ -27,6 +27,7 @@ Changes
 ## R3
 - Update slide code to be exception safe
 - Split the async scope concept into a scope and token; update `counting_scope` to match
+- Add example for recursively spawned work using let_with_async_scope and counting_scope
 
 ## R2
 - Update `counting_scope::nest()` to explain when the scope's count of outstanding senders is decremented and remove
