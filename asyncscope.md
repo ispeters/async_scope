@@ -695,7 +695,7 @@ struct tree {
   int data;
 };
 
-auto process(scheduler auto sch, counting_scope& scope, tree& t) {
+auto process(ex::scheduler sch, ex::counting_scope& scope, tree& t) {
   return ex::schedule(sch) | then([sch, &]() {
     if (t.left)
       ex::spawn(scope, process(sch, scope, t.left.get()));
