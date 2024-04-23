@@ -680,6 +680,82 @@ class Camera {
 }
 ```
 
+## Recursively spawning work until completion
+Below are two ways you could recursively spawn work on a scope using `let_with_async_scope` or `counting_scope`. Both
+examples are perfectly valid ways to ensure that all new work spawned from previous work will complete.
+
+:::cmptable
+
+### let_with_async_scope
+```cpp
+struct tree {
+  std::unique_ptr<tree> left;
+  std::unique_ptr<tree> right;
+  int data;
+};
+
+auto process(scheduler auto sch, counting_scope& scope, tree& t) {
+  return ex::schedule(sch) | then([sch, &]() {
+    if (t.left)
+      ex::spawn(scope, process(sch, scope, t.left.get()));
+    if (t.right)
+      ex::spawn(scope, process(sch, scope, t.right.get()));
+    do_stuff(t.data);
+  });
+}
+
+int main() {
+  ex::scheduler sch;
+  tree t = make_tree();
+  // let_with_async_scope will ensure all new work will be spawned on the
+  // scope and will not be joined until all work is finished
+  this_thread::sync_wait(ex::let_with_async_scope([&, sch](auto scope) {
+	return process(sch, scope, t);
+  }));
+}
+```
+
+### counting_scope
+```cpp
+struct tree {
+  std::unique_ptr<tree> left;
+  std::unique_ptr<tree> right;
+  int data;
+};
+
+auto process(ex::scheduler sch, tree& t) {
+  return ex::let_value_with([]() noexcept { return ex::counting_scope{}; }, [&](ex::counting_scope& scope) {
+	return ex::schedule(sch) | ex::then([sch, &]() {
+    	    if (t.left)
+                try {
+		   // spawn work at each call on a new counting_scope to ensure that
+		   // that all work has a chance to finish before joining
+      	           ex::spawn(scope, process(sch, t.left.get()));
+    	        } catch (...) {
+		 // do something with exception
+		}
+	    if (t.right)
+		try {
+                   ex::spawn(scope, process(sch, t.right.get()));
+    	        } catch (...) {
+		  // do something with exception
+		}
+		do_stuff(t.data);
+  	}) | let_value([&scope]() noexcept {
+	    return scope.join();
+	});
+   });
+}
+
+int main() {
+  ex::scheduler sch;
+  tree t = make_tree();
+  this_thread::sync_wait(process(sch, t));
+}
+```
+:::
+
+
 
 Async Scope, usage guide
 ========================
