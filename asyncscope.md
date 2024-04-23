@@ -517,6 +517,97 @@ task<size_t> listener(int port, io_context& ctx, static_thread_pool& pool) {
 [@libunifex] has a very similar example HTTP server at [@iouringserver] that compiles and runs on Linux-based machines
 with `io_uring` support.
 
+## Pluggable functionality through composition
+
+This example is based on real code in rsys, but it reduces the real code to slideware and ports it from Unifex to the
+proposed `std::execution` equivalents. The central abstraction in rsys is a `Call`, but each integration of rsys has
+different needs so the set of features supported by a `Call` varies with the build configuration. We support this
+configurability by exposing the equivalent of the following method on the `Call` class:
+```cpp
+template <typename Feature>
+Handle<Feature> Call::get();
+```
+and it's used like this in app-layer code:
+```cpp
+unifex::task<void> maybeToggleCamera(Call& call) {
+  Handle<Camera> camera = call.get<Camera>();
+
+  if (camera) {
+    co_await camera->toggle();
+  }
+}
+```
+
+A `Handle<Feature>` is effectively a part-owner of the `Call` it came from.
+
+The team that maintains rsys and the teams that use rsys are, unsurprisingly, different teams so rsys has to be designed
+to solve organizational problems as well as technical problems. One relevant design decision the rsys team made is that
+it is safe to keep using a `Handle<Feature>` after the end of its `Call`'s lifetime; this choice adds some complexity to
+the design of `Call` and its various features but it also simplifies the support relationship between the rsys team and
+its many partner teams because it eliminates many crash-at-shutdown bugs.
+```cpp
+namespace rsys {
+
+class Call {
+ public:
+  unifex::nothrow_task<void> destroy() noexcept {
+    // first, close the scope to new work
+    co_await scope_->join();
+
+    // other clean-up tasks here
+  }
+
+  template <typename Feature>
+  Handle<Feature> get() noexcept;
+
+ private:
+  // an async scope shared between a call and its features
+  std::shared_ptr<std::execution::counting_scope> scope_;
+  // each call has its own set of threads
+  ExecutionContext context_;
+
+  // the set of features this call supports
+  FeatureBag features_;
+};
+
+class Camera {
+ public:
+  std::execution::sender auto toggle() {
+    namespace ex = std::execution;
+
+    return ex::just() | ex::let_value([this]() {
+      // this callable is only invoked if the Call's scope is in
+      // the open or unused state when nest() is invoked, making
+      // it safe to assume here that:
+      //
+      //  - scheduler_ is not a dangling reference to the call's
+      //    execution context
+      //  - Call::destroy() has not progressed past starting the
+      //    join-sender so all the resources owned by the call
+      //    are still valid
+      //
+      // if the nest() attempt fails because the join-sender has
+      // started (or even if the Call has been completely destroyed)
+      // then the sender returned from toggle() will safely do
+      // nothing before completing with set_stopped()
+
+      return ex::schedule(scheduler_) | ex::then([this]() {
+        // toggle the camera
+      });
+    }) | ex::nest(*callScope_);
+  }
+
+ private:
+  // a copy of this camera's Call's scope_ member
+  std::shared_ptr<unifex::v1::async_scope> callScope_;
+  // a scheduler that refers to this camera's Call's ExecutionContext
+  Scheduler scheduler_;
+};
+
+}
+```
+
+
 Async Scope, usage guide
 ========================
 
