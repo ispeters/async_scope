@@ -397,7 +397,7 @@ int main() {
     std::cout << "Result: " << result << "\n";
 }
 
-// 'let_with_async_scope' ensures that if all work is completed successfully, the result will be 13
+// 'let_with_async_scope' ensures that, if all work is completed successfully, the result will be 13
 // `sync_wait` will throw whatever exception is thrown by the callable passed to `let_with_async_scope`
 ```
 
