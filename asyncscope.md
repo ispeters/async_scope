@@ -695,13 +695,16 @@ struct tree {
   int data;
 };
 
-auto process(ex::scheduler sch, ex::counting_scope& scope, tree& t) {
-  return ex::schedule(sch) | then([sch, &]() {
+auto process(ex::scheduler auto sch, ex::counting_scope& scope, tree& t) {
+  return ex::let_error(ex::schedule(sch) | then([sch, &]() noexcept {
     if (t.left)
       ex::spawn(scope, process(sch, scope, t.left.get()));
     if (t.right)
       ex::spawn(scope, process(sch, scope, t.right.get()));
     do_stuff(t.data);
+  }), | ex::let_error([](auto& e) {
+    // log error
+    return just(-1);
   });
 }
 
@@ -724,28 +727,21 @@ struct tree {
   int data;
 };
 
-auto process(ex::scheduler sch, tree& t) {
-  return ex::let_value_with([]() noexcept { return ex::counting_scope{}; }, [&](ex::counting_scope& scope) {
-	return ex::schedule(sch) | ex::then([sch, &]() {
+auto process(ex::scheduler auto sch, tree& t) {
+  return ex::let_value_with([]() noexcept { return ex::counting_scope{}; }, [&](ex::counting_scope& scope) noexcept {
+	return ex::let_error(ex::schedule(sch) | ex::then([sch, &]() noexcept {
     	    if (t.left)
-                try {
-		   // spawn work at each call on a new counting_scope to ensure that
-		   // that all work has a chance to finish before joining
-      	           ex::spawn(scope, process(sch, t.left.get()));
-    	        } catch (...) {
-		 // do something with exception
-		}
+      	        ex::spawn(scope, process(sch, t.left.get()));
 	    if (t.right)
-		try {
-                   ex::spawn(scope, process(sch, t.right.get()));
-    	        } catch (...) {
-		  // do something with exception
-		}
+                ex::spawn(scope, process(sch, t.right.get()));
 		do_stuff(t.data);
-  	}) | let_value([&scope]() noexcept {
+  	}), [](auto& e) {
+	    // log error
+            return just(-1);
+        }) | let_value([&scope]() noexcept {
 	    return scope.join();
 	});
-   });
+  });
 }
 
 int main() {
