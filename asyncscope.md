@@ -486,19 +486,7 @@ namespace ex = std::execution;
 task<size_t> listener(int port, io_context& ctx, static_thread_pool& pool) {
     size_t count{0};
     listening_socket listen_sock{port};
-    ex::counting_scope work_scope;
 
-    while (!ctx.is_stopped()) {
-        // Accept a new connection
-        connection conn = co_await async_accept(ctx, listen_sock);
-        count++;
-
-        // Create work to handle the connection in the scope of `work_scope`
-        conn_data data{std::move(conn), ctx, pool};
-        ex::sender auto snd = ex::just(std::move(data)) |
-                              ex::let_value([](auto& data) {
-                                return handle_connection(data);
-                              });
       co_await ex::let_with_async_scope([&](auto scope) -> task<void> {
         while (!ctx.is_stopped()) {
           // Accept a new connection
