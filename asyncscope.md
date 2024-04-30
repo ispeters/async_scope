@@ -86,13 +86,13 @@ This paper describes the utilities needed to address the above scenarios within 
 
 The proposed solution comes in the following parts:
 
-- `template <class Token, class Sender> concept async_scope_token`;
-- `template <class Scope> concept async_scope`;
-- `sender auto nest(sender auto&& snd, async_scope_token auto&& scope)`;
-- `void spawn(sender auto&& snd, async_scope_token auto&& scope, auto&& env)`;
-- `sender auto spawn_future(sender auto&& snd, async_scope_token auto&& scope, auto&& env)`;
-- `sender auto let_with_async_scope(callable auto&& senderFactory); and
-- `struct counting_scope`.
+- `template <class Token, class Sender> concept async_scope_token`{.cpp};
+- `template <class Scope> concept async_scope`{.cpp};
+- `sender auto nest(sender auto&& snd, async_scope_token auto token)`{.cpp};
+- `void spawn(sender auto&& snd, async_scope_token auto token, auto&& env)`{.cpp};
+- `sender auto spawn_future(sender auto&& snd, async_scope_token auto token, auto&& env)`{.cpp};
+- `sender auto let_with_async_scope(callable auto&& senderFactory)`{.cpp}; and
+- `struct counting_scope`{.cpp}.
 
 ## Implementation experience
 
@@ -632,7 +632,11 @@ More on these items can be found below in the sections below.
 ```cpp
 namespace { // @@_exposition-only_@@
 
-struct @@_scope-token_@@; // @@_exposition-only_@@o
+struct @@_scope-token_@@ { // @@_exposition-only_@@
+  template <sender Sender>
+  sender auto nest(Sender&& s)
+      noexcept(is_nothrow_constructible_v<remove_cvref_t<Sender>, Sender>);
+};
 
 // TODO: let_with_async_scope will store a copy of the callable and
 //       invoke that copy, so perhaps the callability should be assesed
@@ -667,6 +671,7 @@ using @@_future-sender-t_@@ = // @@_exposition-only_@@
 
 template <class Token, class Sender>
 concept async_scope_token =
+    copyable<Token> &&
     sender<Sender> &&
     requires(Token token, Sender&& snd) {
       { token.nest(std::forward<Sender>(snd)) } -> sender;
@@ -680,16 +685,16 @@ concept async_scope =
     };
 
 template <sender Sender, async_scope_token<Sender> Token>
-auto nest(Sender&& snd, Token&& token)
-    noexcept(noexcept(std::forward<Token>(token).nest(std::forward<Sender>(snd))))
-    -> decltype(std::forward<Token>(token).nest(std::forward<Sender>(snd)));
+auto nest(Sender&& snd, Token token)
+    noexcept(noexcept(token.nest(std::forward<Sender>(snd))))
+    -> decltype(token.nest(std::forward<Sender>(snd)));
 
 template <sender Sender, async_scope_token<Sender> Token, class Env = empty_env>
   requires sender_to<Sender, @@_spawn-receiver_@@<Env>>
-void spawn(Sender&& snd, Token&& token, Env env = {});
+void spawn(Sender&& snd, Token token, Env env = {});
 
 template <sender Sender, async_scope_token<Sender> Token, class Env = empty_env>
-@@_future-sender-t_@@<Sender, Env> spawn_future(Sender&& snd, Token&& token, Env env = {});
+@@_future-sender-t_@@<Sender, Env> spawn_future(Sender&& snd, Token token, Env env = {});
 
 template <@@_scoped-sender-factory_@@ Callable>
 sender auto let_with_async_scope(Callable&& callable)
