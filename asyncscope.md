@@ -672,6 +672,10 @@ using @@_future-sender-t_@@ = // @@_exposition-only_@@
 template <class Token, class Sender>
 concept async_scope_token =
     copyable<Token> &&
+    is_nothrow_move_constructible_v<Token> &&
+    is_nothrow_move_assignable_v<Token> &&
+    is_nothrow_copy_constructible_v<Token> &&
+    is_nothrow_copy_assignable_v<Token> &&
     sender<Sender> &&
     requires(Token token, Sender&& snd) {
       { token.nest(std::forward<Sender>(snd)) } -> sender;
@@ -685,8 +689,7 @@ concept async_scope =
     };
 
 template <sender Sender, async_scope_token<Sender> Token>
-auto nest(Sender&& snd, Token token)
-    noexcept(noexcept(token.nest(std::forward<Sender>(snd))))
+auto nest(Sender&& snd, Token token) noexcept(noexcept(token.nest(std::forward<Sender>(snd))))
     -> decltype(token.nest(std::forward<Sender>(snd)));
 
 template <sender Sender, async_scope_token<Sender> Token, class Env = empty_env>
@@ -713,9 +716,16 @@ struct counting_scope {
     template <sender S>
     struct @@_nest-sender_@@; // @@_exposition-only_@@
 
-    template <sender S>
-    [[nodiscard]] @@_nest-sender_@@<std::remove_cvref_t<S>> nest(S&& s) & noexcept(
-            std::is_nothrow_constructible_v<std::remove_cvref_t<S>, S>);
+    struct token {
+      template <sender S>
+      [[nodiscard]] @@_nest-sender_@@<std::remove_cvref_t<S>> nest(S&& s) const
+          noexcept(std::is_nothrow_constructible_v<std::remove_cvref_t<S>, S>);
+
+     private:
+      counting_scope* scope; // @@_exposition-only_@@
+    };
+
+    token get_token() noexcept;
 
     struct @@_join-sender_@@; // @@_exposition-only_@@
 
@@ -723,51 +733,80 @@ struct counting_scope {
 };
 ```
 
+## `execution::async_scope_token`
+
+```cpp
+template <class Token, class Sender>
+concept async_scope_token =
+    copyable<Token> &&
+    is_nothrow_move_constructible_v<Token> &&
+    is_nothrow_move_assignable_v<Token> &&
+    is_nothrow_copy_constructible_v<Token> &&
+    is_nothrow_copy_assignable_v<Token> &&
+    sender<Sender> &&
+    requires(Token token, Sender&& snd) {
+      { token.nest(std::forward<Sender>(snd)) } -> sender;
+    };
+```
+
+An async scope token is a non-owning handle to an [async scope](#executionasync_scope). The `nest()` method on a token
+attempts to associate its input sender with the handle's async scope in a scope-defined way. See
+[`execution::nest`](#executionnest) for the semantics of `nest()`.
+
+An async scope token behaves like a pointer-to-async-scope; tokens are no-throw copyable and movable, and it is
+undefined behaviour to invoke `nest()` on a token that has outlived its scope.
+
+## `execution::async_scope`
+
+```cpp
+template <class Scope>
+concept async_scope =
+    requires(Scope scope) {
+      { scope.get_token() } -> async_scope_token<decltype(just())>;
+      { scope.join() } -> sender;
+    };
+```
+
+As described above, an async scope is a type that implements a bookkeeping policy for senders. If a given type, `Scope`,
+satisifies `async_scope<Scope>` then, for a value, `scope`, of type `Scope`:
+
+ - `scope.get_token()` returns an async scope token whose `nest()` method tries to associate the input sender with
+   `scope`; and
+ - `scope.join()` returns a sender, `s`, such that,
+   - `s` may only complete with `set_value()`;
+   - connecting and starting `s` requests that the scope arrange not to have any outstanding associated senders "soon"
+     (the interpretation of this request and the definition of "soon" are left up to the definition of `Scope`); and
+   - once `s` has completed, no new senders may become associated with `scope` (the means by which this guarantee is
+     provided is left up to the definition of `Scope`).
+
 ## `execution::nest`
 
 ```cpp
-template <sender Sender>
-auto nest(Sender&& snd, auto&& scope) noexcept(noexcept(scope.nest(std::forward<Sender>(snd)))
-    -> decltype(scope.nest(std::forward<Sender>(snd)));
+template <sender Sender, async_scope_token<Sender> Token>
+auto nest(Sender&& snd, Token token) noexcept(noexcept(token.nest(std::forward<Sender>(snd))))
+    -> decltype(token.nest(std::forward<Sender>(snd)));
 ```
 
-Attempts to associate the given sender with the given scope in a scope-defined way. When successful, the return value
-is an "associated sender" with the same behaviour and possible completions as the input sender, plus the additional,
-scope-specific behaviours that are necessary to implement the scope's bookkeeping policy. When the attempt fails,
-`nest()` may either eagerly throw an exception, or return a "unassociated sender" that, when started, unconditionally
-completes with `set_stopped()`.
+Attempts to associate the given sender with the given scope token's scope in a scope-defined way. When successful, the
+return value is an "associated sender" with the same behaviour and possible completions as the input sender, plus the
+additional, scope-specific behaviours that are necessary to implement the scope's bookkeeping policy. When the attempt
+fails, `nest()` may either eagerly throw an exception, or return a "unassociated sender" that, when started,
+unconditionally completes with `set_stopped()`.
 
 A call to `nest()` does not start the given sender and is not expected to incur allocations.
 
 When `nest()` returns an associated sender:
 
- - connecting and starting the associated sender connects and starts the given sender;
- - the associated sender is multi-shot if the input sender is multi-shot and single-shot otherwise; and
+ - connecting and starting the associated sender connects and starts the given sender; and
  - the associated sender has exactly the same completions as the input sender.
 
 When `nest()` returns an unassociated sender:
 
- - the input sender is discarded and will never be connected or started;
- - the unassociated sender is multi-shot; and
+ - the input sender is discarded and will never be connected or started; and
  - the unassociated sender must only complete with `set_stopped()`.
 
-
-## `execution::async_scope`
-
-```cpp
-template <class Scope, class Sender>
-  concept async_scope =
-    // only senders can be nested within scopes
-    sender<Sender> &&
-    // a scope is anything that can nest senders within itself
-    requires(Scope&& scope, Sender&& snd) {
-      { nest(std::forward<Sender>(snd), std::forward<Scope>(scope)) } -> sender;
-    };
-```
-
-As described above, an async scope is a type that implements a bookkeeping policy for senders. The `nest()` algorithm is
-the means by which senders are submitted as the subjects of such a policy so any type that permits senders to be
-`nest()`ed with it satisfies the `async_scope` concept.
+Regardless of whether the returned sender is associated or unassociated, it is multi-shot if the input sender is
+multi-shot and single-shot otherwise.
 
 ## `execution::spawn()`
 
@@ -787,13 +826,13 @@ struct @@_spawn-receiver_@@ { // @@_exposition-only_@@
 
 }
 
-template <sender Sender, async_scope<Sender> Scope, class Env = empty_env>
+template <sender Sender, async_scope_token<Sender> Token, class Env = empty_env>
   requires sender_to<Sender, @@_spawn-receiver_@@<Env>>
-void spawn(Sender&& snd, Scope&& scope, Env env = {});
+void spawn(Sender&& snd, Token token, Env env = {});
 ```
 
-Invokes `nest(std::forward<Sender>(snd), std::forward<Scope>(scope))` to associate the given sender with the given scope
-and then eagerly starts the resulting sender.
+Invokes `nest(std::forward<Sender>(snd), std::forward<Token>(token))` to associate the given sender with the given
+token's scope and then eagerly starts the resulting sender.
 
 Starting the nested sender involves a dynamic allocation of the sender's _`operation-state`_. The following algorithm
 determines which _Allocator_ to use for this allocation:
@@ -814,8 +853,8 @@ work described by the sender. The `counting_scope` described in this paper uses 
 nested senders that haven't finished, and to prevent new work from being started once the `counting_scope`'s
 _`join-sender`_ has been started.
 
-The given sender must complete with `void` or `stopped` and may not complete with an error; the user must explicitly
-handle the errors that might appear as part of the _`sender-expression`_ passed to `spawn()`.
+The given sender must complete with `set_value()` or `set_stopped()` and may not complete with an error; the user must
+explicitly handle the errors that might appear as part of the _`sender-expression`_ passed to `spawn()`.
 
 User expectations will be that `spawn()` is asynchronous and so, to uphold the principle of least surprise, `spawn()`
 should only be given non-blocking senders. Using `spawn()` with a sender generated by `on(sched, @_blocking-sender_@)`
@@ -848,13 +887,13 @@ using @@_future-sender-t_@@ = // @@_exposition-only_@@
 
 }
 
-template <sender Sender, async_scope<Sender> Scope, class Env = empty_env>
-@@_future-sender-t_@@<Sender, Env> spawn_future(Sender&& snd, Scope&& scope, Env env = {});
+template <sender Sender, async_scope_token<Sender> Token, class Env = empty_env>
+@@_future-sender-t_@@<Sender, Env> spawn_future(Sender&& snd, Token token, Env env = {});
 ```
 
-Invokes `nest(std::forward<Sender>(snd), std::forward<Scope>(scope))` to associate the given sender with the given scope,
-eagerly starts the resulting sender, and returns a _`future-sender`_ that provides access to the result of the given
-sender.
+Invokes `nest(std::forward<Sender>(snd), std::forward<Token>(token))` to associate the given sender with the given
+token's scope, eagerly starts the resulting sender, and returns a _`future-sender`_ that provides access to the result
+of the given sender.
 
 Similar to `spawn()`, starting the nested sender involves a dynamic allocation of some state. `spawn_future()` chooses
 an _Allocator_ for this allocation in the same way `spawn()` does: use the result of `get_allocator(env)` if that is a
@@ -907,6 +946,14 @@ for (int i = 0; i < 10; i++)
 return when_all(scope.join(), std::move(snd));
 ```
 
+## `execution::let_with_async_scope`
+
+```cpp
+template <@@_scoped-sender-factory_@@ Callable>
+sender auto let_with_async_scope(Callable&& callable)
+    noexcept(std::is_nothrow_constructible_v<std::decay_t<Callable>, Callable>);
+```
+
 ## `execution::counting_scope`
 
 ```cpp
@@ -914,6 +961,7 @@ struct counting_scope {
     counting_scope() noexcept;
     ~counting_scope();
 
+    // counting_scope is immovable and uncopyable
     counting_scope(const counting_scope&) = delete;
     counting_scope(counting_scope&&) = delete;
     counting_scope& operator=(const counting_scope&) = delete;
@@ -922,9 +970,16 @@ struct counting_scope {
     template <sender S>
     struct @@_nest-sender_@@; // @@_exposition-only_@@
 
-    template <sender S>
-    [[nodiscard]] @@_nest-sender_@@<std::remove_cvref_t<S>> nest(S&& s) & noexcept(
-            std::is_nothrow_constructible_v<std::remove_cvref_t<S>, S>);
+    struct token {
+      template <sender S>
+      [[nodiscard]] @@_nest-sender_@@<std::remove_cvref_t<S>> nest(S&& s) const
+          noexcept(std::is_nothrow_constructible_v<std::remove_cvref_t<S>, S>);
+
+     private:
+      counting_scope* scope; // @@_exposition-only_@@
+    };
+
+    token get_token() noexcept;
 
     struct @@_join-sender_@@; // @@_exposition-only_@@
 
@@ -947,9 +1002,9 @@ joined state when the _`join-sender`_ completes. A scope must be in the joined o
 starts; otherwise, the destructor invokes `std::terminate()`. Permitting destruction in the unused state ensures that
 `counting_scope` can be used safely as a data-member type while preserving structured functionality.
 
-While a scope is unused or open, calls to `nest(snd, scope)` will succeed (unless an exception is thrown by `snd`'s
-copy- or move-constructor while constructing the _`nest-sender`_). Each time a call to `nest(snd, scope)` succeeds,
-three things happen:
+While a scope is unused or open, calls to `nest(snd, scope.get_token())` will succeed (unless an exception is thrown by
+`snd`'s copy- or move-constructor while constructing the _`nest-sender`_). Each time a call to
+`nest(snd, scope.get_token())` succeeds, three things happen:
 
 1. if the scope was in the unused state then it transitions to the open state,
 2. the scope's count of outstanding senders is incremented before `nest()` returns, and
@@ -963,13 +1018,13 @@ one. Copying a _`nest-sender`_ is permitted if the sender it's wrapping is copya
 copying requires incrementing the scope's count, which is only allowed when the scope is open; if copying fails, the new
 sender is an unassociated sender that behaves as if it were the result of a failed call to `nest()`.
 
-If `nest()` is invoked on a scope in the unused state and `nest()` fails by throwing an exception, the scope remains in
-the unused state as part of providing the Strong Exception Guarantee.
+If `nest()` is invoked on a token whose scope is in the unused state and `nest()` fails by throwing an exception, the
+scope remains in the unused state as part of providing the Strong Exception Guarantee.
 
-While a scope is closed or joined, calls to `nest(snd, scope)` will always fail by discarding the given sender and
-returning an unassociated _`nest-sender`_. Failed calls to `nest()` do not change the scope's count. Unassociated
-_`nest-senders`_ do not have a reference to the scope they came from and always complete with `stopped` when connected
-and started. Copying or moving an unassociated sender produces another unassociated sender.
+While a scope is closed or joined, calls to `nest(snd, scope.get_token())` will always fail by discarding the given
+sender and returning an unassociated _`nest-sender`_. Failed calls to `nest()` do not change the scope's count.
+Unassociated _`nest-senders`_ do not have a reference to the scope they came from and always complete with `stopped`
+when connected and started. Copying or moving an unassociated sender produces another unassociated sender.
 
 The state transitions of a `counting_scope` mean that it can be used to protect asynchronous work from use-after-free
 errors. Given a resource, `res`, and a `counting_scope`, `scope`, obeying the following policy is enough to ensure that
@@ -980,6 +1035,8 @@ there are no attempts to use `res` after its lifetime ends:
 
 It is safe to destroy a scope in the unused state because there can't be any work referring to the resources protected
 by the scope.
+
+[comment]: # (TODO: The following paragraph is much less convincing after splitting scopes into scopes and tokens.)
 
 Under the standard assumption that the arguments to `nest()` are and remain valid while evaluating `nest()`, it is
 always safe to invoke any supported operation on the returned _`nest-sender`_. Furthermore, if all senders returned from
@@ -994,7 +1051,7 @@ void deadlock() {
 
     ex::counting_scope scope;
 
-    ex::sender auto s = ex::nest(ex::just(), scope);
+    ex::sender auto s = ex::nest(ex::just(), scope.get_token());
 
     // never completes because s's continued existence keeps the scope open
     std::this_thread::sync_wait(scope.join());
