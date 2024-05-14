@@ -291,7 +291,7 @@ int main() {
     // `ctx` and `my_pool` are destroyed *after* they are no longer referenced
 }
 
-With `let_with_async_scope`, one can might write safe code this way:
+With `let_with_async_scope`, one might write safe code this way:
 ```cpp
 namespace ex = std::execution;
 
