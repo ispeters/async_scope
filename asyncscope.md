@@ -310,7 +310,7 @@ int main() {
             // Spawn some work dynamically
             ex::sender auto snd = ex::transfer_just(my_pool.get_scheduler(), item) |
                                   ex::then([&](work_item* item) { do_work(ctx, item); }) | 
-                                  ex::let_error([](auto& e) { return just(-1); });
+                                  ex::let_error([](auto& e) { return just(); });
 
             // start `snd` as before, but associate the spawned work with `scope` so that it can
             // be awaited before destroying the resources referenced by the work (i.e. `my_pool`
