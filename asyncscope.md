@@ -254,7 +254,7 @@ crashes.
 
 [@P2300R7] doesn't give us out-of-the-box facilities to use in solving these types of problems.
 
-This paper proposes the `counting_scope` facility that would help us avoid the invalid behavior. With `counting_scope`,
+This paper proposes the `counting_scope` and `let_with_async_scope` facilities that would help us avoid the invalid behavior. With `counting_scope`,
 one might write safe code this way:
 ```cpp
 namespace ex = std::execution;
@@ -290,6 +290,41 @@ int main() {
 
     // `ctx` and `my_pool` are destroyed *after* they are no longer referenced
 }
+
+With `let_with_async_scope`, one can might write safe code this way:
+```cpp
+namespace ex = std::execution;
+
+struct work_context;
+struct work_item;
+void do_work(work_context&, work_item*);
+std::vector<work_item*> get_work_items();
+
+int main() {
+    static_thread_pool my_pool{8};
+    work_context ctx;         // create a global context for the application
+
+    std::vector<work_item*> items = get_work_items();
+    this_thread::sync_wait(ex::let_with_async_scope([&](auto scope) {
+        for (auto item : items) {
+            // Spawn some work dynamically
+            ex::sender auto snd = ex::transfer_just(my_pool.get_scheduler(), item) |
+                                  ex::then([&](work_item* item) { do_work(ctx, item); }) | 
+                                  ex::let_error([](auto& e) { return just(-1); });
+
+            // start `snd` as before, but associate the spawned work with `scope` so that it can
+            // be awaited before destroying the resources referenced by the work (i.e. `my_pool`
+            // and `ctx`)
+            ex::spawn(std::move(snd), scope); // NEW!
+         }
+	return just();
+    }));
+
+    // `ctx` and `my_pool` are destroyed *after* they are no longer referenced
+}
+
+```
+
 ```
 
 Simplifying the above into something that fits in a Tony Table to highlight the differences gives us:
@@ -316,7 +351,7 @@ int main() {
 }
 ```
 
-### After
+### counting_scope
 ```cpp
 namespace ex = std::execution;
 
@@ -345,11 +380,44 @@ int main() {
 }
 ```
 
+### let_with_async_scope
+```cpp
+namespace ex = std::execution;
+
+struct work_context;
+struct work_item;
+void do_work(work_context&, work_item*);
+std::vector<work_item*> get_work_items();
+
+int main() {
+    static_thread_pool my_pool{8};
+    work_context ctx;         // create a global context for the application
+
+    std::vector<work_item*> items = get_work_items();
+    this_thread::sync_wait(ex::let_with_async_scope([&](auto scope) {
+        for (auto item : items) {
+            // Spawn some work dynamically
+            ex::sender auto snd = ex::transfer_just(my_pool.get_scheduler(), item) |
+                                  ex::then([&](work_item* item) { do_work(ctx, item); }) |
+                                  ex::let_error([](auto& e) { return just(); });
+
+            // start `snd` as before, but associate the spawned work with `scope` so that it can
+            // be awaited before destroying the resources referenced by the work (i.e. `my_pool`
+            // and `ctx`)
+            ex::spawn(std::move(snd), scope); // NEW!
+         }
+        return just();
+    }));
+
+    // `ctx` and `my_pool` are destroyed *after* they are no longer referenced
+}
+
+```
 :::
 
 Please see below for more examples.
 
-## `counting_scope` is step forward towards Structured Concurrency
+## `counting_scope` and `let_with_async_scope` is step forward towards Structured Concurrency
 
 Structured Programming [@Dahl72] transformed the software world by making it easier to reason about the code, and build
 large software from simpler constructs. We want to achieve the same effect on concurrent programming by ensuring that
@@ -363,7 +431,7 @@ given work. Moreover, the lifetime of the work started by `start_detached` canno
 will prevent local reasoning, which will make the program harder to understand.
 
 To properly structure our concurrency, we need an abstraction that ensures that all async work that is spawned has a
-defined, observable, and controllable lifetime. This is the goal of `counting_scope`.
+defined, observable, and controllable lifetime. This is the goal of `counting_scope` and `let_with_async_scope`.
 
 Examples of use
 ===============
@@ -1093,6 +1161,31 @@ scheduler, `sch`, with `get_scheduler(get_env(r))` and then starting the sender 
 requirement to complete on the receiver's scheduler restricts which receivers a _`join-sender`_ may be connected to in
 exchange for determinism; the alternative would have the _`join-sender`_ completing on the execution context of
 whichever nested operation happens to be the last one to complete.
+
+## When to use `counting_scope` vs `let_with_async_scope`
+
+Although `counting_scope` and `let_with_async_scope` has overlapping use-cases, we specifically designed the two
+facilities to address separate problems. In short, `counting_scope` is best used in an unstructured context and `let_with_async_scope`
+is best used in a structured context.
+
+We define "unstructured context" as:
+- a place where using `sync_wait` would be inappropriate, 
+- and you can't "solve by induction" (i.e you're not in an async context where you can start the sender by "awaiting" it)
+
+`counting_scope` should be used when you have a sender you want to start in an unstructured context. In this case, `spawn(sender, scope)`
+ would be the preferred way of starting asynchronous work. `scope.join()` needs to be called upon the owning object's destruction
+in order to ensure that the object's lifetime lives at least until all asynchronous work completes. Note that exception safety
+needs to be handled explicitly in the use of `counting_scope`.
+
+`let_with_async_scope` returns a sender, and therefore can only be started in one of 3 ways:
+1. `sync_wait`
+2. `spawn` on a `counting_scope`
+3. await
+
+`let_with_async_scope` will manage the scope for you which, as a result, won't give you the ability to manually manage the lifetime of
+resources the way `counting_scope` does. This behavior is a feature, since the scope being managed by `let_with_async_scope` is intended
+to live only until the sender completes. This also means that `let_with_async_scope` will be exception safe by default.
+
 
 Design considerations
 =====================
