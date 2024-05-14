@@ -417,7 +417,7 @@ int main() {
 
 Please see below for more examples.
 
-## `counting_scope` and `let_with_async_scope` is step forward towards Structured Concurrency
+## `counting_scope` and `let_with_async_scope` is a step forward towards Structured Concurrency
 
 Structured Programming [@Dahl72] transformed the software world by making it easier to reason about the code, and build
 large software from simpler constructs. We want to achieve the same effect on concurrent programming by ensuring that
@@ -1164,7 +1164,7 @@ whichever nested operation happens to be the last one to complete.
 
 ## When to use `counting_scope` vs `let_with_async_scope`
 
-Although `counting_scope` and `let_with_async_scope` has overlapping use-cases, we specifically designed the two
+Although `counting_scope` and `let_with_async_scope` have overlapping use-cases, we specifically designed the two
 facilities to address separate problems. In short, `counting_scope` is best used in an unstructured context and `let_with_async_scope`
 is best used in a structured context.
 
