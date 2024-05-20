@@ -26,6 +26,7 @@ Changes
 
 ## R3
 - Update slide code to be exception safe
+- Split the async scope concept into a scope and token; update `counting_scope` to match
 
 ## R2
 - Update `counting_scope::nest()` to explain when the scope's count of outstanding senders is decremented and remove
@@ -1243,7 +1244,7 @@ values manually.
 
 The current proposal does not accept senders that can complete with error given to `spawn()`. This will prevent
 accidental error scenarios that will terminate the application. The user must deal with all possible errors before
-passing the sender to `span()`. i.e., error handling must be explicit.
+passing the sender to `spawn()`. i.e., error handling must be explicit.
 
 Another alternative considered was to call `std::terminate()` when the sender completes with error.
 
