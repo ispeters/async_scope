@@ -571,7 +571,6 @@ class Call {
  public:
   unifex::nothrow_task<void> destroy() noexcept {
     // first, close the scope to new work and wait for existing work to finish
-    scope_->close();
     co_await scope_->join();
 
     // other clean-up tasks here
@@ -661,7 +660,7 @@ struct @@_scope-token_@@ { // @@_exposition-only_@@
 };
 
 // TODO: let_with_async_scope will store a copy of the callable and
-//       invoke that copy, so perhaps the callability should be assesed
+//       invoke that copy, so perhaps the callability should be assessed
 //       on a mutable lvalue reference-qualified type?
 template <class Callable>
 concept @@_scoped-sender-factory_@@ = // @@_exposition-only_@@
@@ -744,6 +743,10 @@ struct counting_scope {
           noexcept(std::is_nothrow_constructible_v<std::remove_cvref_t<S>, S>);
 
      private:
+      friend counting_scope;
+
+      token(counting_scope* s) noexcept;
+
       counting_scope* scope; // @@_exposition-only_@@
     };
 
@@ -792,8 +795,8 @@ concept async_scope =
 As described above, an async scope is a type that implements a bookkeeping policy for senders. If a given type, `Scope`,
 satisifies `async_scope<Scope>` then, for a value, `scope`, of type `Scope`:
 
- - `scope.get_token()` returns an async scope token whose `nest()` method tries to associate the input sender with
-   `scope`; and
+ - `scope.get_token()` returns an async scope token, `t`,  whose `nest()` method tries to associate the input sender
+   with `scope`; and
  - `scope.join()` returns a sender, `s`, such that,
    - `s` may only complete with `set_value()`;
    - connecting and starting `s` requests that the scope arrange not to have any outstanding associated senders "soon"
@@ -812,7 +815,7 @@ auto nest(Sender&& snd, Token token) noexcept(noexcept(token.nest(std::forward<S
 Attempts to associate the given sender with the given scope token's scope in a scope-defined way. When successful, the
 return value is an "associated sender" with the same behaviour and possible completions as the input sender, plus the
 additional, scope-specific behaviours that are necessary to implement the scope's bookkeeping policy. When the attempt
-fails, `nest()` may either eagerly throw an exception, or return a "unassociated sender" that, when started,
+fails, `nest()` must either eagerly throw an exception, or return a "unassociated sender" that, when started,
 unconditionally completes with `set_stopped()`.
 
 A call to `nest()` does not start the given sender and is not expected to incur allocations.
@@ -853,8 +856,8 @@ template <sender Sender, async_scope_token<Sender> Token, class Env = empty_env>
 void spawn(Sender&& snd, Token token, Env env = {});
 ```
 
-Invokes `nest(std::forward<Sender>(snd), std::forward<Token>(token))` to associate the given sender with the given
-token's scope and then eagerly starts the resulting sender.
+Invokes `nest(std::forward<Sender>(snd), token)` to associate the given sender with the given token's scope and then
+eagerly starts the resulting sender.
 
 Starting the nested sender involves a dynamic allocation of the sender's _`operation-state`_. The following algorithm
 determines which _Allocator_ to use for this allocation:
@@ -888,7 +891,7 @@ Usage example:
 ```cpp
 ...
 for (int i = 0; i < 100; i++)
-    spawn(on(sched, some_work(i)), scope);
+    spawn(on(sched, some_work(i)), scope.get_token());
 ```
 
 
@@ -913,9 +916,8 @@ template <sender Sender, async_scope_token<Sender> Token, class Env = empty_env>
 @@_future-sender-t_@@<Sender, Env> spawn_future(Sender&& snd, Token token, Env env = {});
 ```
 
-Invokes `nest(std::forward<Sender>(snd), std::forward<Token>(token))` to associate the given sender with the given
-token's scope, eagerly starts the resulting sender, and returns a _`future-sender`_ that provides access to the result
-of the given sender.
+Invokes `nest(std::forward<Sender>(snd), token)` to associate the given sender with the given token's scope, eagerly
+starts the resulting sender, and returns a _`future-sender`_ that provides access to the result of the given sender.
 
 Similar to `spawn()`, starting the nested sender involves a dynamic allocation of some state. `spawn_future()` chooses
 an _Allocator_ for this allocation in the same way `spawn()` does: use the result of `get_allocator(env)` if that is a
@@ -998,6 +1000,10 @@ struct counting_scope {
           noexcept(std::is_nothrow_constructible_v<std::remove_cvref_t<S>, S>);
 
      private:
+      friend counting_scope;
+
+      token(counting_scope* s) noexcept;
+
       counting_scope* scope; // @@_exposition-only_@@
     };
 
@@ -1109,14 +1115,41 @@ counting_scope::~counting_scope();
 
 Checks that the `counting_scope` is in the joined or unused state and invokes `std::terminate()` if not.
 
-### `counting_scope::nest()`
+### `counting_scope::get_token()`
+
+```cpp
+counting_scope::token get_token() noexcept;
+```
+
+Returns a `counting_scope::token` referring to the current scope, as if by invoking `token{this}`.
+
+### `counting_scope::join()`
+
+```cpp
+struct @@_join-sender_@@; // @@_exposition-only_@@
+
+[[nodiscard]] @@_join-sender_@@ join() noexcept;
+```
+
+Returns a _`join-sender`_. When the _`join-sender`_ is connected to a receiver, `r`, it produces an
+_`operation-state`_, `o`. When `o` is started, the scope moves from either the unused or open state to the
+closed/joining state. `o` completes with `set_value()` when the scope moves from the closed/joining state to the closed
+state, which happens when the scope's count of outstanding senders drops to zero. `o` may complete synchronously if it
+happens to observe that the count of outstanding senders is already zero when started; otherwise, `o` completes on the
+execution context associated with the scheduler in its receiver's environment by asking its receiver, `r`, for a
+scheduler, `sch`, with `get_scheduler(get_env(r))` and then starting the sender returned from `schedule(sch)`. This
+requirement to complete on the receiver's scheduler restricts which receivers a _`join-sender`_ may be connected to in
+exchange for determinism; the alternative would have the _`join-sender`_ completing on the execution context of
+whichever nested operation happens to be the last one to complete.
+
+### `counting_scope::token::nest()`
 
 ```cpp
 template <sender S>
 struct @@_nest-sender_@@; // @@_exposition-only_@@
 
 template <sender S>
-[[nodiscard]] @@_nest-sender_@@<std::remove_cvref_t<S>> nest(S&& s) & noexcept(
+[[nodiscard]] @@_nest-sender_@@<std::remove_cvref_t<S>> nest(S&& s) const noexcept(
         std::is_nothrow_constructible_v<std::remove_cvref_t<S>, S>);
 ```
 
@@ -1129,7 +1162,7 @@ The result of `nest()` depends on whether the attempt to atomically increment th
 succeeds:
 
 - If the atomic increment succeeds then the return value will be an associated _`nest-sender`_ that contains a copy of
-  the input sender, `s` (that is copy- or move-constructed from `s`), and a reference to `this` (the associated scope).
+  the input sender, `s` (that is copy- or move-constructed from `s`), and a reference to `scope_` (the associated scope).
   `nest()` provides the Strong Exception Guarantee, which requires one of two different behaviours upon exiting from
   `nest()`, depending on whether the exit is normal or exceptional:
   - if the scope was in the unused state, `nest()` returns normally, and the scope has not yet moved to the
@@ -1138,7 +1171,7 @@ succeeds:
     into the returned _`nest-sender`_) then the increment to the scope's count of outstanding senders that happened on
     entry to `nest()` is undone with a balancing decrement.
 - If the atomic increment fails then the return value will be an unassociated _`nest-sender`_ and no exceptions are
-  possible. In this case, the return value does not store a reference to `this`, the given sender, `s`, is discarded,
+  possible. In this case, the return value does not store a reference to `scope_`, the given sender, `s`, is discarded,
   and the scope's state is left unchanged.
 
 An associated _`nest-sender`_ is a kind of RAII handle to the scope; it is responsible for decrementing the scope's
@@ -1170,36 +1203,17 @@ accepted.
 
 As `nest()` does not immediately start the given work, it is ok to pass in blocking senders.
 
-`nest()` is lvalue-ref qualified as it would be inappropriate to nest senders in a temporary---the temporary's
-destructor would unconditionally invoke `std::terminate()` as there would be no way to move it into the joined state.
-
 Usage example:
 ```cpp
-...
-sender auto snd = s.nest(key_work());
-for (int i = 0; i < 10; i++)
-    spawn(on(sched, other_work(i)), scope);
-return on(sched, std::move(snd));
+sender auto example(counting_scope::token token, scheduler auto sched) {
+  sender auto snd = nest(key_work(), token);
+
+  for (int i = 0; i < 10; i++)
+    spawn(on(sched, other_work(i)), token);
+
+  return on(sched, std::move(snd));
+}
 ```
-
-### `counting_scope::join()`
-
-```cpp
-struct @@_join-sender_@@; // @@_exposition-only_@@
-
-[[nodiscard]] @@_join-sender_@@ join() noexcept;
-```
-
-Returns a _`join-sender`_. When the _`join-sender`_ is connected to a receiver, `r`, it produces an
-_`operation-state`_, `o`. When `o` is started, the scope moves from either the unused or open state to the
-closed/joining state. `o` completes with `set_value()` when the scope moves from the closed/joining state to the closed
-state, which happens when the scope's count of outstanding senders drops to zero. `o` may complete synchronously if it
-happens to observe that the count of outstanding senders is already zero when started; otherwise, `o` completes on the
-execution context associated with the scheduler in its receiver's environment by asking its receiver, `r`, for a
-scheduler, `sch`, with `get_scheduler(get_env(r))` and then starting the sender returned from `schedule(sch)`. This
-requirement to complete on the receiver's scheduler restricts which receivers a _`join-sender`_ may be connected to in
-exchange for determinism; the alternative would have the _`join-sender`_ completing on the execution context of
-whichever nested operation happens to be the last one to complete.
 
 Design considerations
 =====================
@@ -1219,7 +1233,7 @@ is dropped. There are two main alternatives:
 - constrain the shape of the input sender
 
 The current proposal goes with the second alternative. The main reason is to make it more difficult and explicit to
-silently drop result. The caller can always transform the input sender before passing it to `spawn()` to drop the
+silently drop results. The caller can always transform the input sender before passing it to `spawn()` to drop the
 values manually.
 
 > **Chosen:** `spawn()` accepts only senders that advertise `set_value()` (without any parameters) in the completion
@@ -1229,7 +1243,7 @@ values manually.
 
 The current proposal does not accept senders that can complete with error given to `spawn()`. This will prevent
 accidental error scenarios that will terminate the application. The user must deal with all possible errors before
-passing the sender to `counting_scope`. i.e., error handling must be explicit.
+passing the sender to `span()`. i.e., error handling must be explicit.
 
 Another alternative considered was to call `std::terminate()` when the sender completes with error.
 
@@ -1247,7 +1261,7 @@ whether that the work completed with success or by being stopped. As it is assum
 result of an explicit choice, it makes sense to allow senders that can terminate with `set_stopped()`.
 
 The alternative would require transforming the sender before passing it to spawn, something like
-`s.spawn(std::move(snd) | let_stopped(just))`. This is considered boilerplate and not helpful, as the
+`spawn(std::move(snd) | let_stopped(just), s.get_token())`. This is considered boilerplate and not helpful, as the
 stopped scenarios should be implicit, and not require handling.
 
 > **Chosen:** `spawn()` accepts senders that complete with `set_stopped()`.
@@ -1262,14 +1276,14 @@ For example, the continuation can handle different types of values and errors.
 
 ## P2300's `start_detached()`
 
-The `spawn()` method in this paper can be used as a replacement for `start_detached` proposed in [@P2300R7]. Essentially
-it does the same thing, but it also provides the given scope the opportunity to apply its bookkeeping policy to the
-given sender, which, in the case of `counting_scope`, ensures the program can wait for spawned work to complete before
-destroying any resources references by that work.
+The `spawn()` algorithm in this paper can be used as a replacement for `start_detached` proposed in [@P2300R7].
+Essentially it does the same thing, but it also provides the given scope the opportunity to apply its bookkeeping policy
+to the given sender, which, in the case of `counting_scope`, ensures the program can wait for spawned work to complete
+before destroying any resources references by that work.
 
 ## P2300's `ensure_started()`
 
-The `spawn_future()` method in this paper can be used as a replacement for `ensure_started` proposed in [@P2300R7].
+The `spawn_future()` algorithm in this paper can be used as a replacement for `ensure_started` proposed in [@P2300R7].
 Essentially it does the same thing, but it also provides the given scope the opportunity to apply its bookkeeping policy
 to the given sender, which, in the case of `counting_scope`, ensures the program can wait for spawned work to complete
 before destroying any resources references by that work.
@@ -1376,6 +1390,16 @@ less-than-ideal in C++, and there is some real risk that users will write deadlo
 should have a name that conveys danger.
 
 alternatives: `complete()`, `close()`
+
+## "Token" as in `async_scope_token` and `counting_scope::token`
+
+The first several revisions of this paper did not separate the responsibilities of an async scope into the scope and its
+tokens. Revision 3 introduces this split to help separate the lifetime-management interface from the nesting interface,
+which the authors expect to help avoid deadlocks (e.g. it's harder with the new design to nest the _`join-sender`_
+within the scope being joined). The name "token" was chosen by analogy to "stop source" and "stop token", which provides
+a similar split of responsibilities.
+
+alternatives: "handle", "ref" (as a contraction of "reference")
 
 Acknowledgements
 ================
