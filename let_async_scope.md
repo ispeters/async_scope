@@ -1,4 +1,10 @@
-# `let_async_scope`
+# D3296R0 `let_async_scope`
+
+Date: 20th May 2024 
+
+Author: Anthony Williams <anthony@justsoftwaresolutions.co.uk>
+
+Audience: SG1, LEWG
 
 `let_async_scope` provides a means of creating an async scope, which
 is associated with a set of tasks, and ensuring that they are all
