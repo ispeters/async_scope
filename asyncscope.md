@@ -94,7 +94,8 @@ The proposed solution comes in the following parts:
 - `sender auto nest(sender auto&& snd, async_scope_token auto token)`{.cpp};
 - `void spawn(sender auto&& snd, async_scope_token auto token, auto&& env)`{.cpp};
 - `sender auto spawn_future(sender auto&& snd, async_scope_token auto token, auto&& env)`{.cpp};
-- Proposed in [@P3296R0]: `sender auto let_with_async_scope(callable auto&& senderFactory)`{.cpp}; and
+- Proposed in [@P3296R0]: `sender auto let_with_async_scope(callable auto&& senderFactory)`{.cpp};
+- `struct simple_counting_scope`{.cpp}; and
 - `struct counting_scope`{.cpp}.
 
 ## Implementation experience
@@ -630,6 +631,7 @@ class Call {
  public:
   unifex::nothrow_task<void> destroy() noexcept {
     // first, close the scope to new work and wait for existing work to finish
+    scope_->close();
     co_await scope_->join();
 
     // other clean-up tasks here
@@ -894,6 +896,41 @@ template <@@_scoped-sender-factory_@@ Callable>
 sender auto let_with_async_scope(Callable&& callable)
     noexcept(std::is_nothrow_constructible_v<std::decay_t<Callable>, Callable>);
 
+struct simple_counting_scope {
+    simple_counting_scope() noexcept;
+    ~simple_counting_scope();
+
+    // simple_counting_scope is immovable and uncopyable
+    simple_counting_scope(const simple_counting_scope&) = delete;
+    simple_counting_scope(simple_counting_scope&&) = delete;
+    simple_counting_scope& operator=(const simple_counting_scope&) = delete;
+    simple_counting_scope& operator=(simple_counting_scope&&) = delete;
+
+    template <sender S>
+    struct @@_nest-sender_@@; // @@_exposition-only_@@
+
+    struct token {
+      template <sender S>
+      [[nodiscard]] @@_nest-sender_@@<std::remove_cvref_t<S>> nest(S&& s) const
+          noexcept(std::is_nothrow_constructible_v<std::remove_cvref_t<S>, S>);
+
+     private:
+      friend simple_counting_scope;
+
+      token(simple_counting_scope* s) noexcept;
+
+      simple_counting_scope* scope; // @@_exposition-only_@@
+    };
+
+    token get_token() noexcept;
+
+    void close() noexcept;
+
+    struct @@_join-sender_@@; // @@_exposition-only_@@
+
+    [[nodiscard]] @@_join-sender_@@ join() noexcept;
+};
+
 struct counting_scope {
     counting_scope() noexcept;
     ~counting_scope();
@@ -921,6 +958,10 @@ struct counting_scope {
     };
 
     token get_token() noexcept;
+
+    void close() noexcept;
+
+    void request_stop() noexcept;
 
     struct @@_join-sender_@@; // @@_exposition-only_@@
 
