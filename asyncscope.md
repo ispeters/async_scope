@@ -281,9 +281,9 @@ int main() {
         // be awaited before destroying the resources referenced by the work (i.e. `my_pool`
         // and `ctx`)
         try {
-	    ex::spawn(std::move(snd), scope); // NEW!
-    	} catch (...) {
-	    // do something to handle exception    
+          ex::spawn(std::move(snd), scope.get_token()); // NEW!
+        } catch (...) {
+          // do something to handle exception
         }
      }
 
@@ -333,7 +333,9 @@ int main() {
 
   // fire, but don't forget
   try {
-      ex::spawn(std::move(snd), scope);
+      ex::spawn(
+          std::move(snd),
+          scope.get_token());
   } catch (...) {
       // do something to handle exception
   }
@@ -351,7 +353,7 @@ int main() {
 
 Please see below for more examples.
 
-## `counting_scope` is step forward towards Structured Concurrency
+## `counting_scope` is a step forward towards Structured Concurrency
 
 Structured Programming [@Dahl72] transformed the software world by making it easier to reason about the code, and build
 large software from simpler constructs. We want to achieve the same effect on concurrent programming by ensuring that
@@ -372,7 +374,7 @@ Examples of use
 
 ## Spawning work from within a task
 
-Use a `let_with_async_scope` in combination with a `system_context` from [@P2079R2] to spawn work from within a task:
+Use `let_with_async_scope` in combination with a `system_context` from [@P2079R2] to spawn work from within a task:
 ```cpp
 namespace ex = std::execution;
 
@@ -382,19 +384,26 @@ int main() {
 
     ex::scheduler auto sch = ctx.scheduler();
 
-    ex::sender auto val = ex::on(sch, ex::let_with_async_scope([sch](auto scope) {
-        int val = 13;
+    ex::sender auto val = ex::just()
+        | ex::let_with_async_scope([sch](ex::async_scope_token auto scope) {
+          int val = 13;
 
-        auto print_sender = ex::just() | ex::then([val] {
-            std::cout << "Hello world! Have an int with value: " << val << "\n";
-        });     
-        // spawn the print sender on sch to make sure it completes before shutdown
-        ex::spawn(scope, ex::on(sch, std::move(print_sender)));
+          auto print_sender = ex::just()
+              | ex::then([val] {
+                std::cout << "Hello world! Have an int with value: " << val << "\n";
+              });
 
-        return ex::just(val);
-    })) | ex::then([&result](auto val) { result = val });
+          // spawn the print sender on sch
+          //
+          // NOTE: if this throws, let_with_async_scope will capture the exception
+          //       and propagate it through its set_error completion
+          ex::spawn(ex::on(sch, std::move(print_sender)), scope);
 
-    this_thread::sync_wait(std::move(val));
+          return ex::just(val);
+        }))
+        | ex::then([&result](auto val) { result = val });
+
+    this_thread::sync_wait(ex::on(sch, std::move(val)));
 
     std::cout << "Result: " << result << "\n";
 }
@@ -420,16 +429,22 @@ struct my_window {
 
     void onMessage(int i) {
         ++count;
-        ex::spawn(scope, ex::on(sch, some_work(i)));
+        ex::spawn(ex::on(sch, some_work(i)), scope);
     }
 
     void onClickClose() {
         ++count;
-        ex::spawn(scope, ex::on(sch, some_work(close_message{})));
+        ex::spawn(ex::on(sch, some_work(close_message{})), scope);
+    }
+
+    my_window(ex::system_scheduler sch, ex::counting_scope::token scope)
+      : sch(sch), scope(scope) {
+      // register this window with the windowing framework somehow so that
+      // it starts receiving calls to onClickClose() and onMessage()
     }
 
     ex::system_scheduler sch;
-    ex::counting_scope& scope;
+    ex::counting_scope::token scope;
     int count{0};
 };
 
@@ -438,10 +453,10 @@ int main() {
     ex::counting_scope scope;
     ex::system_context ctx;
     try {
-        my_window window{ctx.get_scheduler(), scope};
+        my_window window{ctx.get_scheduler(), scope.get_token()};
     } catch (...) {
-    	// do something with exception
-    }   
+      // do something with exception
+    }
     // wait for all work nested within scope to finish
     this_thread::sync_wait(scope.join());
     // all resources are now safe to destroy
@@ -461,16 +476,22 @@ namespace ex = std::execution;
 ex::sender auto some_work(int work_index);
 
 ex::sender auto foo(ex::scheduler auto sch) {
-    return unifex::let_with_async_scope([sch](auto scope) {
-                       return ex::schedule(sch) | ex::then([] {
-                           std::cout << "Before tasks launch\n";
-                       }) | ex::then([sch, &scope] {
-                           // Create parallel work
-                           for (int i = 0; i < 100; ++i)
-                               ex::spawn(scope, ex::on(sch, some_work(i)));
-                       });
-                   }) |
-           ex::then([] { std::cout << "After tasks complete\n"; });
+  return ex::just()
+      | ex::let_with_async_scope([sch](ex::async_scope_token auto scope) {
+        return ex::schedule(sch)
+            | ex::then([] {
+              std::cout << "Before tasks launch\n";
+            })
+            | ex::then([=] {
+              // Create parallel work
+              for (int i = 0; i < 100; ++i) {
+                // NOTE: if spawn() throws, the exception will be propagated as the
+                //       result of let_with_async_scope through its set_error completion
+                ex::spawn(ex::on(sch, some_work(i)), scope);
+              }
+            });
+      })
+      | ex::then([] { std::cout << "After tasks complete successfully\n"; });
 }
 ```
 
@@ -489,23 +510,23 @@ task<size_t> listener(int port, io_context& ctx, static_thread_pool& pool) {
     size_t count{0};
     listening_socket listen_sock{port};
 
-    co_await ex::let_with_async_scope([&](auto scope) -> task<void> {
-        while (!ctx.is_stopped()) {
+    co_await ex::let_with_async_scope(
+        ex::just(), [&](ex::async_scope_token auto scope) -> task<void> {
+          while (!ctx.is_stopped()) {
             // Accept a new connection
             connection conn = co_await async_accept(ctx, listen_sock);
             count++;
+
             // Create work to handle the connection in the scope of `work_scope`
             conn_data data{std::move(conn), ctx, pool};
-            ex::sender auto snd = ex::just(std::move(data)) |
-                                  ex::let_value([](auto& data) {
-                                      return handle_connection(data);
-                                  });
-            ex::spawn(scope, std::move(snd));
-        }
-    });
+            ex::sender auto snd = ex::just(std::move(data))
+                | ex::let_value([](auto& data) {
+                  return handle_connection(data);
+                });
 
-    // Continue only after all requests are handled
-    co_await work_scope.join();
+            ex::spawn(std::move(snd), scope);
+          }
+        });
 
     // At this point, all the request handling is complete
     co_return count;
@@ -549,7 +570,8 @@ namespace rsys {
 class Call {
  public:
   unifex::nothrow_task<void> destroy() noexcept {
-    // first, close the scope to new work
+    // first, close the scope to new work and wait for existing work to finish
+    scope_->close();
     co_await scope_->join();
 
     // other clean-up tasks here
@@ -592,12 +614,12 @@ class Camera {
       return ex::schedule(scheduler_) | ex::then([this]() {
         // toggle the camera
       });
-    }) | ex::nest(*callScope_);
+    }) | ex::nest(callScope_->get_token());
   }
 
  private:
   // a copy of this camera's Call's scope_ member
-  std::shared_ptr<unifex::v1::async_scope> callScope_;
+  std::shared_ptr<ex::counting_scope> callScope_;
   // a scheduler that refers to this camera's Call's ExecutionContext
   Scheduler scheduler_;
 };
