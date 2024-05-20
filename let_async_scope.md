@@ -157,9 +157,11 @@ Stop requests are propagated to all senders nested in the async scope.
         auto& args = state.args.emplace<decayed-tuple<scope-token-type,Args...>>(state.scope.get_token(),std::forward<Args>(args)...);
         auto sndr2 = state.scope.nest(apply(std::move(state.fn), args));
         auto join_sender = state.scope.join();
-        // How can we wait for sndr2 and join_sender??????
+        auto result_sender = when_all_with_variant(sndr2,join_sender) | then([](auto& result_tuple){
+          return atd::get<0>(result_tuple);
+        });
         auto rcvr2 = receiver2{std::move(rcvr), std::move(state.env)};
-        auto mkop2 = [&] { return connect(std::move(sndr2), std::move(rcvr2)); };
+        auto mkop2 = [&] { return connect(std::move(result_sender), std::move(rcvr2)); };
         auto& op2 = state.ops2.emplace<decltype(mkop2())>(emplace-from{mkop2});
         start(op2);
         ```
