@@ -734,21 +734,21 @@ struct tree {
 
 auto process(ex::scheduler auto sch, ex::counting_scope& scope, tree& t) {
     return ex::schedule(sch) | ex::let_value([sch, &]() {
-               ex::any_sender_of<> leftFut = ex::just();
-               ex::any_sender_of<> rightFut = ex::just();
-               if (t.left) {  //
-                   leftFut = ex::spawn_future(
-                       scope, process(sch, scope, t.left.get()));
-               }
+      ex::any_sender_of<> leftFut = ex::just();
+      ex::any_sender_of<> rightFut = ex::just();
+      if (t.left) {  //
+         leftFut = ex::spawn_future(
+         scope, process(sch, scope, t.left.get()));
+      }
 
-               if (t.right) {  //
-                   rightFut = ex::spawn_future(
-                       scope, process(sch, scope, t.right.get()));
-               }
+      if (t.right) {  //
+         rightFut = ex::spawn_future(
+         scope, process(sch, scope, t.right.get()));
+      }
 
-               do_stuff(t.data);
-               return ex::when_all(leftFut, rightFut)
-           });
+      do_stuff(t.data);
+      return ex::when_all(leftFut, rightFut)
+    });
 }
 
 int main() {
