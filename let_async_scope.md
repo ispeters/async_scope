@@ -6,32 +6,89 @@ Author: Anthony Williams <anthony@justsoftwaresolutions.co.uk>
 
 Audience: SG1, LEWG
 
+## Background and motivation
+
+This is intended to address concerns raised in LEWG about ensuring
+that a `counting_scope` is joined: the scope provided by
+`let_async_scope` is always joined, irrespective of how the nested
+work completes, and whether or not the provided function throws an
+exception after spawning work.
+
+Code with explicit `counting_scope`:
+
+```c++
+    some_data_type scoped_data = make_scoped_data();
+    counting_scope scope;
+
+    scope.nest(on(exec, [&] {
+        scope.nest(on(exec, [&] {
+            if (need_more_work(scoped_data)) {
+                scope.nest(on(exec, [&] { do_more_work(scoped_data); }));
+                scope.nest(on(exec, [&] { do_more_other_work(scoped_data); }));
+            }
+        }));
+        scope.nest(on(exec, [&] { do_something_else_with(scoped_data); }));
+    }));
+
+    maybe_throw();
+
+    this_thread::sync_wait(scope.join());
+```
+
+Here, if `maybe_throw` throws an exception, then the scope is not
+joined, and the nested tasks can continue executing asynchronously,
+potentially accessing both the `scope` and `scoped_data` objects out
+of lifetime.
+
+Using `let_async_scope` addresses this by encapsulating the scope
+object and the result of the previous sender. The returned sender does
+not complete until all tasks nested on the scope complete, even if the
+function passed to `let_async_scope` exits via an exception:
+
+```c++
+    auto scope_sender = just(make_scoped_data()) | let_async_scope([](auto scope_token,
+                                                                           auto& scoped_data) {
+        scope_token.nest(on(exec, [scope_token, &scoped_data] {
+            scope_token.nest(on(exec, [scope_token, &scoped_data] {
+                if (need_more_work(scoped_data)) {
+                    scope_token.nest(on(exec, [&scoped_data] { do_more_work(scoped_data); }));
+                    scope_token.nest(on(exec, [&scoped_data] { do_more_other_work(scoped_data); }));
+                }
+            }));
+            scope_token.nest(on(exec, [&scoped_data] { do_something_else_with(scoped_data); }));
+        }));
+        maybe_throw();
+    });
+
+    this_thread::sync_wait(scope_sender);
+```
+
+Here, even if `maybe_throw` throws an exception, then `scope_sender`
+doesn't complete until all the nested tasks have completed. This
+prevents out-of-lifetime access to the `scoped_data` or the scope
+itself, unless references to the data or `scope_token` are stored
+outside the sender tree.
+
+Stop requests are propagated to all senders nested in the async scope,
+but does not prevent those senders adding additional work to the
+scope. This allows senders to respond to stop requests by scheduling
+additional work to perform the necessary cleanup for cancellation.
+
+## Proposal
+
 `let_async_scope` provides a means of creating an async scope, which
 is associated with a set of tasks, and ensuring that they are all
 complete before the async scope sender completes.The previous sender's
 result is passed to a user-specified invocable, along with an async
 scope token, which returns a new sender that is connected and started.
-
-```c++
-    auto scope_sender =
-            some_previous_sender() |
-            let_async_scope([](auto scope_token, auto previous_sender_result) {
-                return scope_token.nest(on(exec,[=] {
-                    scope_token.nest(on(exec,[=] { do_something_with(previous_sender_result); }));
-                    scope_token.nest(on(exec,[=] { do_something_else_with(previous_sender_result); }));
-                }));
-            });
-
-    this_thread::sync_wait(scope_sender);
-```
-
-The `scope_sender` completes with the result of the completion of the
-sender returned from the supplied invocable. It does not complete
-until all tasks nested on the `scope_token` passed to the invocable
-have completed. Additional tasks may be nested on copies of the
-`scope_token`, even if the initial sender returned from the invocable
-has completed. The returned `scope_sender` will not complete while
-there are any nested tasks that have not completed.
+    
+The sender returned by `let_async_scope` completes with the result of
+the completion of the sender returned from the supplied invocable. It
+does not complete until all tasks nested on the `scope_token` passed
+to the invocable have completed. Additional tasks may be nested on
+copies of the `scope_token`, even if the initial sender returned from
+the invocable has completed. The returned `scope_sender` will not
+complete while there are any nested tasks that have not completed.
 
 Stop requests are propagated to all senders nested in the async scope.
 
@@ -160,16 +217,24 @@ Stop requests are propagated to all senders nested in the async scope.
      3. The exposition-only function template `let-async-scope-bind` is equal to:
 
         ```c++
-        auto& args = state.args.emplace<decayed-tuple<scope-token-type,Args...>>(state.scope.get_token(),std::forward<Args>(args)...);
-        auto sndr2 = state.scope.nest(apply(std::move(state.fn), args));
-        auto join_sender = state.scope.join();
-        auto result_sender = when_all_with_variant(sndr2,join_sender) | then([](auto& result,auto&){
-          return result;
-        });
-        auto rcvr2 = receiver2{std::move(rcvr), std::move(state.env)};
-        auto mkop2 = [&] { return connect(std::move(result_sender), std::move(rcvr2)); };
-        auto& op2 = state.ops2.emplace<decltype(mkop2())>(emplace-from{mkop2});
-        start(op2);
+        auto& args = state.args.emplace<decayed - tuple<scope - token - type, Args...>>(
+                state.scope.get_token(), std::forward<Args>(args)...);
+        try {
+            auto sndr2 = state.scope.nest(apply(std::move(state.fn), args));
+            auto join_sender = state.scope.join();
+            auto result_sender = when_all_with_variant(std::move(sndr2), std::move(join_sender)) |
+                                 then([](auto& result, auto&) { return result; });
+            auto rcvr2 = receiver2{std::move(rcvr), std::move(state.env)};
+            auto mkop2 = [&] { return connect(std::move(result_sender), std::move(rcvr2)); };
+            auto& op2 = state.ops2.emplace<decltype(mkop2())>(emplace-from{mkop2});
+            start(op2);
+        } catch (...) {
+            auto result_sender = when_all(just_error(std::current_exception()), state.scope.join());
+            auto rcvr2 = receiver2{std::move(rcvr), std::move(state.env)};
+            auto mkop2 = [&] { return connect(std::move(result_sender), std::move(rcvr2)); };
+            auto& op2 = state.ops2.emplace<decltype(mkop2())>(emplace-from{mkop2});
+            start(op2);
+        }
         ```
 
      4. `impls-for<decayed-typeof<let_async_scope>>::complete` is is initialized with a callable object equivalent to the following:
