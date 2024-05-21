@@ -370,8 +370,12 @@ int main() {
 
   ex::sender auto snd = work(ctx);
 
-  // fire, but don't forget
-  ex::spawn(std::move(snd), scope.get_token());
+  try { 
+      // fire, but don't forget
+      ex::spawn(std::move(snd), scope.get_token());
+  } catch (...) {
+      // do something to handle exception
+  }
 
   // wait for all work nested within scope
   // to finish
@@ -682,12 +686,45 @@ class Camera {
 ```
 
 ## Recursively spawning work until completion
-Below are two ways you could recursively spawn work on a scope using `let_with_async_scope` or `counting_scope`. Both
-examples are perfectly valid ways to ensure that all new work spawned from previous work will complete.
+Below are three ways you could recursively spawn work on a scope using `let_with_async_scope` or `counting_scope`.
 
 :::cmptable
 
-### let_with_async_scope
+### let_with_async_scope with spawn
+```cpp
+struct tree {
+  std::unique_ptr<tree> left;
+  std::unique_ptr<tree> right;
+  int data;
+};
+
+auto process(ex::scheduler auto sch, ex::counting_scope& scope, tree& t) noexcept {
+  return ex::schedule(sch) | then([sch, &]() {
+    if (t.left)
+      ex::spawn(scope, process(sch, scope, t.left.get()));
+    if (t.right)
+      ex::spawn(scope, process(sch, scope, t.right.get()));
+    do_stuff(t.data);
+  }), | ex::let_error([](auto& e) {
+    // log error
+    return just();
+  });
+}
+
+int main() {
+  ex::scheduler sch;
+  tree t = make_tree();
+  // let_with_async_scope will ensure all new work will be spawned on the
+  // scope and will not be joined until all work is finished.
+  // NOTE: Exceptions will not be surfaced to let_with_async_scope; exceptions
+  // will be handled by let_error instead.
+  this_thread::sync_wait(ex::let_with_async_scope([&, sch](auto scope) {
+	return process(sch, scope, t);
+  }));
+}
+```
+
+### let_with_async_scope with spawn_future
 ```cpp
 struct tree {
   std::unique_ptr<tree> left;
@@ -696,26 +733,34 @@ struct tree {
 };
 
 auto process(ex::scheduler auto sch, ex::counting_scope& scope, tree& t) {
-  return ex::let_error(ex::schedule(sch) | then([sch, &]() noexcept {
-    if (t.left)
-      ex::spawn(scope, process(sch, scope, t.left.get()));
-    if (t.right)
-      ex::spawn(scope, process(sch, scope, t.right.get()));
-    do_stuff(t.data);
-  }), | ex::let_error([](auto& e) {
-    // log error
-    return just(-1);
-  });
+    return ex::schedule(sch) | ex::let_value([sch, &]() {
+               ex::any_sender_of<> leftFut = ex::just();
+               ex::any_sender_of<> rightFut = ex::just();
+               if (t.left) {  //
+                   leftFut = ex::spawn_future(
+                       scope, process(sch, scope, t.left.get()));
+               }
+
+               if (t.right) {  //
+                   rightFut = ex::spawn_future(
+                       scope, process(sch, scope, t.right.get()));
+               }
+
+               do_stuff(t.data);
+               return ex::when_all(leftFut, rightFut)
+           });
 }
 
 int main() {
-  ex::scheduler sch;
-  tree t = make_tree();
-  // let_with_async_scope will ensure all new work will be spawned on the
-  // scope and will not be joined until all work is finished
-  this_thread::sync_wait(ex::let_with_async_scope([&, sch](auto scope) {
-	return process(sch, scope, t);
-  }));
+    ex::scheduler sch;
+    tree t = make_tree();
+    // let_with_async_scope will ensure all new work will be spawned on the
+    // scope and will not be joined until all work is finished
+    // NOTE: Exceptions will be surfaced to let_with_async_scope which will
+    // call set_error with the exception_ptr
+    this_thread::sync_wait(ex::let_with_async_scope([&, sch](auto scope) {  //
+        return process(sch, scope, t);
+    }));
 }
 ```
 
@@ -727,8 +772,9 @@ struct tree {
   int data;
 };
 
-auto process(ex::scheduler auto sch, tree& t) {
-  return ex::let_value_with([]() noexcept { return ex::counting_scope{}; }, [&](ex::counting_scope& scope) noexcept {
+auto process(ex::scheduler auto sch, tree& t) noexcept {
+  return ex::let_value_with([]() noexcept { return ex::counting_scope{}; }, 
+    [&](ex::counting_scope& scope) noexcept {
 	return ex::let_error(ex::schedule(sch) | ex::then([sch, &]() noexcept {
     	    if (t.left)
       	        ex::spawn(scope, process(sch, t.left.get()));
@@ -737,7 +783,7 @@ auto process(ex::scheduler auto sch, tree& t) {
 		do_stuff(t.data);
   	}), [](auto& e) {
 	    // log error
-            return just(-1);
+            return just();
         }) | let_value([&scope]() noexcept {
 	    return scope.join();
 	});
