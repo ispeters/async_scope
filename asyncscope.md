@@ -92,7 +92,7 @@ The proposed solution comes in the following parts:
 - `sender auto nest(sender auto&& snd, async_scope_token auto token)`{.cpp};
 - `void spawn(sender auto&& snd, async_scope_token auto token, auto&& env)`{.cpp};
 - `sender auto spawn_future(sender auto&& snd, async_scope_token auto token, auto&& env)`{.cpp};
-- `sender auto let_with_async_scope(callable auto&& senderFactory)`{.cpp}; and
+- Proposed in [@P3296R0]: `sender auto let_with_async_scope(callable auto&& senderFactory)`{.cpp}; and
 - `struct counting_scope`{.cpp}.
 
 ## Implementation experience
@@ -257,7 +257,7 @@ crashes.
 
 [@P2300R7] doesn't give us out-of-the-box facilities to use in solving these types of problems.
 
-This paper proposes the `counting_scope` and `let_with_async_scope` facilities that would help us avoid the invalid behavior. With `counting_scope`,
+This paper proposes the `counting_scope` and [@P3296R0]'s`let_with_async_scope` facilities that would help us avoid the invalid behavior. With `counting_scope`,
 one might write safe code this way:
 ```cpp
 namespace ex = std::execution;
@@ -294,7 +294,7 @@ int main() {
     // `ctx` and `my_pool` are destroyed *after* they are no longer referenced
 }
 
-With `let_with_async_scope`, one might write safe code this way:
+With [@P3296R0]'s`let_with_async_scope`, one might write safe code this way:
 ```cpp
 namespace ex = std::execution;
 
@@ -385,7 +385,7 @@ int main() {
 }
 ```
 
-### With let_with_async_scope
+### With [@P3296R0]'s let_with_async_scope
 ```cpp
 namespace ex = std::execution;
 
@@ -1284,7 +1284,7 @@ sender auto example(counting_scope::token token, scheduler auto sched) {
 }
 ```
 
-## When to use `counting_scope` vs `let_with_async_scope`
+## When to use `counting_scope` vs [@P3296R0]'s `let_with_async_scope`
 
 Although `counting_scope` and `let_with_async_scope` have overlapping use-cases, we specifically designed the two
 facilities to address separate problems. In short, `counting_scope` is best used in an unstructured context and `let_with_async_scope`
