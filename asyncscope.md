@@ -276,17 +276,17 @@ int main() {
     for (auto item : items) {
         // Spawn some work dynamically
         ex::sender auto snd = ex::transfer_just(my_pool.get_scheduler(), item) |
-                              ex::then([&](work_item* item) { do_work(ctx, item); });
-
-        // start `snd` as before, but associate the spawned work with `scope` so that it can
-        // be awaited before destroying the resources referenced by the work (i.e. `my_pool`
-        // and `ctx`)
-        try {
-          ex::spawn(std::move(snd), scope.get_token()); // NEW!
-        } catch (...) {
-          // do something to handle exception
-        }
+                              ex::then([&](work_item* item) { do_work(ctx, item); }) | 
+			      ex::let_error([](auto&&) { 
+				//do something to handle error
+				return just();
+			      });
      }
+
+     // start `snd` as before, but associate the spawned work with `scope` so that it can
+     // be awaited before destroying the resources referenced by the work (i.e. `my_pool`
+     // and `ctx`)
+     ex::spawn(std::move(snd), scope.get_token()); // NEW!
 
     // wait for all nested work to finish
     this_thread::sync_wait(scope.join()); // NEW!
@@ -330,16 +330,14 @@ int main() {
   context ctx;
   ex::counting_scope scope;
 
-  ex::sender auto snd = work(ctx);
+  ex::sender auto snd = work(ctx) | 
+			let_error([](auto&&) {
+			   // do something to handle error
+			   return just();
+			});
 
   // fire, but don't forget
-  try {
-      ex::spawn(
-          std::move(snd),
-          scope.get_token());
-  } catch (...) {
-      // do something to handle exception
-  }
+  ex::spawn(std::move(snd), scope.get_token());
 
   // wait for all work nested within scope
   // to finish
