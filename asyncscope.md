@@ -688,8 +688,6 @@ class Camera {
 ## Recursively spawning work until completion
 Below are three ways you could recursively spawn work on a scope using `let_with_async_scope` or `counting_scope`.
 
-:::cmptable
-
 ### let_with_async_scope with spawn
 ```cpp
 struct tree {
@@ -796,9 +794,6 @@ int main() {
   this_thread::sync_wait(process(sch, t));
 }
 ```
-:::
-
-
 
 Async Scope, usage guide
 ========================
