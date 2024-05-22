@@ -1,6 +1,6 @@
-# D3296R0 `let_async_scope`
+# P3296R0 `let_async_scope`
 
-Date: 20th May 2024 
+Date: 22nd May 2024 
 
 Author: Anthony Williams <anthony@justsoftwaresolutions.co.uk>
 
@@ -272,3 +272,10 @@ Stop requests are propagated to all senders nested in the async scope.
       returned by `f`, and
 
     - propagates the other completion operations sent by `sndr`.
+
+## Acknowledgements
+
+Thanks to Ian Petersen, Lewis Baker, Inbal Levi, Kirk Shoop, Eric
+Niebler, Ruslan Arutyunyan, Maikel Nadolski, Lucian Radu Teodorescu,
+and everyone else who contributed to discussions leading to this
+paper, and commented on early drafts.
