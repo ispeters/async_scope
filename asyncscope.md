@@ -46,7 +46,8 @@ Changes
   > +---+---+---+---+---+
   > Consensus
   >
-  > SA: we are moving something without wide implementation experience, the version with experience has cancellation of scopes
+  > SA: we are moving something without wide implementation experience, the version with experience has cancellation of
+  > scopes
 
 - Add a fourth state to `counting_scope` so that it can be used as a data-member safely
 
@@ -92,7 +93,7 @@ The proposed solution comes in the following parts:
 - `sender auto nest(sender auto&& snd, async_scope_token auto token)`{.cpp};
 - `void spawn(sender auto&& snd, async_scope_token auto token, auto&& env)`{.cpp};
 - `sender auto spawn_future(sender auto&& snd, async_scope_token auto token, auto&& env)`{.cpp};
-- `sender auto let_with_async_scope(callable auto&& senderFactory)`{.cpp}; and
+- Proposed in [@P3296R0]: `sender auto let_with_async_scope(callable auto&& senderFactory)`{.cpp}; and
 - `struct counting_scope`{.cpp}.
 
 ## Implementation experience
@@ -257,8 +258,9 @@ crashes.
 
 [@P2300R7] doesn't give us out-of-the-box facilities to use in solving these types of problems.
 
-This paper proposes the `counting_scope` facility that would help us avoid the invalid behavior. With `counting_scope`,
-one might write safe code this way:
+This paper proposes the `counting_scope` and [@P3296R0]'s`let_with_async_scope` facilities that would help us avoid the
+invalid behavior. With `counting_scope`, one might write safe code this way:
+
 ```cpp
 namespace ex = std::execution;
 
@@ -276,11 +278,11 @@ int main() {
     for (auto item : items) {
         // Spawn some work dynamically
         ex::sender auto snd = ex::transfer_just(my_pool.get_scheduler(), item) |
-                              ex::then([&](work_item* item) { do_work(ctx, item); }) | 
-			      ex::let_error([](auto&&) { 
-				//do something to handle error
-				return just();
-			      });
+                              ex::then([&](work_item* item) { do_work(ctx, item); }) |
+                              ex::let_error([](auto&&) {
+                                // do something to handle error
+                                return just();
+                              });
      }
 
      // start `snd` as before, but associate the spawned work with `scope` so that it can
@@ -292,6 +294,41 @@ int main() {
     this_thread::sync_wait(scope.join()); // NEW!
 
     // `ctx` and `my_pool` are destroyed *after* they are no longer referenced
+}
+```
+
+With [@P3296R0]'s `let_with_async_scope`, one might write safe code this way:
+```cpp
+namespace ex = std::execution;
+
+struct work_context;
+struct work_item;
+void do_work(work_context&, work_item*);
+std::vector<work_item*> get_work_items();
+
+int main() {
+  static_thread_pool my_pool{8};
+  work_context ctx;         // create a global context for the application
+
+  this_thread::sync_wait(ex::let_with_async_scope(ex::just(get_work_items()), [&](auto scope) {
+    for (auto item : items) {
+      // Spawn some work dynamically
+      ex::sender auto snd = ex::transfer_just(my_pool.get_scheduler(), item) |
+                            ex::then([&](work_item* item) { do_work(ctx, item); }) |
+                            ex::let_error([](auto& e) {
+                              // do something to handle error
+                              return just();
+                            });
+
+      // start `snd` as before, but associate the spawned work with `scope` so that it can
+      // be awaited before destroying the resources referenced by the work (i.e. `my_pool`
+      // and `ctx`)
+      ex::spawn(std::move(snd), scope); // NEW!
+    }
+    return just();
+  }));
+
+  // `ctx` and `my_pool` are destroyed *after* they are no longer referenced
 }
 ```
 
@@ -319,7 +356,7 @@ int main() {
 }
 ```
 
-### After
+### With `counting_scope`
 ```cpp
 namespace ex = std::execution;
 
@@ -330,11 +367,7 @@ int main() {
   context ctx;
   ex::counting_scope scope;
 
-  ex::sender auto snd = work(ctx) | 
-			let_error([](auto&&) {
-			   // do something to handle error
-			   return just();
-			});
+  ex::sender auto snd = work(ctx);
 
   // fire, but don't forget
   ex::spawn(std::move(snd), scope.get_token());
@@ -348,11 +381,33 @@ int main() {
 }
 ```
 
+### With `let_with_async_scope`
+```cpp
+namespace ex = std::execution;
+
+struct context;
+ex::sender auto work(const context&);
+
+int main() {
+  context ctx;
+  this_thread::sync_wait(ex::just()
+      | ex::let_with_async_scope([&](auto scope) {
+        ex::sender auto snd = work(ctx);
+
+        // fire, but don't forget
+        ex::spawn(std::move(snd), scope.get_token());
+      }));
+
+  // `ctx` is destroyed once nothing
+  // references it
+}
+```
+
 :::
 
 Please see below for more examples.
 
-## `counting_scope` is a step forward towards Structured Concurrency
+## `counting_scope` and `let_with_async_scope` are a step forward towards Structured Concurrency
 
 Structured Programming [@Dahl72] transformed the software world by making it easier to reason about the code, and build
 large software from simpler constructs. We want to achieve the same effect on concurrent programming by ensuring that
@@ -366,7 +421,7 @@ given work. Moreover, the lifetime of the work started by `start_detached` canno
 will prevent local reasoning, which will make the program harder to understand.
 
 To properly structure our concurrency, we need an abstraction that ensures that all async work that is spawned has a
-defined, observable, and controllable lifetime. This is the goal of `counting_scope`.
+defined, observable, and controllable lifetime. This is the goal of `counting_scope` and `let_with_async_scope`.
 
 Examples of use
 ===============
@@ -1161,9 +1216,9 @@ The result of `nest()` depends on whether the attempt to atomically increment th
 succeeds:
 
 - If the atomic increment succeeds then the return value will be an associated _`nest-sender`_ that contains a copy of
-  the input sender, `s` (that is copy- or move-constructed from `s`), and a reference to `scope_` (the associated scope).
-  `nest()` provides the Strong Exception Guarantee, which requires one of two different behaviours upon exiting from
-  `nest()`, depending on whether the exit is normal or exceptional:
+  the input sender, `s` (that is copy- or move-constructed from `s`), and a reference to `scope_` (the associated
+  scope).  `nest()` provides the Strong Exception Guarantee, which requires one of two different behaviours upon
+  exiting from `nest()`, depending on whether the exit is normal or exceptional:
   - if the scope was in the unused state, `nest()` returns normally, and the scope has not yet moved to the
     closed/joining state then the scope moves to the open state; otherwise,
   - if `nest()` exits with an exception (which is only possible if an exception is thrown while copying or moving `s`
@@ -1213,6 +1268,33 @@ sender auto example(counting_scope::token token, scheduler auto sched) {
   return on(sched, std::move(snd));
 }
 ```
+
+## When to use `counting_scope` vs [@P3296R0]'s `let_with_async_scope`
+
+Although `counting_scope` and `let_with_async_scope` have overlapping use-cases, we specifically designed the two
+facilities to address separate problems. In short, `counting_scope` is best used in an unstructured context and
+`let_with_async_scope` is best used in a structured context.
+
+We define "unstructured context" as:
+- a place where using `sync_wait` would be inappropriate,
+- and you can't "solve by induction" (i.e you're not in an async context where you can start the sender by "awaiting"
+  it)
+
+`counting_scope` should be used when you have a sender you want to start in an unstructured context. In this case,
+`spawn(sender, scope)` would be the preferred way of starting asynchronous work. `scope.join()` needs to be called
+before the owning object's destruction in order to ensure that the object's lifetime lives at least until all
+asynchronous work completes. Note that exception safety needs to be handled explicitly in the use of `counting_scope`.
+
+`let_with_async_scope` returns a sender, and therefore can only be started in one of 3 ways:
+1. `sync_wait`
+2. `spawn` on a `counting_scope`
+3. await
+
+`let_with_async_scope` will manage the scope for you, ensuring that the managed scope is always joined before
+`let_with_async_scope` completes.  The algorithm frees the user from having to manage the coupling between the lifetimes
+of the managed scope and the resource(s) it protects with the limitation that the nested work must be fully structured.
+This behavior is a feature, since the scope being managed by `let_with_async_scope` is intended to live only until the
+sender completes. This also means that `let_with_async_scope` will be exception safe by default.
 
 Design considerations
 =====================
@@ -1476,5 +1558,12 @@ references:
     title: "A smaller, faster video calling library for our apps"
     url: https://engineering.fb.com/2020/12/21/video-engineering/rsys/
     company: Meta Platforms, Inc
+  - id: P3296R0
+    citation-label: P3296R0
+    title: "let_async_scope"
+    author:
+      - family: Williams
+        given: Anthony
+    url: https://wg21.link/p3296r0
 
 ---
