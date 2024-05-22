@@ -768,30 +768,27 @@ struct tree {
   int data;
 };
 
-auto process(ex::scheduler auto sch, tree& t) noexcept {
-  return unifex::let_value_with([]() noexcept { return ex::counting_scope{}; },
-      [&](ex::counting_scope& scope) {
-        return ex::schedule(sch) | ex::then([sch, &]() noexcept {
-          if (t.left)
-            ex::spawn(process(sch, t.left.get()), scope);
+auto process(ex::counting_scope_token scope, ex::scheduler auto sch, tree& t) noexcept {
+  return ex::schedule(sch) | ex::then([sch, &]() noexcept {
+    if (t.left)
+       ex::spawn(process(sch, t.left.get()), scope);
 
-          if (t.right)
-            ex::spawn(process(sch, t.right.get()), scope);
+    if (t.right)
+       ex::spawn(process(sch, t.right.get()), scope);
 
-          do_stuff(t.data);
-        }) | ex::let_error([](auto& e) {
-          // log error
-          return just();
-        }) | ex::finally([&scope]() noexcept {
-          return scope.join();
-        });
-      });
+     do_stuff(t.data);
+   }) | ex::let_error([](auto& e) {
+       // log error
+       return just();
+   });
 }
 
 int main() {
   ex::scheduler sch;
   tree t = make_tree();
-  this_thread::sync_wait(process(sch, t));
+  ex::counting_scope scope;
+  this_thread::sync_wait(process(scope.get_token(), sch, t));
+  this_thread::sync_wait(scope.join());
 }
 ```
 
