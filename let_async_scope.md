@@ -9,10 +9,11 @@ Audience: SG1, LEWG
 ## Background and motivation
 
 This is intended to address concerns raised in LEWG about ensuring
-that a `counting_scope` is joined: the scope provided by
-`let_async_scope` is always joined, irrespective of how the nested
-work completes, and whether or not the provided function throws an
-exception after spawning work.
+that a `counting_scope` (see
+[P3149R3](https://isocpp.org/files/papers/P3149R3.html)) is joined:
+the scope provided by `let_async_scope` is always joined, irrespective
+of how the nested work completes, and whether or not the provided
+function throws an exception after spawning work.
 
 Code with explicit `counting_scope`:
 
@@ -20,14 +21,14 @@ Code with explicit `counting_scope`:
     some_data_type scoped_data = make_scoped_data();
     counting_scope scope;
 
-    scope.nest(on(exec, [&] {
-        scope.nest(on(exec, [&] {
+    spawn(scope,(on(exec, [&] {
+        spawn(scope,(on(exec, [&] {
             if (need_more_work(scoped_data)) {
-                scope.nest(on(exec, [&] { do_more_work(scoped_data); }));
-                scope.nest(on(exec, [&] { do_more_other_work(scoped_data); }));
+                spawn(scope,(on(exec, [&] { do_more_work(scoped_data); }));
+                spawn(scope,(on(exec, [&] { do_more_other_work(scoped_data); }));
             }
         }));
-        scope.nest(on(exec, [&] { do_something_else_with(scoped_data); }));
+        spawn(scope,(on(exec, [&] { do_something_else_with(scoped_data); }));
     }));
 
     maybe_throw();
@@ -48,14 +49,14 @@ function passed to `let_async_scope` exits via an exception:
 ```c++
     auto scope_sender = just(make_scoped_data()) | let_async_scope([](auto scope_token,
                                                                            auto& scoped_data) {
-        scope_token.nest(on(exec, [scope_token, &scoped_data] {
-            scope_token.nest(on(exec, [scope_token, &scoped_data] {
+        spawn(scope_token,(on(exec, [scope_token, &scoped_data] {
+            spawn(scope_token,(on(exec, [scope_token, &scoped_data] {
                 if (need_more_work(scoped_data)) {
-                    scope_token.nest(on(exec, [&scoped_data] { do_more_work(scoped_data); }));
-                    scope_token.nest(on(exec, [&scoped_data] { do_more_other_work(scoped_data); }));
+                    spawn(scope_token,(on(exec, [&scoped_data] { do_more_work(scoped_data); }));
+                    spawn(scope_token,(on(exec, [&scoped_data] { do_more_other_work(scoped_data); }));
                 }
             }));
-            scope_token.nest(on(exec, [&scoped_data] { do_something_else_with(scoped_data); }));
+            spawn(scope_token,(on(exec, [&scoped_data] { do_something_else_with(scoped_data); }));
         }));
         maybe_throw();
     });
@@ -76,8 +77,9 @@ additional work to perform the necessary cleanup for cancellation.
 
 ## Proposal
 
-`let_async_scope` provides a means of creating an async scope, which
-is associated with a set of tasks, and ensuring that they are all
+`let_async_scope` provides a means of creating an async scope (see
+[P3149R3](https://isocpp.org/files/papers/P3149R3.html)), which is
+associated with a set of tasks, and ensuring that they are all
 complete before the async scope sender completes.The previous sender's
 result is passed to a user-specified invocable, along with an async
 scope token, which returns a new sender that is connected and started.
