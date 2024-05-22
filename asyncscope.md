@@ -1,6 +1,6 @@
 ---
 title: "`async_scope` -- Creating scopes for non-sequential concurrency"
-document: D3149R3
+document: P3149R3
 date: today
 audience:
   - "SG1 Parallelism and Concurrency"
@@ -27,6 +27,7 @@ Changes
 ## R3
 - Update slide code to be exception safe
 - Split the async scope concept into a scope and token; update `counting_scope` to match
+- Rename `counting_scope` to `simple_counting_scope` and give the name `counting_scope` to a scope with a stop source
 - Add example for recursively spawned work using `let_with_async_scope` and `counting_scope`
 
 ## R2
@@ -276,24 +277,23 @@ int main() {
     work_context ctx;         // create a global context for the application
     ex::counting_scope scope; // create this *after* the resources it protects
 
+    // make sure we always join
+    unifex:scope_guard join = [&]() noexcept {
+      // wait for all nested work to finish
+      this_thread::sync_wait(scope.join()); // NEW!
+    };
+
     std::vector<work_item*> items = get_work_items();
     for (auto item : items) {
-        // Spawn some work dynamically
-        ex::sender auto snd = ex::transfer_just(my_pool.get_scheduler(), item) |
-                              ex::then([&](work_item* item) { do_work(ctx, item); }) |
-                              ex::let_error([](auto&&) {
-                                // do something to handle error
-                                return just();
-                              });
-     }
+      // Spawn some work dynamically
+      ex::sender auto snd = ex::transfer_just(my_pool.get_scheduler(), item) |
+                            ex::then([&](work_item* item) { do_work(ctx, item); });
 
-     // start `snd` as before, but associate the spawned work with `scope` so that it can
-     // be awaited before destroying the resources referenced by the work (i.e. `my_pool`
-     // and `ctx`)
-     ex::spawn(std::move(snd), scope.get_token()); // NEW!
-
-    // wait for all nested work to finish
-    this_thread::sync_wait(scope.join()); // NEW!
+      // start `snd` as before, but associate the spawned work with `scope` so that it can
+      // be awaited before destroying the resources referenced by the work (i.e. `my_pool`
+      // and `ctx`)
+      ex::spawn(std::move(snd), scope.get_token()); // NEW!
+    }
 
     // `ctx` and `my_pool` are destroyed *after* they are no longer referenced
 }
@@ -316,11 +316,7 @@ int main() {
     for (auto item : items) {
       // Spawn some work dynamically
       ex::sender auto snd = ex::transfer_just(my_pool.get_scheduler(), item) |
-                            ex::then([&](work_item* item) { do_work(ctx, item); }) |
-                            ex::let_error([](auto& e) {
-                              // do something to handle error
-                              return just();
-                            });
+                            ex::then([&](work_item* item) { do_work(ctx, item); });
 
       // start `snd` as before, but associate the spawned work with `scope` so that it can
       // be awaited before destroying the resources referenced by the work (i.e. `my_pool`
