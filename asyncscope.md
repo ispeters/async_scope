@@ -1558,5 +1558,12 @@ references:
     title: "A smaller, faster video calling library for our apps"
     url: https://engineering.fb.com/2020/12/21/video-engineering/rsys/
     company: Meta Platforms, Inc
+  - id: P3296R0
+    citation-label: P3296R0
+    title: "let_async_scope"
+    author:
+      - family: Williams
+        given: Anthony
+    url: https://wg21.link/p3296r0
 
 ---
