@@ -1,4 +1,4 @@
-# P3296R0 `let_async_scope`
+# D3296R1 `let_async_scope`
 
 Date: 22nd May 2024 
 
