@@ -1260,18 +1260,25 @@ state joined {
 
 unused : count = 0
 unused : nest() can succeed
+unused : join() not needed
 open : count ≥ 0
 open : nest() can succeed
+open : join() needed
 closed : count ≥ 0
 closed : nest() fails
+closed : join() needed
 open_and_joining : count ≥ 0
 open_and_joining : nest() can succeed
+open_and_joining : join() running
 closed_and_joining : count ≥ 0
 closed_and_joining : nest() fails
+closed_and_joining : join() running
 unused_and_closed : count = 0
 unused_and_closed : nest() fails
+unused_and_closed : join() not needed
 joined : count = 0
 joined : nest() fails
+joined : join() not needed
 
 [*] --> unused
 unused --> open : nest()
@@ -1373,6 +1380,15 @@ simple_counting_scope::token get_token() noexcept;
 ```
 
 Returns a `simple_counting_scope::token` referring to the current scope, as if by invoking `token{this}`.
+
+### `simple_counting_scope::close()`
+
+```cpp
+void close() noexcept;
+```
+
+Moves the scope to the closed, unused-and-closed, or closed-and-joining state. After a call to `close()`, all future
+calls to `nest()` that return normally return unassociated senders.
 
 ### `simple_counting_scope::join()`
 
@@ -1504,14 +1520,14 @@ A `counting_scope` augments a `simple_counting_scope` with a stop source and giv
 _`nest-senders`_ a stop token from its stop source. This extension of `simple_counting_scope` allows a `counting_scope`
 to request stop on all of its outstanding operations by requesting stop on its stop source.
 
-Assuming an exposition-only _`stop_when(sender&& auto, stoppable_token auto)`_ (explained below), `counting_scope`
+Assuming an exposition-only _`stop_when(sender auto&&, stoppable_token auto)`_ (explained below), `counting_scope`
 behaves as if it were implemented like so:
 
 ```cpp
 struct counting_scope {
   struct token {
     template <sender S>
-    sender auto nest(S&& snd)
+    sender auto nest(S&& snd) const
         noexcept(std::is_nothrow_constructible_v<std::remove_cvref_t<S>, S>) {
       return std::forward<Sender>(snd)
           | @@_stop_when_@@(scope_->source_.get_token())
@@ -1548,6 +1564,86 @@ struct counting_scope {
   inplace_stop_source source_;
 };
 ```
+
+_`stop_when(sender auto&& snd, stoppable_token auto stoken)`_ is an exposition-only sender algorithm that maps its input
+sender, `snd`, to an output sender, `osnd`, such that, when `osnd` is connected to a receiver, `r`, the resulting
+_`operation-state`_ behaves the same as connecting the original sender, `snd`, to `r`, except that `snd` will receive a
+stop request when either the token returned from `get_stop_token(r)` receives a stop request or when `stoken` receives a
+stop request.
+
+Other than the use of _`stop_when()`_ in `counting_scope::token::nest()` and the addition of `request_stop()` to the
+interface, `counting_scope` has the same behavior and lifecycle as `simple_counting_scope`.
+
+### `counting_scope::counting_scope()`
+
+```cpp
+counting_scope::counting_scope() noexcept;
+```
+
+Initializes a `counting_scope` in the unused state with the count of outstanding operations set to zero.
+
+### `counting_scope::~counting_scope()`
+
+```cpp
+counting_scope::~counting_scope();
+```
+
+Checks that the `counting_scope` is in the joined, unused, or unused-and-closed state and invokes `std::terminate()` if
+not.
+
+### `counting_scope::get_token()`
+
+```cpp
+counting_scope::token get_token() noexcept;
+```
+
+Returns a `counting_scope::token` referring to the current scope, as if by invoking `token{this}`.
+
+### `counting_scope::close()`
+
+```cpp
+void close() noexcept;
+```
+
+Moves the scope to the closed, unused-and-closed, or closed-and-joining state. After a call to `close()`, all future
+calls to `nest()` that return normally return unassociated senders.
+
+### `counting_scope::request_stop()`
+
+```cpp
+void request_stop() noexcept;
+```
+
+Requests stop on the scope's internal stop source. Since all senders nested within the scope have been given stop tokens
+from this internal stop source, the effect is to send stop requests to all outstanding (and future) nested operations.
+
+### `counting_scope::join()`
+
+```cpp
+struct @@_join-sender_@@; // @@_exposition-only_@@
+
+[[nodiscard]] @@_join-sender_@@ join() noexcept;
+```
+
+Returns a _`join-sender`_ that behaves the same as the result of `simple_counting_scope::join()`. Connecting and
+starting the _`join-sender`_ moves the scope to the open-and-joining or closed-and-joining state; the _`join-sender`_
+completes when the scope's count of outstanding operations drops to zero, at which point the scope moves to the joined
+state.
+
+### `counting_scope::token::nest()`
+
+```cpp
+template <sender S>
+struct @@_nest-sender_@@; // @@_exposition-only_@@
+
+template <sender S>
+[[nodiscard]] @@_nest-sender_@@<std::remove_cvref_t<S>> nest(S&& s) const noexcept(
+        std::is_nothrow_constructible_v<std::remove_cvref_t<S>, S>);
+```
+
+Attempts to return an associated _`nest-sender`_ constructed from `s` following the same algorithm as
+`simple_counting_scope::token::nest()`, with the addition that senders associated with a `counting_scope` receive stop
+requests _both_ from their (eventual) receivers _and_ from the `counting_scope`'s internal stop source.
 
 ## When to use `counting_scope` vs [@P3296R0]'s `let_with_async_scope`
 
