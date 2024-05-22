@@ -1317,7 +1317,9 @@ state, and causes all future calls to `nest()` to fail.
 
 Any call to `nest()` may throw an exception if copying or moving the input sender into the returned _`nest-sender`_
 throws an exception. `nest()` provides the Strong Exception Guarantee so the scope's state is left unchanged if an
-exception is thrown while constructing the returned _`nest-sender`_. Assuming `nest()` does not throw:
+exception is thrown while constructing the returned _`nest-sender`_.
+
+Assuming `nest()` does not throw:
 
 - While a scope is in the unused, open, or open-and-joining state, calls to `nest()` succeed by returning an "associated
   sender" (see below) and incrementing the scope's count of outstanding operations _before returning_.
