@@ -1459,6 +1459,96 @@ sender auto example(simple_counting_scope::token token, scheduler auto sched) {
 }
 ```
 
+## `execution::counting_scope`
+
+```cpp
+struct counting_scope {
+    counting_scope() noexcept;
+    ~counting_scope();
+
+    // counting_scope is immovable and uncopyable
+    counting_scope(const counting_scope&) = delete;
+    counting_scope(counting_scope&&) = delete;
+    counting_scope& operator=(const counting_scope&) = delete;
+    counting_scope& operator=(counting_scope&&) = delete;
+
+    template <sender S>
+    struct @@_nest-sender_@@; // @@_exposition-only_@@
+
+    struct token {
+      template <sender S>
+      [[nodiscard]] @@_nest-sender_@@<std::remove_cvref_t<S>> nest(S&& s) const
+          noexcept(std::is_nothrow_constructible_v<std::remove_cvref_t<S>, S>);
+
+     private:
+      friend counting_scope;
+
+      token(counting_scope* s) noexcept;
+
+      counting_scope* scope; // @@_exposition-only_@@
+    };
+
+    token get_token() noexcept;
+
+    void close() noexcept;
+
+    void request_stop() noexcept;
+
+    struct @@_join-sender_@@; // @@_exposition-only_@@
+
+    [[nodiscard]] @@_join-sender_@@ join() noexcept;
+};
+```
+
+A `counting_scope` augments a `simple_counting_scope` with a stop source and gives to each of its associated
+_`nest-senders`_ a stop token from its stop source. This extension of `simple_counting_scope` allows a `counting_scope`
+to request stop on all of its outstanding operations by requesting stop on its stop source.
+
+Assuming an exposition-only _`stop_when(sender&& auto, stoppable_token auto)`_ (explained below), `counting_scope`
+behaves as if it were implemented like so:
+
+```cpp
+struct counting_scope {
+  struct token {
+    template <sender S>
+    sender auto nest(S&& snd)
+        noexcept(std::is_nothrow_constructible_v<std::remove_cvref_t<S>, S>) {
+      return std::forward<Sender>(snd)
+          | @@_stop_when_@@(scope_->source_.get_token())
+          | ex::nest(scope_->scope_.get_token());
+    }
+
+   private:
+    friend counting_scope;
+
+    explicit token(counting_scope* scope) noexcept
+      : scope_(scope) {}
+
+    counting_scope* scope_;
+  };
+
+  token get_token() noexcept {
+    return token{this};
+  }
+
+  void close() noexcept {
+    return scope_.close();
+  }
+
+  void request_stop() noexcept {
+    source_.request_stop();
+  }
+
+  sender auto join() noexcept {
+    return scope_.join();
+  }
+
+ private:
+  simple_counting_scope scope_;
+  inplace_stop_source source_;
+};
+```
+
 ## When to use `counting_scope` vs [@P3296R0]'s `let_with_async_scope`
 
 Although `counting_scope` and `let_with_async_scope` have overlapping use-cases, we specifically designed the two
