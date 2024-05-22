@@ -27,6 +27,7 @@ Changes
 ## R3
 - Update slide code to be exception safe
 - Split the async scope concept into a scope and token; update `counting_scope` to match
+- Add example for recursively spawned work using `let_with_async_scope` and `counting_scope`
 
 ## R2
 - Update `counting_scope::nest()` to explain when the scope's count of outstanding senders is decremented and remove
@@ -369,8 +370,12 @@ int main() {
 
   ex::sender auto snd = work(ctx);
 
-  // fire, but don't forget
-  ex::spawn(std::move(snd), scope.get_token());
+  try { 
+      // fire, but don't forget
+      ex::spawn(std::move(snd), scope.get_token());
+  } catch (...) {
+      // do something to handle exception
+  }
 
   // wait for all work nested within scope
   // to finish
@@ -680,6 +685,117 @@ class Camera {
 }
 ```
 
+## Recursively spawning work until completion
+Below are three ways you could recursively spawn work on a scope using `let_with_async_scope` or `counting_scope`.
+
+### `let_with_async_scope` with `spawn()`
+```cpp
+struct tree {
+  std::unique_ptr<tree> left;
+  std::unique_ptr<tree> right;
+  int data;
+};
+
+auto process(ex::scheduler auto sch, auto scope, tree& t) noexcept {
+  return ex::schedule(sch) | then([sch, &]() {
+    if (t.left)
+      ex::spawn(process(sch, scope, t.left.get()), scope);
+    if (t.right)
+      ex::spawn(process(sch, scope, t.right.get()), scope);
+    do_stuff(t.data);
+  }) | ex::let_error([](auto& e) {
+    // log error
+    return just();
+  });
+}
+
+int main() {
+  ex::scheduler sch;
+  tree t = make_tree();
+  // let_with_async_scope will ensure all new work will be spawned on the
+  // scope and will not be joined until all work is finished.
+  // NOTE: Exceptions will not be surfaced to let_with_async_scope; exceptions
+  // will be handled by let_error instead.
+  this_thread::sync_wait(ex::let_with_async_scope([&, sch](auto scope) {
+	return process(sch, scope, t);
+  }));
+}
+```
+
+### `let_with_async_scope` with `spawn_future()`
+```cpp
+struct tree {
+  std::unique_ptr<tree> left;
+  std::unique_ptr<tree> right;
+  int data;
+};
+
+auto process(ex::scheduler auto sch, auto scope, tree& t) {
+    return ex::schedule(sch) | ex::let_value([sch, &]() {
+      unifex::any_sender_of<> leftFut = ex::just();
+      unifex::any_sender_of<> rightFut = ex::just();
+      if (t.left) {  //
+         leftFut = ex::spawn_future(
+         scope, process(sch, scope, t.left.get()));
+      }
+
+      if (t.right) {  //
+         rightFut = ex::spawn_future(
+         scope, process(sch, scope, t.right.get()));
+      }
+
+      do_stuff(t.data);
+      return ex::when_all(leftFut, rightFut) | ex::then([](auto&&...) noexcept {});
+    });
+}
+
+int main() {
+    ex::scheduler sch;
+    tree t = make_tree();
+    // let_with_async_scope will ensure all new work will be spawned on the
+    // scope and will not be joined until all work is finished
+    // NOTE: Exceptions will be surfaced to let_with_async_scope which will
+    // call set_error with the exception_ptr
+    this_thread::sync_wait(ex::let_with_async_scope([&, sch](auto scope) {  //
+        return process(sch, scope, t);
+    }));
+}
+```
+
+### `counting_scope`
+```cpp
+struct tree {
+  std::unique_ptr<tree> left;
+  std::unique_ptr<tree> right;
+  int data;
+};
+
+auto process(ex::scheduler auto sch, tree& t) noexcept {
+  return unifex::let_value_with([]() noexcept { return ex::counting_scope{}; },
+      [&](ex::counting_scope& scope) {
+        return ex::schedule(sch) | ex::then([sch, &]() noexcept {
+          if (t.left)
+            ex::spawn(process(sch, t.left.get()), scope);
+
+          if (t.right)
+            ex::spawn(process(sch, t.right.get()), scope);
+
+          do_stuff(t.data);
+        }) | ex::let_error([](auto& e) {
+          // log error
+          return just();
+        }) | ex::finally([&scope]() noexcept {
+          return scope.join();
+        });
+      });
+}
+
+int main() {
+  ex::scheduler sch;
+  tree t = make_tree();
+  this_thread::sync_wait(process(sch, t));
+}
+```
 
 Async Scope, usage guide
 ========================
@@ -1276,19 +1392,21 @@ facilities to address separate problems. In short, `counting_scope` is best used
 `let_with_async_scope` is best used in a structured context.
 
 We define "unstructured context" as:
+
 - a place where using `sync_wait` would be inappropriate,
 - and you can't "solve by induction" (i.e you're not in an async context where you can start the sender by "awaiting"
   it)
 
 `counting_scope` should be used when you have a sender you want to start in an unstructured context. In this case,
-`spawn(sender, scope)` would be the preferred way of starting asynchronous work. `scope.join()` needs to be called
-before the owning object's destruction in order to ensure that the object's lifetime lives at least until all
+`spawn(sender, scope.get_token())` would be the preferred way of starting asynchronous work. `scope.join()` needs to be
+called before the owning object's destruction in order to ensure that the object's lifetime lives at least until all
 asynchronous work completes. Note that exception safety needs to be handled explicitly in the use of `counting_scope`.
 
 `let_with_async_scope` returns a sender, and therefore can only be started in one of 3 ways:
+
 1. `sync_wait`
 2. `spawn` on a `counting_scope`
-3. await
+3. `co_await`
 
 `let_with_async_scope` will manage the scope for you, ensuring that the managed scope is always joined before
 `let_with_async_scope` completes.  The algorithm frees the user from having to manage the coupling between the lifetimes
