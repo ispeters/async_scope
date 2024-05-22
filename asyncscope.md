@@ -261,7 +261,7 @@ crashes.
 
 [@P2300R7] doesn't give us out-of-the-box facilities to use in solving these types of problems.
 
-This paper proposes the `counting_scope` and [@P3296R0]'s`let_with_async_scope` facilities that would help us avoid the
+This paper proposes the `counting_scope` and [@P3296R0]'s `let_with_async_scope` facilities that would help us avoid the
 invalid behavior. With `counting_scope`, one might write safe code this way:
 
 ```cpp
@@ -451,7 +451,7 @@ int main() {
 
           // spawn the print sender on sch
           //
-          // NOTE: if this throws, let_with_async_scope will capture the exception
+          // NOTE: if spawn throws, let_with_async_scope will capture the exception
           //       and propagate it through its set_error completion
           ex::spawn(ex::on(sch, std::move(print_sender)), scope);
 
@@ -732,12 +732,12 @@ auto process(ex::scheduler auto sch, auto scope, tree& t) {
     return ex::schedule(sch) | ex::let_value([sch, &]() {
       unifex::any_sender_of<> leftFut = ex::just();
       unifex::any_sender_of<> rightFut = ex::just();
-      if (t.left) {  //
+      if (t.left) {  
          leftFut = ex::spawn_future(
          scope, process(sch, scope, t.left.get()));
       }
 
-      if (t.right) {  //
+      if (t.right) { 
          rightFut = ex::spawn_future(
          scope, process(sch, scope, t.right.get()));
       }
@@ -754,7 +754,7 @@ int main() {
     // scope and will not be joined until all work is finished
     // NOTE: Exceptions will be surfaced to let_with_async_scope which will
     // call set_error with the exception_ptr
-    this_thread::sync_wait(ex::let_with_async_scope([&, sch](auto scope) {  //
+    this_thread::sync_wait(ex::let_with_async_scope([&, sch](auto scope) { 
         return process(sch, scope, t);
     }));
 }
@@ -1175,14 +1175,6 @@ sender auto snd = spawn_future(on(sched, key_work()), scope) | then(continue_fun
 for (int i = 0; i < 10; i++)
     spawn(on(sched, other_work(i)), scope);
 return when_all(scope.join(), std::move(snd));
-```
-
-## `execution::let_with_async_scope`
-
-```cpp
-template <@@_scoped-sender-factory_@@ Callable>
-sender auto let_with_async_scope(Callable&& callable)
-    noexcept(std::is_nothrow_constructible_v<std::decay_t<Callable>, Callable>);
 ```
 
 ## `execution::simple_counting_scope`
