@@ -28,6 +28,8 @@ Changes
 - Permit caller of `spawn_future()` to provide a stop token in the optional environment argument.
 - Remove `[[nodiscard]]`.
 - Make `simple_counting_scope::token::token()` and `counting_scope::token::token()` explicit and exposition-only.
+- Remove redundant `concept async_scope`.
+- Remove last vestiges of `let_with_async_scope`.
 
 ## R3
 - Update slide code to be exception safe
@@ -828,14 +830,6 @@ struct @@_scope-token_@@ { // @@_exposition-only_@@
       noexcept(is_nothrow_constructible_v<remove_cvref_t<Sender>, Sender>);
 };
 
-// TODO: let_with_async_scope will store a copy of the callable and
-//       invoke that copy, so perhaps the callability should be assessed
-//       on a mutable lvalue reference-qualified type?
-template <class Callable>
-concept @@_scoped-sender-factory_@@ = // @@_exposition-only_@@
-    std::invocable<Callable, @@_scope-token_@@> &&
-    sender<std::invoke_result_t<Callable, @@_scope-token_@@>>;
-
 template <class Env>
 struct @@_spawn-env_@@; // @@_exposition-only_@@
 
@@ -881,10 +875,6 @@ void spawn(Sender&& snd, Token token, Env env = {});
 
 template <sender Sender, async_scope_token<Sender> Token, class Env = empty_env>
 @@_future-sender-t_@@<Sender, Env> spawn_future(Sender&& snd, Token token, Env env = {});
-
-template <@@_scoped-sender-factory_@@ Callable>
-sender auto let_with_async_scope(Callable&& callable)
-    noexcept(std::is_nothrow_constructible_v<std::decay_t<Callable>, Callable>);
 
 struct simple_counting_scope {
     simple_counting_scope() noexcept;
