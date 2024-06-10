@@ -1816,6 +1816,33 @@ a similar split of responsibilities.
 
 alternatives: "handle", "ref" (as a contraction of "reference")
 
+Specification
+============
+
+## `execution::async_scope_token`
+
+spec here
+
+## `execution::nest()`
+
+spec here
+
+## `execution::spawn()`
+
+spec here
+
+## `execution::spawn_future()`
+
+spec here
+
+## `execution::simple_counting_scope`
+
+spec here
+
+## `execution::counting_scope`
+
+spec here
+
 Acknowledgements
 ================
 
