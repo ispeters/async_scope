@@ -96,7 +96,6 @@ This paper describes the utilities needed to address the above scenarios within 
 The proposed solution comes in the following parts:
 
 - `template <class Token, class Sender> concept async_scope_token`{.cpp};
-- `template <class Scope> concept async_scope`{.cpp};
 - `sender auto nest(sender auto&& snd, async_scope_token auto token)`{.cpp};
 - `void spawn(sender auto&& snd, async_scope_token auto token, auto&& env)`{.cpp};
 - `sender auto spawn_future(sender auto&& snd, async_scope_token auto token, auto&& env)`{.cpp};
@@ -872,13 +871,6 @@ concept async_scope_token =
       { token.nest(std::forward<Sender>(snd)) } -> sender;
     };
 
-template <class Scope>
-concept async_scope =
-    requires(Scope scope) {
-      { scope.get_token() } -> async_scope_token<decltype(just())>;
-      { scope.join() } -> sender;
-    };
-
 template <sender Sender, async_scope_token<Sender> Token>
 auto nest(Sender&& snd, Token token) noexcept(noexcept(token.nest(std::forward<Sender>(snd))))
     -> decltype(token.nest(std::forward<Sender>(snd)));
@@ -989,29 +981,6 @@ attempts to associate its input sender with the handle's async scope in a scope-
 
 An async scope token behaves like a pointer-to-async-scope; tokens are no-throw copyable and movable, and it is
 undefined behaviour to invoke `nest()` on a token that has outlived its scope.
-
-## `execution::async_scope`
-
-```cpp
-template <class Scope>
-concept async_scope =
-    requires(Scope scope) {
-      { scope.get_token() } -> async_scope_token<decltype(just())>;
-      { scope.join() } -> sender;
-    };
-```
-
-As described above, an async scope is a type that implements a bookkeeping policy for senders. If a given type, `Scope`,
-satisifies `async_scope<Scope>` then, for a value, `scope`, of type `Scope`:
-
- - `scope.get_token()` returns an async scope token, `t`,  whose `nest()` method tries to associate the input sender
-   with `scope`; and
- - `scope.join()` returns a sender, `s`, such that,
-   - `s` may only complete with `set_value()`;
-   - connecting and starting `s` requests that the scope arrange not to have any outstanding associated senders "soon"
-     (the interpretation of this request and the definition of "soon" are left up to the definition of `Scope`); and
-   - once `s` has completed, no new senders may become associated with `scope` (the means by which this guarantee is
-     provided is left up to the definition of `Scope`).
 
 ## `execution::nest`
 
@@ -1782,17 +1751,17 @@ allocation, which `nest()` does not do).
 
 alternatives: `wrap()`, `attach()`
 
-## `async_scope`
+## `async_scope_token`
 
 This is a concept that is satisfied by types that support nesting senders within themselves. It is primarily useful for
 constraining the arguments to `spawn()` and `spawn_future()` to give useful error messages for invalid invocations.
 
-Since concepts don't support existential quantifiers and thus can't express "type `T` is an `async_scope` if there
-exists a sender, `s`, for which `t.nest(s)` is valid", the `async_scope` concept must be parameterized on both the type
-of the scope and the type of some particular sender and thus describes whether *this* scope type is an `async_scope` in
-combination with *this* sender type. Given this limitation, perhaps the name should convey something about the fact that
-it is checking the relationship between two types rather than checking something about the scope's type alone. Nothing
-satisfying comes to mind.
+Since concepts don't support existential quantifiers and thus can't express "type `T` is an `async_scope_token` if there
+exists a sender, `s`, for which `t.nest(s)` is valid", the `async_scope_token` concept must be parameterized on both the
+type of the token and the type of some particular sender and thus describes whether *this* token type is an
+`async_scope_token` in combination with *this* sender type. Given this limitation, perhaps the name should convey
+something about the fact that it is checking the relationship between two types rather than checking something about the
+scope's type alone. Nothing satisfying comes to mind.
 
 alternatives: don't name it and leave it as _`exposition-only`_
 
