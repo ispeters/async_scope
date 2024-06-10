@@ -27,6 +27,7 @@ Changes
 ## R4
 - Permit caller of `spawn_future()` to provide a stop token in the optional environment argument.
 - Remove `[[nodiscard]]`.
+- Make `simple_counting_scope::token::token()` and `counting_scope::token::token()` explicit and exposition-only.
 
 ## R3
 - Update slide code to be exception safe
@@ -914,7 +915,7 @@ struct simple_counting_scope {
      private:
       friend simple_counting_scope;
 
-      token(simple_counting_scope* s) noexcept;
+      explicit token(simple_counting_scope* s) noexcept; // @@_exposition-only_@@
 
       simple_counting_scope* scope; // @@_exposition-only_@@
     };
@@ -949,7 +950,7 @@ struct counting_scope {
      private:
       friend counting_scope;
 
-      token(counting_scope* s) noexcept;
+      explicit token(counting_scope* s) noexcept; // @@_exposition-only_@@
 
       counting_scope* scope; // @@_exposition-only_@@
     };
@@ -1207,7 +1208,7 @@ struct simple_counting_scope {
      private:
       friend simple_counting_scope;
 
-      token(simple_counting_scope* s) noexcept;
+      explicit token(simple_counting_scope* s) noexcept; // @@_exposition-only_@@
 
       simple_counting_scope* scope; // @@_exposition-only_@@
     };
@@ -1495,7 +1496,7 @@ struct counting_scope {
      private:
       friend counting_scope;
 
-      token(counting_scope* s) noexcept;
+      explicit token(counting_scope* s) noexcept; // @@_exposition-only_@@
 
       counting_scope* scope; // @@_exposition-only_@@
     };
