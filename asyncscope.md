@@ -26,6 +26,7 @@ Changes
 
 ## R4
 - Permit caller of `spawn_future()` to provide a stop token in the optional environment argument.
+- Remove `[[nodiscard]]`.
 
 ## R3
 - Update slide code to be exception safe
@@ -907,7 +908,7 @@ struct simple_counting_scope {
 
     struct token {
       template <sender S>
-      [[nodiscard]] @@_nest-sender_@@<std::remove_cvref_t<S>> nest(S&& s) const
+      @@_nest-sender_@@<std::remove_cvref_t<S>> nest(S&& s) const
           noexcept(std::is_nothrow_constructible_v<std::remove_cvref_t<S>, S>);
 
      private:
@@ -924,7 +925,7 @@ struct simple_counting_scope {
 
     struct @@_join-sender_@@; // @@_exposition-only_@@
 
-    [[nodiscard]] @@_join-sender_@@ join() noexcept;
+    @@_join-sender_@@ join() noexcept;
 };
 
 struct counting_scope {
@@ -942,7 +943,7 @@ struct counting_scope {
 
     struct token {
       template <sender S>
-      [[nodiscard]] @@_nest-sender_@@<std::remove_cvref_t<S>> nest(S&& s) const
+      @@_nest-sender_@@<std::remove_cvref_t<S>> nest(S&& s) const
           noexcept(std::is_nothrow_constructible_v<std::remove_cvref_t<S>, S>);
 
      private:
@@ -961,7 +962,7 @@ struct counting_scope {
 
     struct @@_join-sender_@@; // @@_exposition-only_@@
 
-    [[nodiscard]] @@_join-sender_@@ join() noexcept;
+    @@_join-sender_@@ join() noexcept;
 };
 ```
 
@@ -1200,7 +1201,7 @@ struct simple_counting_scope {
 
     struct token {
       template <sender S>
-      [[nodiscard]] @@_nest-sender_@@<std::remove_cvref_t<S>> nest(S&& s) const
+      @@_nest-sender_@@<std::remove_cvref_t<S>> nest(S&& s) const
           noexcept(std::is_nothrow_constructible_v<std::remove_cvref_t<S>, S>);
 
      private:
@@ -1217,7 +1218,7 @@ struct simple_counting_scope {
 
     struct @@_join-sender_@@; // @@_exposition-only_@@
 
-    [[nodiscard]] @@_join-sender_@@ join() noexcept;
+    @@_join-sender_@@ join() noexcept;
 };
 ```
 
@@ -1390,7 +1391,7 @@ calls to `nest()` that return normally return unassociated senders.
 ```cpp
 struct @@_join-sender_@@; // @@_exposition-only_@@
 
-[[nodiscard]] @@_join-sender_@@ join() noexcept;
+@@_join-sender_@@ join() noexcept;
 ```
 
 Returns a _`join-sender`_. When the _`join-sender`_ is connected to a receiver, `r`, it produces an
@@ -1411,7 +1412,7 @@ template <sender S>
 struct @@_nest-sender_@@; // @@_exposition-only_@@
 
 template <sender S>
-[[nodiscard]] @@_nest-sender_@@<std::remove_cvref_t<S>> nest(S&& s) const noexcept(
+@@_nest-sender_@@<std::remove_cvref_t<S>> nest(S&& s) const noexcept(
         std::is_nothrow_constructible_v<std::remove_cvref_t<S>, S>);
 ```
 
@@ -1488,7 +1489,7 @@ struct counting_scope {
 
     struct token {
       template <sender S>
-      [[nodiscard]] @@_nest-sender_@@<std::remove_cvref_t<S>> nest(S&& s) const
+      @@_nest-sender_@@<std::remove_cvref_t<S>> nest(S&& s) const
           noexcept(std::is_nothrow_constructible_v<std::remove_cvref_t<S>, S>);
 
      private:
@@ -1507,7 +1508,7 @@ struct counting_scope {
 
     struct @@_join-sender_@@; // @@_exposition-only_@@
 
-    [[nodiscard]] @@_join-sender_@@ join() noexcept;
+    @@_join-sender_@@ join() noexcept;
 };
 ```
 
@@ -1617,7 +1618,7 @@ from this internal stop source, the effect is to send stop requests to all outst
 ```cpp
 struct @@_join-sender_@@; // @@_exposition-only_@@
 
-[[nodiscard]] @@_join-sender_@@ join() noexcept;
+@@_join-sender_@@ join() noexcept;
 ```
 
 Returns a _`join-sender`_ that behaves the same as the result of `simple_counting_scope::join()`. Connecting and
@@ -1632,7 +1633,7 @@ template <sender S>
 struct @@_nest-sender_@@; // @@_exposition-only_@@
 
 template <sender S>
-[[nodiscard]] @@_nest-sender_@@<std::remove_cvref_t<S>> nest(S&& s) const noexcept(
+@@_nest-sender_@@<std::remove_cvref_t<S>> nest(S&& s) const noexcept(
         std::is_nothrow_constructible_v<std::remove_cvref_t<S>, S>);
 ```
 
