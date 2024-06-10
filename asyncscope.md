@@ -24,6 +24,9 @@ toc: true
 Changes
 =======
 
+## R4
+- Permit caller of `spawn_future()` to provide a stop token in the optional environment argument.
+
 ## R3
 - Update slide code to be exception safe
 - Split the async scope concept into a scope and token; update `counting_scope` to match
@@ -1148,8 +1151,13 @@ signatures of the spawned sender.
 The receiver, `fr`, that is connected to the nested sender responds to `get_env(fr)` with an instance of
 `@@_future-env_@@<Env>`, `fenv`. The result of `get_allocator(fenv)` is a copy of the _Allocator_ used to allocate the
 dynamically allocated state. The result of `get_stop_token(fenv)` is a stop token that will be "triggered" (i.e. signal
-that stop is requested) by the returned _`future-sender`_ when it is dropped or receives a stop request itself. For all
-other queries, `Q`, the result of `Q(fenv)` is `Q(env)`.
+that stop is requested) when:
+
+- the returned _`future-sender`_ is dropped;
+- the returned _`future-sender`_ receives a stop request; or
+- the stop token returned from `get_stop_token(env)` is triggered if `get_stop_token(env)` is a valid expression.
+
+For all other queries, `Q`, the result of `Q(fenv)` is `Q(env)`.
 
 This is similar to `ensure_started()` from [@P2300R7], but the scope may observe and participate in the lifecycle of the
 work described by the sender. The `counting_scope` described in this paper uses this opportunity to keep a count of
