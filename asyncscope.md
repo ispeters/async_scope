@@ -775,10 +775,10 @@ struct tree {
 auto process(ex::counting_scope_token scope, ex::scheduler auto sch, tree& t) noexcept {
   return ex::schedule(sch) | ex::then([sch, &]() noexcept {
     if (t.left)
-       ex::spawn(process(sch, t.left.get()), scope);
+       ex::spawn(process(scope, sch, t.left.get()), scope);
 
     if (t.right)
-       ex::spawn(process(sch, t.right.get()), scope);
+       ex::spawn(process(scope, sch, t.right.get()), scope);
 
      do_stuff(t.data);
    }) | ex::let_error([](auto& e) {
@@ -791,7 +791,7 @@ int main() {
   ex::scheduler sch;
   tree t = make_tree();
   ex::counting_scope scope;
-  this_thread::sync_wait(process(scope.get_token(), sch, t));
+  ex::spawn(process(scope.get_token(), sch, t), scope.get_token());
   this_thread::sync_wait(scope.join());
 }
 ```
