@@ -1825,7 +1825,32 @@ spec here
 
 ## `execution::nest()`
 
-spec here
+::: add
+__§34.9.11.14 `std::execution::nest` [exec.nest]__
+
+[1]{.pnum} `nest` nests its input sender within the dynamic lifetime of the async scope referenced by its input async
+scope token.
+
+[2]{.pnum} The name `nest` denotes a customization point object. For subexpressions `sndr` and `token`, let `Sndr` be
+`decltype((sndr))` and let `Token` be `decltype((token))`. If `Sndr` and `Token` do not satisfy
+`async_scope_token<Sender, Token>` then `nest(sndr, token)` is ill-formed.
+
+[3]{.pnum} Otherwise, the expression `nest(sndr, token)` is expression-equivalent to:
+```cpp
+Token{token}.nest(sndr);
+```
+
+[4]{.pnum} Contrary to paragraph 3 in [exec.adapt.general]{.sref} (which prohibits sender adaptors from causing
+observable effects eagerly), `nest` may cause side effects observable through the async scope referred to by `token`
+before returning.
+
+[5]{.pnum} Let the subexpression `out_sndr` denote the result of the invocation `nest(sndr, token)` or an object copied
+or moved from such, and let the subexpression `rcvr` denote a receiver such that the expression
+`connect(out_sndr, rcvr)` is well-formed. The expression `connect(out_sndr, rcvr)` has undefined behavior unless it
+creates an asynchronous operation ([async.ops]{.sref}) that, when started:
+
+- [5.1]{.pnum} TODO: specify that starting `out_sndr` starts `sndr` unless `out_sndr` is an unassociated sender.
+:::
 
 ## `execution::spawn()`
 
