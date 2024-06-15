@@ -373,7 +373,7 @@ int main() {
 
   ex::sender auto snd = work(ctx);
 
-  try { 
+  try {
       // fire, but don't forget
       ex::spawn(std::move(snd), scope.get_token());
   } catch (...) {
@@ -738,12 +738,12 @@ auto process(ex::scheduler auto sch, auto scope, tree& t) {
     return ex::schedule(sch) | ex::let_value([sch, &]() {
       unifex::any_sender_of<> leftFut = ex::just();
       unifex::any_sender_of<> rightFut = ex::just();
-      if (t.left) {  
+      if (t.left) {
          leftFut = ex::spawn_future(
          scope, process(sch, scope, t.left.get()));
       }
 
-      if (t.right) { 
+      if (t.right) {
          rightFut = ex::spawn_future(
          scope, process(sch, scope, t.right.get()));
       }
@@ -760,7 +760,7 @@ int main() {
     // scope and will not be joined until all work is finished
     // NOTE: Exceptions will be surfaced to let_with_async_scope which will
     // call set_error with the exception_ptr
-    this_thread::sync_wait(ex::let_with_async_scope([&, sch](auto scope) { 
+    this_thread::sync_wait(ex::let_with_async_scope([&, sch](auto scope) {
         return process(sch, scope, t);
     }));
 }
@@ -1820,8 +1820,25 @@ Specification
 ============
 
 ## `execution::async_scope_token`
+::: add
+__§33.4 Async scope token concept[asyncscopetoken.concept]__
 
-spec here
+[1]{.pnum} Let Sender be `decltype(sndr)` and Token be an async scope token type. If the type `async_scope_token<Token, Sender>` is valid, it denotes a non-owning handle to an [async scope](#executionasync_scope) that can `nest` Senders onto the token's `async_scope`.
+```cpp
+template <class Token, class Sender>
+concept async_scope_token = // exposition only
+    copyable<Token> &&
+    is_nothrow_move_constructible_v<Token> &&
+    is_nothrow_move_assignable_v<Token> &&
+    is_nothrow_copy_constructible_v<Token> &&
+    is_nothrow_copy_assignable_v<Token> &&
+    sender<Sender> &&
+    requires(Token token, Sender&& snd) {
+      { token.nest(std::forward<Sender>(snd)) } -> sender;
+    };
+```
+[2]{.pnum} _Mandates_: `async_scope_token` must be nothrow copyable and moveable.
+[3]{.pnum} _Preconditions_: Token's [async scope](#executionasync_scope) is valid when invoking `nest`(#executuionnest) on a token.
 
 ## `execution::nest()`
 
