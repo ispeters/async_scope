@@ -1837,7 +1837,7 @@ scope token.
 
 [3]{.pnum} Otherwise, the expression `nest(sndr, token)` is expression-equivalent to:
 ```cpp
-Token{token}.nest(sndr);
+decay_t<Token>{token}.nest(sndr);
 ```
 
 [4]{.pnum} Contrary to paragraph 3 in [exec.adapt.general]{.sref} (which prohibits sender adaptors from causing
