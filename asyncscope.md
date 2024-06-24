@@ -1820,25 +1820,30 @@ Specification
 ============
 
 ## `execution::async_scope_token`
-::: add
-__§33.4 Async scope token concept[asyncscopetoken.concept]__
 
-[1]{.pnum} Let Sender be `decltype(sndr)` and Token be an async scope token type. If the type `async_scope_token<Token, Sender>` is valid, it denotes a non-owning handle to an [async scope](#executionasync_scope) that can `nest` Senders onto the token's `async_scope`.
+Add the following as a new subsection immediately after __[exec.utils.tfxcmplsigs]__:
+
+::: add
+__`std::execution::async_scope_token` [exec.asyncscopetoken.concept]__
+
+[1]{.pnum} The `async_scope_token<Token, Sndr>` concept defines the requirements on an object of type `Token` that can
+be used to associate a sender of type `Sndr` with the token's associated async scope object.
 ```cpp
+namespace std::execution {
+
 template <class Token, class Sender>
-concept async_scope_token = // exposition only
-    copyable<Token> &&
-    is_nothrow_move_constructible_v<Token> &&
-    is_nothrow_move_assignable_v<Token> &&
-    is_nothrow_copy_constructible_v<Token> &&
-    is_nothrow_copy_assignable_v<Token> &&
+concept async_scope_token =
     sender<Sender> &&
     requires(Token token, Sender&& snd) {
       { token.nest(std::forward<Sender>(snd)) } -> sender;
-    };
+    } &&
+    copyable<Token>;
+
+}
 ```
-[2]{.pnum} _Mandates_: `async_scope_token` must be nothrow copyable and moveable.
-[3]{.pnum} _Preconditions_: Token's [async scope](#executionasync_scope) is valid when invoking `nest`(#executuionnest) on a token.
+[2]{.pnum} `async_scope_token<Token, Sndr>` is modeled only if `Token`'s copy and move operations are not potentially
+throwing.
+:::
 
 ## `execution::nest()`
 
