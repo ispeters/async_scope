@@ -1821,7 +1821,29 @@ Specification
 
 ## `execution::async_scope_token`
 
-spec here
+Add the following as a new subsection immediately after __[exec.utils.tfxcmplsigs]__:
+
+::: add
+__`std::execution::async_scope_token` [exec.asyncscopetoken.concept]__
+
+[1]{.pnum} The `async_scope_token<Token, Sndr>` concept defines the requirements on an object of type `Token` that can
+be used to associate a sender of type `Sndr` with the token's associated async scope object.
+```cpp
+namespace std::execution {
+
+template <class Token, class Sender>
+concept async_scope_token =
+    sender<Sender> &&
+    requires(Token token, Sender&& snd) {
+      { token.nest(std::forward<Sender>(snd)) } -> sender;
+    } &&
+    copyable<Token>;
+
+}
+```
+[2]{.pnum} `async_scope_token<Token, Sndr>` is modeled only if `Token`'s copy and move operations are not potentially
+throwing.
+:::
 
 ## `execution::nest()`
 
