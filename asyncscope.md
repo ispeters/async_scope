@@ -1,6 +1,6 @@
 ---
 title: "`async_scope` -- Creating scopes for non-sequential concurrency"
-document: D3149R4
+document: P3149R4
 date: today
 audience:
   - "SG1 Parallelism and Concurrency"
@@ -30,6 +30,7 @@ Changes
 - Make `simple_counting_scope::token::token()` and `counting_scope::token::token()` explicit and exposition-only.
 - Remove redundant `concept async_scope`.
 - Remove last vestiges of `let_with_async_scope`.
+- Add some wording to a new [Specification](#specification) section
 
 ## R3
 - Update slide code to be exception safe
