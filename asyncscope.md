@@ -1744,7 +1744,7 @@ given sender with a given scope, and then they allocate, connect, and start the 
 It would be good for the name to indicate that it is a simple operation (insert, add, embed, extend might communicate
 allocation, which `nest()` does not do).
 
-alternatives: `wrap()`, `attach()`, `track`, `add`, `associate`
+alternatives: `wrap()`, `attach()`, `track()`, `add()`, `associate()`
 
 ## `async_scope_token`
 
