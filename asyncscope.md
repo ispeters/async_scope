@@ -289,7 +289,7 @@ int main() {
     ex::counting_scope scope; // create this *after* the resources it protects
 
     // make sure we always join
-    unifex:scope_guard join = [&]() noexcept {
+    unifex::scope_guard join = [&]() noexcept {
       // wait for all nested work to finish
       this_thread::sync_wait(scope.join()); // NEW!
     };
@@ -456,7 +456,7 @@ int main() {
           int val = 13;
 
           auto print_sender = ex::just()
-              | ex::then([val] {
+              | ex::then([val]() noexcept {
                 std::cout << "Hello world! Have an int with value: " << val << "\n";
               });
 
@@ -1006,7 +1006,7 @@ When `nest()` returns an unassociated sender:
 Regardless of whether the returned sender is associated or unassociated, it is multi-shot if the input sender is
 multi-shot and single-shot otherwise.
 
-## `execution::spawn()`
+## `execution::spawn`
 
 ```cpp
 namespace { // @@_exposition-only_@@
@@ -1068,7 +1068,7 @@ for (int i = 0; i < 100; i++)
 ```
 
 
-## `execution::spawn_future()`
+## `execution::spawn_future`
 
 ```cpp
 namespace { // @@_exposition-only_@@
@@ -1317,7 +1317,7 @@ resources protected by the scope.
 A `simple_counting_scope` is uncopyable and immovable so its copy and move operators are explicitly deleted.
 `simple_counting_scope` could be made movable but it would cost an allocation so this is not proposed.
 
-### `simple_counting_scope::simple_counting_scope()`
+### `simple_counting_scope::simple_counting_scope`
 
 ```cpp
 simple_counting_scope::simple_counting_scope() noexcept;
@@ -1325,7 +1325,7 @@ simple_counting_scope::simple_counting_scope() noexcept;
 
 Initializes a `simple_counting_scope` in the unused state with the count of outstanding operations set to zero.
 
-### `simple_counting_scope::~simple_counting_scope()`
+### `simple_counting_scope::~simple_counting_scope`
 
 ```cpp
 simple_counting_scope::~simple_counting_scope();
@@ -1334,7 +1334,7 @@ simple_counting_scope::~simple_counting_scope();
 Checks that the `simple_counting_scope` is in the joined, unused, or unused-and-closed state and invokes
 `std::terminate()` if not.
 
-### `simple_counting_scope::get_token()`
+### `simple_counting_scope::get_token`
 
 ```cpp
 simple_counting_scope::token get_token() noexcept;
@@ -1342,7 +1342,7 @@ simple_counting_scope::token get_token() noexcept;
 
 Returns a `simple_counting_scope::token` referring to the current scope, as if by invoking `token{this}`.
 
-### `simple_counting_scope::close()`
+### `simple_counting_scope::close`
 
 ```cpp
 void close() noexcept;
@@ -1351,7 +1351,7 @@ void close() noexcept;
 Moves the scope to the closed, unused-and-closed, or closed-and-joining state. After a call to `close()`, all future
 calls to `nest()` that return normally return unassociated senders.
 
-### `simple_counting_scope::join()`
+### `simple_counting_scope::join`
 
 ```cpp
 struct @@_join-sender_@@; // @@_exposition-only_@@
@@ -1370,7 +1370,7 @@ the receiver's scheduler restricts which receivers a _`join-sender`_ may be conn
 the alternative would have the _`join-sender`_ completing on the execution context of whichever nested operation happens
 to be the last one to complete.
 
-### `simple_counting_scope::token::nest()`
+### `simple_counting_scope::token::nest`
 
 ```cpp
 template <sender S>
@@ -1534,7 +1534,7 @@ stop request.
 Other than the use of _`stop_when()`_ in `counting_scope::token::nest()` and the addition of `request_stop()` to the
 interface, `counting_scope` has the same behavior and lifecycle as `simple_counting_scope`.
 
-### `counting_scope::counting_scope()`
+### `counting_scope::counting_scope`
 
 ```cpp
 counting_scope::counting_scope() noexcept;
@@ -1542,7 +1542,7 @@ counting_scope::counting_scope() noexcept;
 
 Initializes a `counting_scope` in the unused state with the count of outstanding operations set to zero.
 
-### `counting_scope::~counting_scope()`
+### `counting_scope::~counting_scope`
 
 ```cpp
 counting_scope::~counting_scope();
@@ -1551,7 +1551,7 @@ counting_scope::~counting_scope();
 Checks that the `counting_scope` is in the joined, unused, or unused-and-closed state and invokes `std::terminate()` if
 not.
 
-### `counting_scope::get_token()`
+### `counting_scope::get_token`
 
 ```cpp
 counting_scope::token get_token() noexcept;
@@ -1559,7 +1559,7 @@ counting_scope::token get_token() noexcept;
 
 Returns a `counting_scope::token` referring to the current scope, as if by invoking `token{this}`.
 
-### `counting_scope::close()`
+### `counting_scope::close`
 
 ```cpp
 void close() noexcept;
@@ -1568,7 +1568,7 @@ void close() noexcept;
 Moves the scope to the closed, unused-and-closed, or closed-and-joining state. After a call to `close()`, all future
 calls to `nest()` that return normally return unassociated senders.
 
-### `counting_scope::request_stop()`
+### `counting_scope::request_stop`
 
 ```cpp
 void request_stop() noexcept;
@@ -1577,7 +1577,7 @@ void request_stop() noexcept;
 Requests stop on the scope's internal stop source. Since all senders nested within the scope have been given stop tokens
 from this internal stop source, the effect is to send stop requests to all outstanding (and future) nested operations.
 
-### `counting_scope::join()`
+### `counting_scope::join`
 
 ```cpp
 struct @@_join-sender_@@; // @@_exposition-only_@@
@@ -1590,7 +1590,7 @@ starting the _`join-sender`_ moves the scope to the open-and-joining or closed-a
 completes when the scope's count of outstanding operations drops to zero, at which point the scope moves to the joined
 state.
 
-### `counting_scope::token::nest()`
+### `counting_scope::token::nest`
 
 ```cpp
 template <sender S>
@@ -1849,7 +1849,7 @@ concept async_scope_token =
 throwing.
 :::
 
-## `execution::nest()`
+## `execution::nest`
 
 Add the following as a new subsection immediately after __[exec.stopped.as.error]__:
 
@@ -1879,11 +1879,11 @@ creates an asynchronous operation (__[async.ops]__) that, when started:
 - [5.1]{.pnum} TODO: specify that starting `out_sndr` starts `sndr` unless `out_sndr` is an unassociated sender.
 :::
 
-## `execution::spawn()`
+## `execution::spawn`
 
 spec here
 
-## `execution::spawn_future()`
+## `execution::spawn_future`
 
 spec here
 
