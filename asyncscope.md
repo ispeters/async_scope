@@ -24,6 +24,10 @@ toc: true
 Changes
 =======
 
+## R5
+- Clarify that the _`nest-sender`_'s operation state must destroy its child operation state before decrementing the
+  scope's reference count.
+
 ## R4
 - Permit caller of `spawn_future()` to provide a stop token in the optional environment argument.
 - Remove `[[nodiscard]]`.
@@ -1397,9 +1401,9 @@ An associated _`nest-sender`_ is a kind of RAII handle to the scope; it is respo
 count of outstanding senders in its destructor unless that responsibility is first given to some other object.
 Move-construction and move-assignment transfer the decrement responsibility to the destination instance. Connecting an
 instance to a receiver transfers the decrement responsibility to the resulting _`operation-state`_, which must meet the
-responsibility when it destroys its "child operation" (i.e. the _`operation-state`_ constructed when connecting the
-sender, `s`, that was originally passed to `nest()`); it's expected that the child operation will be destroyed as a side
-effect of the _`nest-sender`_'s _`operation-state`_'s destructor.
+responsibility in its destructor after it destroys its "child operation" (i.e. the _`operation-state`_ constructed when
+connecting the sender, `s`, that was originally passed to `nest()`); it's expected that the child operation will be
+destroyed as a side effect of the _`nest-sender`_'s _`operation-state`_'s destructor.
 
 Note: the timing of when an _`operation-state`_ decrements the scope's count is chosen to avoid exposing user code to
 dangling references. Decrementing the scope's count may move the scope to the joined state, which would allow the
