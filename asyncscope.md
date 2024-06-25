@@ -1400,10 +1400,9 @@ If the atomic state change fails then the return value is an unassociated _`nest
 An associated _`nest-sender`_ is a kind of RAII handle to the scope; it is responsible for decrementing the scope's
 count of outstanding senders in its destructor unless that responsibility is first given to some other object.
 Move-construction and move-assignment transfer the decrement responsibility to the destination instance. Connecting an
-instance to a receiver transfers the decrement responsibility to the resulting _`operation-state`_, which must meet the
-responsibility in its destructor after it destroys its "child operation" (i.e. the _`operation-state`_ constructed when
-connecting the sender, `s`, that was originally passed to `nest()`); it's expected that the child operation will be
-destroyed as a side effect of the _`nest-sender`_'s _`operation-state`_'s destructor.
+instance to a receiver transfers the decrement responsibility to the resulting _`operation-state`_; that
+_`operation-state`_'s destructor must destroy its "child operation" (i.e. the _`operation-state`_ constructed when
+connecting the sender, `s`, that was originally passed to `nest()`) before performing the decrement.
 
 Note: the timing of when an _`operation-state`_ decrements the scope's count is chosen to avoid exposing user code to
 dangling references. Decrementing the scope's count may move the scope to the joined state, which would allow the
