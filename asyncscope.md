@@ -27,6 +27,7 @@ Changes
 ## R5
 - Clarify that the _`nest-sender`_'s operation state must destroy its child operation state before decrementing the
   scope's reference count.
+- Add naming alternates
 
 ## R4
 - Permit caller of `spawn_future()` to provide a stop token in the optional environment argument.
@@ -1743,7 +1744,7 @@ given sender with a given scope, and then they allocate, connect, and start the 
 It would be good for the name to indicate that it is a simple operation (insert, add, embed, extend might communicate
 allocation, which `nest()` does not do).
 
-alternatives: `wrap()`, `attach()`
+alternatives: `wrap()`, `attach()`, `track`, `add`, `associate`
 
 ## `async_scope_token`
 
@@ -1757,7 +1758,8 @@ type of the token and the type of some particular sender and thus describes whet
 something about the fact that it is checking the relationship between two types rather than checking something about the
 scope's type alone. Nothing satisfying comes to mind.
 
-alternatives: don't name it and leave it as _`exposition-only`_
+alternatives: don't name it and leave it as _`exposition-only`_, `task_pool_ref`, `task_pool_token`, `task_group_ref`,
+`sender_group_ref`, `task_group_token`, `sender_group_token`
 
 ## `spawn()`
 
@@ -1780,9 +1782,9 @@ It would be good for the name to be ugly, to indicate that it is a more expensiv
 
 alternatives: `spawn_with_result()`
 
-## `counting_scope`
+## `simple_counting_scope`
 
-A `counting_scope` represents the root of a set of nested lifetimes.
+A `simple_counting_scope` represents the root of a set of nested lifetimes.
 
 One mental model for this is a semaphore. It tracks a count of lifetimes and fires an event when the count reaches 0.
 
@@ -1792,7 +1794,14 @@ and nested blocks.
 Another mental model for this is a container. This is the least accurate model. This container is a value that does not
 contain values. This container contains a set of active senders (an active sender is not a value, it is an operation).
 
-alternatives: `async_scope`
+alternatives: `simpile_async_scope`, `simple_task_pool`, `fast_task_pool`, `non_cancellable_task_pool`, `simple_task_group`,
+`simple_sender_group`
+
+## `counting_scope`
+Has all of the same behavior as `simple_counting_scope`, with the added functionality of cancellation; work `nest`-ed
+on this scope can be asked to cancel.
+
+alternatives: `async_scope`, `task_pool`, `task_group`, `sender_group`
 
 ### `counting_scope::join()`
 
