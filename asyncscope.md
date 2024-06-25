@@ -1,6 +1,6 @@
 ---
 title: "`async_scope` -- Creating scopes for non-sequential concurrency"
-document: P3149R3
+document: P3149R4
 date: today
 audience:
   - "SG1 Parallelism and Concurrency"
@@ -23,6 +23,14 @@ toc: true
 
 Changes
 =======
+
+## R4
+- Permit caller of `spawn_future()` to provide a stop token in the optional environment argument.
+- Remove `[[nodiscard]]`.
+- Make `simple_counting_scope::token::token()` and `counting_scope::token::token()` explicit and exposition-only.
+- Remove redundant `concept async_scope`.
+- Remove last vestiges of `let_with_async_scope`.
+- Add some wording to a new [Specification](#specification) section
 
 ## R3
 - Update slide code to be exception safe
@@ -91,7 +99,6 @@ This paper describes the utilities needed to address the above scenarios within 
 The proposed solution comes in the following parts:
 
 - `template <class Token, class Sender> concept async_scope_token`{.cpp};
-- `template <class Scope> concept async_scope`{.cpp};
 - `sender auto nest(sender auto&& snd, async_scope_token auto token)`{.cpp};
 - `void spawn(sender auto&& snd, async_scope_token auto token, auto&& env)`{.cpp};
 - `sender auto spawn_future(sender auto&& snd, async_scope_token auto token, auto&& env)`{.cpp};
@@ -771,10 +778,10 @@ struct tree {
 auto process(ex::counting_scope_token scope, ex::scheduler auto sch, tree& t) noexcept {
   return ex::schedule(sch) | ex::then([sch, &]() noexcept {
     if (t.left)
-       ex::spawn(process(sch, t.left.get()), scope);
+       ex::spawn(process(scope, sch, t.left.get()), scope);
 
     if (t.right)
-       ex::spawn(process(sch, t.right.get()), scope);
+       ex::spawn(process(scope, sch, t.right.get()), scope);
 
      do_stuff(t.data);
    }) | ex::let_error([](auto& e) {
@@ -787,7 +794,7 @@ int main() {
   ex::scheduler sch;
   tree t = make_tree();
   ex::counting_scope scope;
-  this_thread::sync_wait(process(scope.get_token(), sch, t));
+  ex::spawn(process(scope.get_token(), sch, t), scope.get_token());
   this_thread::sync_wait(scope.join());
 }
 ```
@@ -824,14 +831,6 @@ struct @@_scope-token_@@ { // @@_exposition-only_@@
       noexcept(is_nothrow_constructible_v<remove_cvref_t<Sender>, Sender>);
 };
 
-// TODO: let_with_async_scope will store a copy of the callable and
-//       invoke that copy, so perhaps the callability should be assessed
-//       on a mutable lvalue reference-qualified type?
-template <class Callable>
-concept @@_scoped-sender-factory_@@ = // @@_exposition-only_@@
-    std::invocable<Callable, @@_scope-token_@@> &&
-    sender<std::invoke_result_t<Callable, @@_scope-token_@@>>;
-
 template <class Env>
 struct @@_spawn-env_@@; // @@_exposition-only_@@
 
@@ -867,13 +866,6 @@ concept async_scope_token =
       { token.nest(std::forward<Sender>(snd)) } -> sender;
     };
 
-template <class Scope>
-concept async_scope =
-    requires(Scope scope) {
-      { scope.get_token() } -> async_scope_token<decltype(just())>;
-      { scope.join() } -> sender;
-    };
-
 template <sender Sender, async_scope_token<Sender> Token>
 auto nest(Sender&& snd, Token token) noexcept(noexcept(token.nest(std::forward<Sender>(snd))))
     -> decltype(token.nest(std::forward<Sender>(snd)));
@@ -884,10 +876,6 @@ void spawn(Sender&& snd, Token token, Env env = {});
 
 template <sender Sender, async_scope_token<Sender> Token, class Env = empty_env>
 @@_future-sender-t_@@<Sender, Env> spawn_future(Sender&& snd, Token token, Env env = {});
-
-template <@@_scoped-sender-factory_@@ Callable>
-sender auto let_with_async_scope(Callable&& callable)
-    noexcept(std::is_nothrow_constructible_v<std::decay_t<Callable>, Callable>);
 
 struct simple_counting_scope {
     simple_counting_scope() noexcept;
@@ -904,13 +892,13 @@ struct simple_counting_scope {
 
     struct token {
       template <sender S>
-      [[nodiscard]] @@_nest-sender_@@<std::remove_cvref_t<S>> nest(S&& s) const
+      @@_nest-sender_@@<std::remove_cvref_t<S>> nest(S&& s) const
           noexcept(std::is_nothrow_constructible_v<std::remove_cvref_t<S>, S>);
 
      private:
       friend simple_counting_scope;
 
-      token(simple_counting_scope* s) noexcept;
+      explicit token(simple_counting_scope* s) noexcept; // @@_exposition-only_@@
 
       simple_counting_scope* scope; // @@_exposition-only_@@
     };
@@ -921,7 +909,7 @@ struct simple_counting_scope {
 
     struct @@_join-sender_@@; // @@_exposition-only_@@
 
-    [[nodiscard]] @@_join-sender_@@ join() noexcept;
+    @@_join-sender_@@ join() noexcept;
 };
 
 struct counting_scope {
@@ -939,13 +927,13 @@ struct counting_scope {
 
     struct token {
       template <sender S>
-      [[nodiscard]] @@_nest-sender_@@<std::remove_cvref_t<S>> nest(S&& s) const
+      @@_nest-sender_@@<std::remove_cvref_t<S>> nest(S&& s) const
           noexcept(std::is_nothrow_constructible_v<std::remove_cvref_t<S>, S>);
 
      private:
       friend counting_scope;
 
-      token(counting_scope* s) noexcept;
+      explicit token(counting_scope* s) noexcept; // @@_exposition-only_@@
 
       counting_scope* scope; // @@_exposition-only_@@
     };
@@ -958,7 +946,7 @@ struct counting_scope {
 
     struct @@_join-sender_@@; // @@_exposition-only_@@
 
-    [[nodiscard]] @@_join-sender_@@ join() noexcept;
+    @@_join-sender_@@ join() noexcept;
 };
 ```
 
@@ -984,29 +972,6 @@ attempts to associate its input sender with the handle's async scope in a scope-
 
 An async scope token behaves like a pointer-to-async-scope; tokens are no-throw copyable and movable, and it is
 undefined behaviour to invoke `nest()` on a token that has outlived its scope.
-
-## `execution::async_scope`
-
-```cpp
-template <class Scope>
-concept async_scope =
-    requires(Scope scope) {
-      { scope.get_token() } -> async_scope_token<decltype(just())>;
-      { scope.join() } -> sender;
-    };
-```
-
-As described above, an async scope is a type that implements a bookkeeping policy for senders. If a given type, `Scope`,
-satisifies `async_scope<Scope>` then, for a value, `scope`, of type `Scope`:
-
- - `scope.get_token()` returns an async scope token, `t`,  whose `nest()` method tries to associate the input sender
-   with `scope`; and
- - `scope.join()` returns a sender, `s`, such that,
-   - `s` may only complete with `set_value()`;
-   - connecting and starting `s` requests that the scope arrange not to have any outstanding associated senders "soon"
-     (the interpretation of this request and the definition of "soon" are left up to the definition of `Scope`); and
-   - once `s` has completed, no new senders may become associated with `scope` (the means by which this guarantee is
-     provided is left up to the definition of `Scope`).
 
 ## `execution::nest`
 
@@ -1148,8 +1113,13 @@ signatures of the spawned sender.
 The receiver, `fr`, that is connected to the nested sender responds to `get_env(fr)` with an instance of
 `@@_future-env_@@<Env>`, `fenv`. The result of `get_allocator(fenv)` is a copy of the _Allocator_ used to allocate the
 dynamically allocated state. The result of `get_stop_token(fenv)` is a stop token that will be "triggered" (i.e. signal
-that stop is requested) by the returned _`future-sender`_ when it is dropped or receives a stop request itself. For all
-other queries, `Q`, the result of `Q(fenv)` is `Q(env)`.
+that stop is requested) when:
+
+- the returned _`future-sender`_ is dropped;
+- the returned _`future-sender`_ receives a stop request; or
+- the stop token returned from `get_stop_token(env)` is triggered if `get_stop_token(env)` is a valid expression.
+
+For all other queries, `Q`, the result of `Q(fenv)` is `Q(env)`.
 
 This is similar to `ensure_started()` from [@P2300R7], but the scope may observe and participate in the lifecycle of the
 work described by the sender. The `counting_scope` described in this paper uses this opportunity to keep a count of
@@ -1192,13 +1162,13 @@ struct simple_counting_scope {
 
     struct token {
       template <sender S>
-      [[nodiscard]] @@_nest-sender_@@<std::remove_cvref_t<S>> nest(S&& s) const
+      @@_nest-sender_@@<std::remove_cvref_t<S>> nest(S&& s) const
           noexcept(std::is_nothrow_constructible_v<std::remove_cvref_t<S>, S>);
 
      private:
       friend simple_counting_scope;
 
-      token(simple_counting_scope* s) noexcept;
+      explicit token(simple_counting_scope* s) noexcept; // @@_exposition-only_@@
 
       simple_counting_scope* scope; // @@_exposition-only_@@
     };
@@ -1209,7 +1179,7 @@ struct simple_counting_scope {
 
     struct @@_join-sender_@@; // @@_exposition-only_@@
 
-    [[nodiscard]] @@_join-sender_@@ join() noexcept;
+    @@_join-sender_@@ join() noexcept;
 };
 ```
 
@@ -1382,7 +1352,7 @@ calls to `nest()` that return normally return unassociated senders.
 ```cpp
 struct @@_join-sender_@@; // @@_exposition-only_@@
 
-[[nodiscard]] @@_join-sender_@@ join() noexcept;
+@@_join-sender_@@ join() noexcept;
 ```
 
 Returns a _`join-sender`_. When the _`join-sender`_ is connected to a receiver, `r`, it produces an
@@ -1403,7 +1373,7 @@ template <sender S>
 struct @@_nest-sender_@@; // @@_exposition-only_@@
 
 template <sender S>
-[[nodiscard]] @@_nest-sender_@@<std::remove_cvref_t<S>> nest(S&& s) const noexcept(
+@@_nest-sender_@@<std::remove_cvref_t<S>> nest(S&& s) const noexcept(
         std::is_nothrow_constructible_v<std::remove_cvref_t<S>, S>);
 ```
 
@@ -1480,13 +1450,13 @@ struct counting_scope {
 
     struct token {
       template <sender S>
-      [[nodiscard]] @@_nest-sender_@@<std::remove_cvref_t<S>> nest(S&& s) const
+      @@_nest-sender_@@<std::remove_cvref_t<S>> nest(S&& s) const
           noexcept(std::is_nothrow_constructible_v<std::remove_cvref_t<S>, S>);
 
      private:
       friend counting_scope;
 
-      token(counting_scope* s) noexcept;
+      explicit token(counting_scope* s) noexcept; // @@_exposition-only_@@
 
       counting_scope* scope; // @@_exposition-only_@@
     };
@@ -1499,7 +1469,7 @@ struct counting_scope {
 
     struct @@_join-sender_@@; // @@_exposition-only_@@
 
-    [[nodiscard]] @@_join-sender_@@ join() noexcept;
+    @@_join-sender_@@ join() noexcept;
 };
 ```
 
@@ -1609,7 +1579,7 @@ from this internal stop source, the effect is to send stop requests to all outst
 ```cpp
 struct @@_join-sender_@@; // @@_exposition-only_@@
 
-[[nodiscard]] @@_join-sender_@@ join() noexcept;
+@@_join-sender_@@ join() noexcept;
 ```
 
 Returns a _`join-sender`_ that behaves the same as the result of `simple_counting_scope::join()`. Connecting and
@@ -1624,7 +1594,7 @@ template <sender S>
 struct @@_nest-sender_@@; // @@_exposition-only_@@
 
 template <sender S>
-[[nodiscard]] @@_nest-sender_@@<std::remove_cvref_t<S>> nest(S&& s) const noexcept(
+@@_nest-sender_@@<std::remove_cvref_t<S>> nest(S&& s) const noexcept(
         std::is_nothrow_constructible_v<std::remove_cvref_t<S>, S>);
 ```
 
@@ -1772,17 +1742,17 @@ allocation, which `nest()` does not do).
 
 alternatives: `wrap()`, `attach()`
 
-## `async_scope`
+## `async_scope_token`
 
 This is a concept that is satisfied by types that support nesting senders within themselves. It is primarily useful for
 constraining the arguments to `spawn()` and `spawn_future()` to give useful error messages for invalid invocations.
 
-Since concepts don't support existential quantifiers and thus can't express "type `T` is an `async_scope` if there
-exists a sender, `s`, for which `t.nest(s)` is valid", the `async_scope` concept must be parameterized on both the type
-of the scope and the type of some particular sender and thus describes whether *this* scope type is an `async_scope` in
-combination with *this* sender type. Given this limitation, perhaps the name should convey something about the fact that
-it is checking the relationship between two types rather than checking something about the scope's type alone. Nothing
-satisfying comes to mind.
+Since concepts don't support existential quantifiers and thus can't express "type `T` is an `async_scope_token` if there
+exists a sender, `s`, for which `t.nest(s)` is valid", the `async_scope_token` concept must be parameterized on both the
+type of the token and the type of some particular sender and thus describes whether *this* token type is an
+`async_scope_token` in combination with *this* sender type. Given this limitation, perhaps the name should convey
+something about the fact that it is checking the relationship between two types rather than checking something about the
+scope's type alone. Nothing satisfying comes to mind.
 
 alternatives: don't name it and leave it as _`exposition-only`_
 
@@ -1846,6 +1816,81 @@ within the scope being joined). The name "token" was chosen by analogy to "stop 
 a similar split of responsibilities.
 
 alternatives: "handle", "ref" (as a contraction of "reference")
+
+Specification
+============
+
+## `execution::async_scope_token`
+
+Add the following as a new subsection immediately after __[exec.utils.tfxcmplsigs]__:
+
+::: add
+__`std::execution::async_scope_token` [exec.asyncscopetoken.concept]__
+
+[1]{.pnum} The `async_scope_token<Token, Sndr>` concept defines the requirements on an object of type `Token` that can
+be used to associate a sender of type `Sndr` with the token's associated async scope object.
+```cpp
+namespace std::execution {
+
+template <class Token, class Sender>
+concept async_scope_token =
+    sender<Sender> &&
+    requires(Token token, Sender&& snd) {
+      { token.nest(std::forward<Sender>(snd)) } -> sender;
+    } &&
+    copyable<Token>;
+
+}
+```
+[2]{.pnum} `async_scope_token<Token, Sndr>` is modeled only if `Token`'s copy and move operations are not potentially
+throwing.
+:::
+
+## `execution::nest()`
+
+Add the following as a new subsection immediately after __[exec.stopped.as.error]__:
+
+::: add
+__`std::execution::nest` [exec.nest]__
+
+[1]{.pnum} `nest` tries to associate a sender with an async scope such that the scope can track the lifetime of any
+async operations created with the sender.
+
+[2]{.pnum} The name `nest` denotes a customization point object. For subexpressions `sndr` and `token`, let `Sndr` be
+`decltype((sndr))` and let `Token` be `decltype((token))`. If `async_scope_token<Sender, Token>` is false, the
+expression `nest(sndr, token)` is ill-formed.
+
+[3]{.pnum} Otherwise, the expression `nest(sndr, token)` is expression-equivalent to:
+```cpp
+auto(token).nest(sndr);
+```
+
+[4]{.pnum} The evaluation of `nest(sndr, token)` may cause side effects observable via `token`'s associated async scope
+object.
+
+[5]{.pnum} Let the subexpression `out_sndr` denote the result of the invocation `nest(sndr, token)` or an object copied
+or moved from such, and let the subexpression `rcvr` denote a receiver such that the expression
+`connect(out_sndr, rcvr)` is well-formed. The expression `connect(out_sndr, rcvr)` has undefined behavior unless it
+creates an asynchronous operation (__[async.ops]__) that, when started:
+
+- [5.1]{.pnum} TODO: specify that starting `out_sndr` starts `sndr` unless `out_sndr` is an unassociated sender.
+:::
+
+## `execution::spawn()`
+
+spec here
+
+## `execution::spawn_future()`
+
+spec here
+
+## `execution::simple_counting_scope`
+
+spec here
+
+## `execution::counting_scope`
+
+spec here
 
 Acknowledgements
 ================
