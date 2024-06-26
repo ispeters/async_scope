@@ -27,7 +27,8 @@ Changes
 ## R5
 - Clarify that the _`nest-sender`_'s operation state must destroy its child operation state before decrementing the
   scope's reference count.
-- Add naming discussion
+- Add naming discussion.
+- Discuss a memory allocator lifetime concern raised by Lewis Baker and several options for resolving it.
 
 ## R4
 - Permit caller of `spawn_future()` to provide a stop token in the optional environment argument.
@@ -1728,6 +1729,160 @@ On the third hand, Unifex supports the pipe operator for both of its equivalent 
 and `unifex::spawn_future()`) and Unifex users have not been confused by this choice.
 
 To keep consistency with `spawn()` this paper doesn't support pipe operator for `spawn_future()`.
+
+## Problems Protecting Allocators with `counting_scope`
+
+Lewis Baker discovered a problem with using `nest()` as the basis operation for implementing `spawn()` when the
+`counting_scope` that tracks the spawned work is being used to protect against accesses to the allocator provided to
+`spawn()` after the allocator has been destroyed. (The problem arises with `spawn_future()`, too, but we'll restrict the
+discussion to `spawn()` for simplicity.) We seek LEWG's guidance in resolving this problem.
+
+### The Problem
+
+When a spawned operation completes, the order of operations is as follows:
+
+1. The spawned operation completes by invoking `set_value()` or `set_stopped()` on a receiver, `rcvr`, provided by
+   `spawn()` to the `nest-sender`.
+2. `rcvr` destroys the `nest-sender`'s _`operation-state`_ by invoking its destructor.
+3. `rcvr` deallocates the storage previously allocated for the just-destroyed _`operation-state`_ using a copy of the
+   allocator that was chosen when `spawn()` was invoked. Assume this allocator was passed to `spawn()` in the optional
+   environment argument.
+
+Note that in step 2, above, the destruction of the `nest-sender`'s _`operation-state`_ has the side effect of
+decrementing the associated `counting_scope`'s count of outstanding operations. If the scope has a `join-sender` waiting
+and this decrement brings the count to zero, the code waiting on the `join-sender` to complete may start to destroy the
+allocator while step 3 is busy using it.
+
+### Some Solutions
+
+We have several options to address the above problem:
+
+1. Do nothing; declare that `counting_scope` can't be used to protect memory allocators.
+2. Remove allocator support from `spawn()` and `spawn_future()` and require allocation with `::operator new`.
+3. Make `spawn()` and `spawn_future()` basis operations of `async_scope_token`s (alongside `nest()`) so that the
+   derement in step 2 can be deferred until after step 3 completes.
+4. Define a new set of refcounting basis operations and define `nest()`, `spawn()`, and `spawn_future()` in terms of
+   them.
+5. Treat `nest-sender`s as RAII handles to "scope references" and change how `spawn()` is defined to defer the
+   decrement. (There are a few implementation possibilities here.)
+6. Give `async_scope_token`s a new basis operation that can wrap an allocator in a new allocator wrapper that increments
+   the scope's refcount in `allocate()` and decrements it in `deallocate()`.
+
+Recommended: 6.
+
+### Discussion of Reasons to Reject Options 1-5
+
+Option 1 leaves `spawn()` and `spawn_future()` broken.
+
+Option 2 simplifies the proposal but eliminates support for use cases requiring custom allocators.
+
+Option 3 adds significant complexity to the task of writing a custom scope type. Furthermore, there's another useful
+algorithm (it's called `detach_on_cancel` in Unifex) that could be added to the Standard later if `nest()` remains the
+only basis operation on scopes, but that probably could never be added if every scope-related algorithm is a basis
+operation.
+
+Option 4 is a) unlikely to be ready in time for C++26, and b) difficult to distinguish from `std:shared_ptr<>`, which
+implementation experience at Meta has proven to be worse than `unifex::nest()` for reference-counting async work.
+
+Option 5 is the least-bad of the first five options but it feels silly. One implementation of `spawn()` in this option
+would look like this:
+```cpp
+template <class Op, class Alloc, class Env, sender Sender>
+struct spawn_receiver {
+  Op* op;
+  Alloc alloc;
+  Env env;
+  // in practice, this is a nest-sender that exists solely to hold
+  // a reference on the associated scope until it's destroyed
+  Sender sender;
+
+  void set_stopped() noexcept {
+    set_value();
+  }
+
+  void set_value() noexcept {
+    op->~Op();
+    alloc.deallocate(op, 1);
+  }
+
+  const Env& get_env() noexcept {
+    return env;
+  }
+};
+
+template <sender Sender, async_scope_token<Sender> Token, class Env = empty_env>
+void spawn(Sender&& sndr, Token token, Env env = {}) {
+  auto nestSender = nest(just(), token); // try to grab a reference
+
+  // assume nest-senders are contextually convertable to bool and convert to false
+  // when they are unassociated (i.e. when the nest failed because the scope is closed)
+  if (!nestSender) {
+    return;
+  }
+
+  using op_t = connect_result_t<Sender, spawn_receiver>;
+
+  // choose an allocator (either from env, or sndr, or std::allocator<>)
+  // and rebind it to allocate op_ts.
+  auto alloc = choose_allocator<op_t>(env, sndr);
+
+  op_t* op = alloc.allocate(1);
+
+  try {
+    new ((void)op) op_t{
+        connect(forward<Sender>(sndr), spawn_receiver{op, alloc, env, move(nestSender)})};
+  }
+  catch (...) {
+    alloc.deallocate(op, 1);
+    throw;
+  }
+
+  op->start();
+}
+```
+
+### Discussion of Option 6
+
+Option 6 amounts to giving `async_scope_token` a new basis operation for contructing an allocator wrapper that
+increments the associated scope's reference count in `allocate()` and decrementing it in `deallocate()`. If the
+following were made valid:
+```cpp
+auto wrapper = scopeToken.wrap_allocator(alloc);
+```
+then `spawn()` could work like this:
+```cpp
+template <sender Sender, async_scope_token<Sender> Token, class Env = empty_env>
+void spawn(Sender&& sndr, Token token, Env env = {}) {
+  using op_t = connect_result_t<Sender, spawn_receiver>;
+
+  // choose an allocator (either from env, or sndr, or std::allocator<>)
+  // and rebind it to allocate op_ts.
+  auto alloc = token.wrap_allocator(choose_allocator<op_t>(env, sndr));
+
+  // expected to throw std::bad_alloc on failure
+  op_t* op = alloc.allocate(1);
+
+  // expected to return nullptr if the scope is closed
+  if (!op) {
+    return;
+  }
+
+  try {
+    new ((void)op) op_t{
+        connect(forward<Sender>(sndr), spawn_receiver{op, alloc, env})};
+  }
+  catch (...) {
+    alloc.deallocate(op, 1);
+    throw;
+  }
+
+  op->start();
+}
+```
+
+Since `spawn()` makes the allocator it used available to the spawned work by putting it in the `spawn-receiver`'s
+environment, a side effect of this choice is that all allocations that happen inside the spawned work through the
+wrapped allocator would be manipulating the scope's refcount.
 
 Naming
 ======
