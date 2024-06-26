@@ -27,7 +27,7 @@ Changes
 ## R5
 - Clarify that the _`nest-sender`_'s operation state must destroy its child operation state before decrementing the
   scope's reference count.
-- Add naming alternates
+- Add naming discussion
 
 ## R4
 - Permit caller of `spawn_future()` to provide a stop token in the optional environment argument.
@@ -1732,7 +1732,54 @@ To keep consistency with `spawn()` this paper doesn't support pipe operator for 
 Naming
 ======
 
-As is often true, naming is a difficult task.
+As is often true, naming is a difficult task. We feel more confident about having arrived at a reasonably good naming
+_scheme_ than good _names_:
+
+- There is some consensus that the default standard "scope" should be the one this paper calls `counting_scope` because
+  it provides all of the obviously-useful features of a scope, while `simple_counting_scope` is the more spare type that
+  only provides scoping facilities. Therefore, `counting_scope` should get the "nice" name, while
+  `simple_counting_scope` should get a more cumbersome name that conveys fewer features in exchange for a smaller object
+  size and fewer atomic operations.
+- Most people seem to hate the name `counting_scope` because the "counting" is an implementation detail, there are
+  arguments about whether it's really "scoping" anything, and the name doesn't really tell you what the type is _for_.
+  The leading suggestion for a better name is to pick one that conveys that the type "groups together" or "keeps track
+  of" "tasks", "senders", or "operations". Examples of this scheme include `task_pool`, `sender_group`, and
+  `task_arena`. We like the suggested pattern but seek LEWG's feedback on:
+  - Should we choose `task` or `sender` to desribe the thing being "grouped"? `task` feels friendlier, but might risk
+    conveying that not all sender types are supported.
+  - What word should we use to describe the "grouping"?
+    - `pool` often means a pre-allocated group of resources that can be borrowed from and returned to, which isn't
+      appropriate.
+    - `group` is either the most generic word for a group of things, or an unrelated mathematical object.
+    - `arena` is used outside computing to mean a place where competitions happen, and within computing to refer to a
+      memory allocation stratgegy.
+    - Something else?
+- The name-part `token` was selected by analogy to `stop_token`, but it feels like a loose analogy. Perhaps `handle`
+  or `ref` (short for `reference`) would be better. `ref` is nice for being short and accurate.
+- The likely use of the `async_scope_token` concept will be to constrain algorithms that accept a sender and a token
+  with code like the following:
+  ```cpp
+  template <sender Sender, async_scope_token<Sender> Token>
+  void foo(Sender, Token);
+  ```
+  Perhaps the concept name should end in `_for` so that the above code would read
+  ```cpp
+  template <sender Sender, async_scope_token_for<Sender> Token>
+  void foo(Sender, Token);
+  ```
+  We propose the token concept should be named `async_` `<new name of counting_scope>` `<new word for token>` `_for`.
+  Assuming we choose `task_pool` and `ref`, that would produce `async_task_pool_ref_for`, which would look like this:
+  ```cpp
+  template <sender Sender, async_task_pool_ref_for<Sender> Ref>
+  void foo(Sender, Ref);
+  ```
+- The `simple` prefix does not convey much about how `simple_counting_scope` is "simple". Suggestions for alternatives
+  include:
+  - `fast` by analogy to the `fast`-prefixed standard integer types, which are so-named because they're expected to be
+    efficient.
+  - `non_cancellable` to speak to what's "missing" relative to `counting_scope`, however, `simple_counting_scope` does
+    not change the cancellability of senders nested within it and we worry that this suggestion might convey that
+    senders nested within a `non_cancellable` scope might somehow _lose_ cancellability.
 
 ## `nest()`
 
@@ -1758,8 +1805,8 @@ type of the token and the type of some particular sender and thus describes whet
 something about the fact that it is checking the relationship between two types rather than checking something about the
 scope's type alone. Nothing satisfying comes to mind.
 
-alternatives: don't name it and leave it as _`exposition-only`_, `task_pool_ref`, `task_pool_token`, `task_group_ref`,
-`sender_group_ref`, `task_group_token`, `sender_group_token`
+alternatives: `task_pool_ref`, `task_pool_token`, `task_group_ref`, `sender_group_ref`, `task_group_token`,
+`sender_group_token`, don't name it and leave it as _`exposition-only`_
 
 ## `spawn()`
 
@@ -1794,12 +1841,12 @@ and nested blocks.
 Another mental model for this is a container. This is the least accurate model. This container is a value that does not
 contain values. This container contains a set of active senders (an active sender is not a value, it is an operation).
 
-alternatives: `simpile_async_scope`, `simple_task_pool`, `fast_task_pool`, `non_cancellable_task_pool`, `simple_task_group`,
+alternatives: `simple_async_scope`, `simple_task_pool`, `fast_task_pool`, `non_cancellable_task_pool`, `simple_task_group`,
 `simple_sender_group`
 
 ## `counting_scope`
 Has all of the same behavior as `simple_counting_scope`, with the added functionality of cancellation; work `nest`-ed
-on this scope can be asked to cancel.
+on this scope can be asked to cancel _en masse_ from the scope.
 
 alternatives: `async_scope`, `task_pool`, `task_group`, `sender_group`
 
@@ -1818,16 +1865,6 @@ less-than-ideal in C++, and there is some real risk that users will write deadlo
 should have a name that conveys danger.
 
 alternatives: `complete()`, `close()`
-
-## "Token" as in `async_scope_token` and `counting_scope::token`
-
-The first several revisions of this paper did not separate the responsibilities of an async scope into the scope and its
-tokens. Revision 3 introduces this split to help separate the lifetime-management interface from the nesting interface,
-which the authors expect to help avoid deadlocks (e.g. it's harder with the new design to nest the _`join-sender`_
-within the scope being joined). The name "token" was chosen by analogy to "stop source" and "stop token", which provides
-a similar split of responsibilities.
-
-alternatives: "handle", "ref" (as a contraction of "reference")
 
 Specification
 ============
