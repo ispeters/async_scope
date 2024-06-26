@@ -1752,7 +1752,7 @@ _scheme_ than good _names_:
       appropriate.
     - `group` is either the most generic word for a group of things, or an unrelated mathematical object.
     - `arena` is used outside computing to mean a place where competitions happen, and within computing to refer to a
-      memory allocation stratgegy.
+      memory allocation strategy.
     - Something else?
 - The name-part `token` was selected by analogy to `stop_token`, but it feels like a loose analogy. Perhaps `handle`
   or `ref` (short for `reference`) would be better. `ref` is nice for being short and accurate.
