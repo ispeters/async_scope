@@ -1,6 +1,6 @@
-# P3296R1 `let_async_scope`
+# D3296R2 `let_async_scope`
 
-Date: 20th June 2024 
+Date: 26th June 2024 
 
 Author: Anthony Williams <anthony@justsoftwaresolutions.co.uk>
 
@@ -92,7 +92,20 @@ copies of the `scope_token`, even if the initial sender returned from
 the invocable has completed. The returned `scope_sender` will not
 complete while there are any nested tasks that have not completed.
 
+If the callable supplied to `let_async_scope` does not return a sender,
+it must return `void`. The sender returned from `let_async_scope` will
+then have a `void` value completion.
+
 Stop requests are propagated to all senders nested in the async scope.
+
+The environment from the receiver connected to the sender returned
+from `let_async_scope` is propagated via the internal receiver to all
+senders spawned using the supplied scope token.
+
+If the callable passed to `let_async_scope` throws an exception, or any
+sender spawned using the scope token completes `set_error` or
+`set_stopped`, then a stop request is propagated to all outstanding
+senders spawned using the scope token.
 
 ## Wording
 
@@ -219,7 +232,7 @@ Stop requests are propagated to all senders nested in the async scope.
      3. The exposition-only function template `let-async-scope-bind` is equal to:
 
         ```c++
-        auto& args = state.args.emplace<decayed - tuple<scope - token - type, Args...>>(
+        auto& args = state.args.emplace<decayed-tuple<scope-token-type, Args...>>(
                 state.scope.get_token(), std::forward<Args>(args)...);
         try {
             auto sndr2 = state.scope.nest(apply(std::move(state.fn), args));
@@ -231,6 +244,7 @@ Stop requests are propagated to all senders nested in the async scope.
             auto& op2 = state.ops2.emplace<decltype(mkop2())>(emplace-from{mkop2});
             start(op2);
         } catch (...) {
+            state.scope.request_stop();
             auto result_sender = when_all(just_error(std::current_exception()), state.scope.join());
             auto rcvr2 = receiver2{std::move(rcvr), std::move(state.env)};
             auto mkop2 = [&] { return connect(std::move(result_sender), std::move(rcvr2)); };
