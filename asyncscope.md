@@ -1,6 +1,6 @@
 ---
 title: "`async_scope` -- Creating scopes for non-sequential concurrency"
-document: P3149R5
+document: D3149R6
 date: today
 audience:
   - "SG1 Parallelism and Concurrency"
@@ -23,6 +23,9 @@ toc: true
 
 Changes
 =======
+
+## R6
+- Change the scope token's basis operations from `nest()` to `try_associate()` and `dissociate()`
 
 ## R5
 - Clarify that the _`nest-sender`_'s operation state must destroy its child operation state before decrementing the
