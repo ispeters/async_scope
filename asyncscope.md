@@ -980,6 +980,7 @@ concept async_scope_token =
 
 An async scope token is a non-owning handle to an [async scope](#executionasync_scope).
 
+// TODO: try_associate() and wrap() may throw; dissociate() must be noexcept
 
 // TODO: update this:
 The `nest()` method on a token
@@ -1000,7 +1001,7 @@ auto nest(Sender&& snd, Token token)
 
 Attempts to associate the given sender with the given scope token's scope. On success, the return value is an
 "associated sender" with the same behaviour and possible completions as the input sender. On failure, `nest()` either
-returns an "unassociated sender" or throws whatever is thrown by the scope token.
+returns an "unassociated sender" or throws.
 
 When `nest()` returns an associated sender:
 
@@ -1082,8 +1083,7 @@ void spawn(Sender&& snd, Token token, Env env = {});
 ```
 
 Attempts to associate the given sender with the given scope token's scope. On success, the given sender is eagerly
-started.  On failure, either the sender is discarded and no further work happens or `spawn()` throws whatever is thrown
-by the scope token.
+started.  On failure, either the sender is discarded and no further work happens or `spawn()` throws.
 
 Starting the given sender involves a dynamic allocation of the sender's _`operation-state`_. The following algorithm
 determines which _Allocator_ to use for this allocation:
@@ -1094,8 +1094,8 @@ determines which _Allocator_ to use for this allocation:
 
 `spawn()` proceeds with the following steps in the following order:
 
-1. `token.try_associate()` is invoked; if it returns `false` or throws, `spawn()` returns or throws, respectively.
-2. a dynamically-allocated _`operation-state`_ is allocated by the _Allocator_ chosen as described above
+1. `token.try_associate()` is invoked; if it returns `false`, `spawn()` returns
+2. an _`operation-state`_ is dynamically allocated by the _Allocator_ chosen as described above
 3. the _`operation-state`_ is initialized with the result of
    `connect(token.wrap(forward<Sender>(sender)), @@_spawn-receiver_@@{})`
 4. the _`operation-state`_ is started
@@ -1154,9 +1154,10 @@ template <sender Sender, async_scope_token Token, class Env = empty_env>
 @@_future-sender-t_@@<Sender, Env> spawn_future(Sender&& snd, Token token, Env env = {});
 ```
 
-Invokes `token.try_associate()`; if it returns `true`, the given sender is eagerly started and `spawn_future` returns
-a _`future-sender`_ that provides access to the result of the given sender. Otherwise, `spawn_future` returns a
-_`future-sender`_ that unconditionally completes with `set_stopped()`.
+Attempts to associate the given sender with the given scope token's scope. On success, the given sender is eagerly
+started and `spawn_future` returns a _`future-sender`_ that provides access to the result of the given sender. On
+failure, either `spawn_future` returns a _`future-sender`_ that unconditionally completes with `set_stopped()` or it
+throws.
 
 Similar to `spawn()`, starting the given sender involves a dynamic allocation of some state. `spawn_future()` chooses
 an _Allocator_ for this allocation in the same way `spawn()` does: use the result of `get_allocator(env)` if that is a
@@ -1169,16 +1170,9 @@ synchronization facilities for resolving the race between the given sender's pro
 sender's consumption or abandonment of that result.
 
 Also unlike `spawn()`, `spawn_future()` returns a _`future-sender`_ rather than `void`. The returned sender, `fs`, is a
-handle to the spawned work that can be used to consume or abandon the result of that work. When `fs` is connected and
-started, it waits for the spawned sender to complete and then completes itself with the spawned sender's result. If `fs`
-is destroyed before being connected, or if `fs` *is* connected but then the resulting _`operation-state`_ is destroyed
-before being started, then a stop request is sent to the spawned sender in an effort to short-circuit the computation of
-a result that will not be observed. If `fs` receives a stop request from its receiver before the spawned sender
-completes, the stop request is forwarded to the spawned sender and then `fs` completes; if the spawned sender happens to
-complete between `fs` forwarding the stop request and completing itself then `fs` may complete with the result of the
-spawned sender as if the stop request was never received but, otherwise, `fs` completes with `stopped` and the result of
-the spawned sender is ignored. The completion signatures of `fs` include `set_stopped()` and all the completion
-signatures of the spawned sender.
+handle to the spawned work that can be used to consume or abandon the result of that work. The completion signatures of
+`fs` include `set_stopped()` and all the completion signatures of the spawned sender. When `fs` is connected and
+started, it waits for the spawned sender to complete and then completes itself with the spawned sender's result.
 
 The receiver, `fr`, that is connected to the given sender responds to `get_env(fr)` with an instance of
 `@@_future-env_@@<Env>`, `fenv`. The result of `get_allocator(fenv)` is a copy of the _Allocator_ used to allocate the
@@ -1191,10 +1185,44 @@ that stop is requested) when:
 
 For all other queries, `Q`, the result of `Q(fenv)` is `Q(env)`.
 
-This is similar to `ensure_started()` from [@P2300R7], but the scope may observe and participate in the lifetime of the
-work described by the sender. The `simple_counting_scope` and `counting_scope` described in this paper use this
-opportunity to keep a count of given senders that haven't finished, and to prevent new senders from being started once
-the scope has been closed.
+`spawn_future()` proceeds with the following steps in the following order:
+
+1. `token.try_associate()` is invoked; if it returns `false`, `spawn_future()` returns
+2. storage for the spawned sender's state is dynamically allocated by the _Allocator_ chosen as described above
+3. the state for the spawned sender is constructed in the allocated storage
+   - a subset of this state is an _`operation-state`_ created by connecting the result of
+     `token.wrap(forward<Sender>(sender))` with a receiver
+4. the _`operation-state`_ within the allocated state is started
+5. a `future<>` is returned
+
+// TODO: figure out how to describe the shutdown sequence; the timing of `dissociate()` should be _after_ any potential
+consumer is done with the result of the spawned sender
+
+**Cancelling the spawned work**
+
+There are several circumstances that lead to a stop request being delivered to the spawned sender:
+
+- `fs` is destroyed before being connected;
+- `fs` is connected but the resulting _`operation-state`_ is destroyed without being started; or
+- `fs` is connected and started and then receives a stop request from its receiver.
+
+In the first two cases, a destructor requests stop on the spawned sender and then continues with object destruction and
+no attention is ever paid to the result of the spawned sender.
+
+In the third case, `fs` responds to a stop request from its receiver by:
+
+1. forwarding the request to the spawned sender, and then
+2. completing.
+
+If the spawned sender completes between steps 1 and 2, `fs` may complete with the result of the spawned sender;
+otherwise, `fs` completes with `set_stopped()` without waiting for the spawned sender to complete.
+
+----
+
+`spawn_future` is similar to `ensure_started()` from [@P2300R7], but the scope may observe and participate in the
+lifetime of the work described by the sender. The `simple_counting_scope` and `counting_scope` described in this paper
+use this opportunity to keep a count of given senders that haven't finished, and to prevent new senders from being
+started once the scope has been closed.
 
 Unlike `spawn()`, the sender given to `spawn_future()` is not constrained on a given shape. It may send different types
 of values, and it can complete with errors.
