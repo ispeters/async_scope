@@ -1081,8 +1081,9 @@ template <sender Sender, async_scope_token Token, class Env = empty_env>
 void spawn(Sender&& snd, Token token, Env env = {});
 ```
 
-Invokes `token.try_associate()`; if it returns `true`, the given sender is eagerly started, otherwise the sender is
-discarded and no further work happens.
+Attempts to associate the given sender with the given scope token's scope. On success, the given sender is eagerly
+started.  On failure, either the sender is discarded and no further work happens or `spawn()` throws whatever is thrown
+by the scope token.
 
 Starting the given sender involves a dynamic allocation of the sender's _`operation-state`_. The following algorithm
 determines which _Allocator_ to use for this allocation:
@@ -1091,8 +1092,15 @@ determines which _Allocator_ to use for this allocation:
  - Otherwise, if `get_allocator(get_env(snd))` is valid and returns an _Allocator_ then choose that _Allocator_.
  - Otherwise, choose `std::allocator<>`.
 
-The _`operation-state`_ is constructed by connecting the given sender to a _`spawn-receiver`_. Upon completion of the
-spawned sender, the following steps happen in the following order:
+`spawn()` proceeds with the following steps in the following order:
+
+1. `token.try_associate()` is invoked; if it returns `false` or throws, `spawn()` returns or throws, respectively.
+2. a dynamically-allocated _`operation-state`_ is allocated by the _Allocator_ chosen as described above
+3. the _`operation-state`_ is initialized with the result of
+   `connect(token.wrap(forward<Sender>(sender)), @@_spawn-receiver_@@{})`
+4. the _`operation-state`_ is started
+
+Upon completion of the _`operation-state`_, the following steps happen in the following order:
 
 1. the _`operation-state`_ is destroyed,
 2. the dynamic allocation is deallocated, and
@@ -1107,6 +1115,7 @@ work described by the sender. The `simple_counting_scope` and `counting_scope` d
 opportunity to keep a count of spawned senders that haven't finished, and to prevent new senders from being spawned
 once the scope has been closed.
 
+// TODO: this next paragraph is open for debate now
 The given sender must complete with `set_value()` or `set_stopped()` and may not complete with an error; the user must
 explicitly handle the errors that might appear as part of the _`sender-expression`_ passed to `spawn()`.
 
