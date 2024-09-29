@@ -1258,6 +1258,9 @@ struct simple_counting_scope {
     struct token {
      bool try_associate() const;
 
+     template <sender Sender>
+     Sender&& wrap(Sender&& s) noexcept;
+
      void dissociate() const;
 
      private:
@@ -1543,8 +1546,12 @@ struct counting_scope {
     counting_scope& operator=(const counting_scope&) = delete;
     counting_scope& operator=(counting_scope&&) = delete;
 
+    struct wrapper-sender; // @@_exposition-only_@@
+
     struct token {
       bool try_associate() const;
+
+      wrapper-sender wrap(sender auto&&);
 
       void dissociate() const;
 
