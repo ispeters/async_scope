@@ -834,15 +834,6 @@ More on these items can be found below in the sections below.
 ```cpp
 namespace { // @@_exposition-only_@@
 
-struct @@_scope-token_@@ { // @@_exposition-only_@@
-  bool try_associate() const;
-
-  void dissociate() const;
-};
-
-template <sender Sender>
-struct @@_nest-sender_@@; // @@_exposition-only_@@
-
 template <class Env>
 struct @@_spawn-env_@@; // @@_exposition-only_@@
 
@@ -873,6 +864,28 @@ concept async_scope_token =
       { token.try_associate() } -> same_as<bool>;
       { token.dissociate() } -> same_as<void>;
     };
+
+template <class Token, sender Sender>
+concept async_scope_token_for =
+    async_scope_token<Token> &&
+    requires(Token token, Sender&& sender) {
+      { token.wrap((Sender&&)sender) } -> sender;
+    };
+
+template <sender Sender, async_scope_token_for<Sender> Token>
+struct @@_nest-sender_@@ { // @@_exposition-only_@@
+  template <sender S2>
+    requires same_as<Sender, remove_cvref_t<S2>>
+  nest-sender(S2&& sender, Token token);
+
+  ~nest-sender();
+
+private:
+  using wrapped_t = decltype(declval<Token>().wrap(declval<Sender>()));
+
+  Token token;
+  optional<wrapped_t> sender_;
+};
 
 template <sender Sender, async_scope_token Token>
 auto nest(Sender&& snd, Token token)
@@ -985,11 +998,9 @@ auto nest(Sender&& snd, Token token)
     -> @@_nest-sender_@@<remove_cvref_t<Sender>>;
 ```
 
-Invokes `token.try_associate()`. When `try_associate()` returns `true`, the return value is an "associated sender" with
-the same behaviour and possible completions as the input sender. When `try_associate()` returnd `false`, `nest()`
-returns a "unassociated sender" that, when started, unconditionally completes with `set_stopped()`.
-
-A call to `nest()` does not start the given sender and is not expected to incur allocations.
+Attempts to associate the given sender with the given scope token's scope. On success, the return value is an
+"associated sender" with the same behaviour and possible completions as the input sender. On failure, `nest()` either
+returns an "unassociated sender" or throws whatever is thrown by the scope token.
 
 When `nest()` returns an associated sender:
 
@@ -1001,17 +1012,51 @@ When `nest()` returns an unassociated sender:
  - the input sender is discarded and will never be connected or started; and
  - the unassociated sender must only complete with `set_stopped()`.
 
+A call to `nest()` does not start the given sender and is not expected to incur allocations.
+
 Regardless of whether the returned sender is associated or unassociated, it is multi-shot if the input sender is
 multi-shot and single-shot otherwise.
 
-// TODO:
-- describe that we must:
-   - copy-or-move the given sender into the nest-sender
-   - then try_associate()
-   - on success, "mark as associated" and return
-   - else, destruct the copied sender, "mark as unassociated", and return
+`nest()` behaves as-if it is implemented like so:
 
-No need to worry about throwing because we can rely on RVO to construct the nest-sender in the caller
+```cpp
+template <sender Sender, async_scope_token Token>
+auto nest(Sender&& snd, Token token)
+    noexcept(is_nothrow_constructible_v<@@_nest-sender_@@<remove_cvref_t<Sender>, Sender>>) {
+  return @@_nest-sender_@@<decltype(token.wrap(forward<Sender>(sender))), Token>{
+      forward<Sender>(snd), token};
+}
+```
+
+The _`nest-sender`_ constructor and destructor behave as-if they are implemented like so:
+
+// TODO: this code needs polish; it gets some type computations wrong, but it's showing the right sequence of steps
+```cpp
+template <sender S2>
+  requires constructible_from<Sender, S2>
+nest-sender<Sender, Token>::nest-sender(S2&& sender, Token token)
+  : token_(token) {
+  if (!token.try_associate()) {
+    // this is an unassociated sender
+    return;
+  }
+
+  try {
+    sender_.emplace(token.wrap(forward<S2>(sender)));
+    // this is an associated sender
+  }
+  catch (...) {
+    token.dissociate();
+    throw;
+  }
+}
+
+nest-sender<Sender, Token>::~nest-sender() {
+  if (sender_.has_value()) {
+    token.dissociate();
+  }
+}
+```
 
 ## `execution::spawn`
 
