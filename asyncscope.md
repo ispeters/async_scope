@@ -1038,9 +1038,14 @@ auto nest(Sender&& snd, Token token)
     -> @@_nest-sender_@@<remove_cvref_t<Sender>>;
 ```
 
-Attempts to associate the given sender with the given scope token's scope. On success, the return value is an
-"associated sender" with the same behaviour and possible completions as the input sender. On failure, `nest()` either
-returns an "unassociated sender" or throws.
+When successful, `nest()` creates an association with the given token's scope and returns an "associated" sender that
+behaves the same as its input sender, with the following additional effects:
+
+- the association ends when the returned sender is destroyed or, if it is connected, when the resulting operation state
+  is destroyed; and
+- whatever effects are added by the token's `wrap()` method.
+
+When unsuccessful, `nest()` will either return an "unassociated" sender or it will allow any thrown exceptions to escape.
 
 When `nest()` returns an associated sender:
 
@@ -1050,53 +1055,41 @@ When `nest()` returns an associated sender:
 When `nest()` returns an unassociated sender:
 
  - the input sender is discarded and will never be connected or started; and
- - the unassociated sender must only complete with `set_stopped()`.
+ - the unassociated sender will only complete with `set_stopped()`.
+
+`nest()` simply constructs and returns a _`nest-sender`_. A _`nest-sender`_ performs the following operations in the
+following order in its constructor:
+
+1. store the given token in a member variable
+2. invoke `try_associate()` on the given token
+   a. if it returns `false` then the _`nest-sender`_ under construction is an unassociated sender and the constructor is
+      complete
+   b. otherwise, attempt to store the result of `token.wrap(sender)` in a member variable; if this expression throws,
+      invoke `token.dissociate()` before allowing the exception to escape
+
+The _`nest-sender`_ destructor invokes `token.dissociate()` if it contains an initialized sender (e.g. if step 2b, above
+completed normally and the _`nest-sender`_ is destroyed without being connected).
+
+When connecting an unassociated _`nest-sender`_, the resulting _`operation-state`_ completes immediately with
+`set_stopped()` when started.
+
+When connecting an associated _`nest-sender`_, there are four possible outcomes:
+
+1. the _`nest-sender`_ is rvalue connected, which transfers the sender's association from the sender to the
+   _`operation-state`_
+2. the _`nest-sender`_ is lvalue connected, in which case the _`operation-state`_ needs to create a new association for
+   itself; this is done by invoking `token.try_associate()`, which may:
+   a. succeed by returning `true`, in which case the new _`operation-state`_ has its own association;
+   b. fail by returning `false`, in which case the new _`operation-state`_ behaves as if it were constructed from an
+      unassociated _`nest-sender`_; or
+   c. fail by throwing an exception, in which case the exception escapes from the call to connect.
+
+An _`operation-state`_ with its own association invokes `token.dissociate()` in its destructor.
 
 A call to `nest()` does not start the given sender and is not expected to incur allocations.
 
 Regardless of whether the returned sender is associated or unassociated, it is multi-shot if the input sender is
 multi-shot and single-shot otherwise.
-
-`nest()` behaves as-if it is implemented like so:
-
-```cpp
-template <sender Sender, async_scope_token Token>
-auto nest(Sender&& snd, Token token)
-    noexcept(is_nothrow_constructible_v<@@_nest-sender_@@<remove_cvref_t<Sender>, Sender>>) {
-  return @@_nest-sender_@@<decltype(token.wrap(forward<Sender>(sender))), Token>{
-      forward<Sender>(snd), token};
-}
-```
-
-The _`nest-sender`_ constructor and destructor behave as-if they are implemented like so:
-
-// TODO: this code needs polish; it gets some type computations wrong, but it's showing the right sequence of steps
-```cpp
-template <sender S2>
-  requires constructible_from<Sender, S2>
-nest-sender<Sender, Token>::nest-sender(S2&& sender, Token token)
-  : token_(token) {
-  if (!token.try_associate()) {
-    // this is an unassociated sender
-    return;
-  }
-
-  try {
-    sender_.emplace(token.wrap(forward<S2>(sender)));
-    // this is an associated sender
-  }
-  catch (...) {
-    token.dissociate();
-    throw;
-  }
-}
-
-nest-sender<Sender, Token>::~nest-sender() {
-  if (sender_.has_value()) {
-    token.dissociate();
-  }
-}
-```
 
 ## `execution::spawn`
 
