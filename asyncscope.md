@@ -862,14 +862,7 @@ concept async_scope_token =
     copyable<Token> &&
     requires(Token token) {
       { token.try_associate() } -> same_as<bool>;
-      { token.dissociate() } -> same_as<void>;
-    };
-
-template <class Token, sender Sender>
-concept async_scope_token_for =
-    async_scope_token<Token> &&
-    requires(Token token, Sender&& sender) {
-      { token.wrap((Sender&&)sender) } -> sender;
+      { token.dissociate() } noexcept -> same_as<void>;
     };
 
 template <sender Sender, async_scope_token_for<Sender> Token>
@@ -974,21 +967,67 @@ concept async_scope_token =
     copyable<Token> &&
     requires(Token token) {
       { token.try_associate() } -> same_as<bool>;
-      { token.dissociate() } -> same_as<void>;
+      { token.dissociate() } noexcept -> same_as<void>;
     };
 ```
 
-An async scope token is a non-owning handle to an [async scope](#executionasync_scope).
+An async scope token is a non-owning handle to an async scope; an async scope is expected to be a type that allows its
+users to defer their responsibility for waiting for started senders to complete, although the proposed algorithms only
+rely on the definition of an async scope token, which allows users to experiment with different models of the async
+scope concept.
 
-// TODO: try_associate() and wrap() may throw; dissociate() must be noexcept
+The `try_associate()` method on a token attempts to create a new association with the scope; `try_associate()` returns
+`true` when the association is successful, and it may either return `false` or throw an exception to indicate failure.
+Returning `false` will generally lead to algorithms that operate on tokens to behave as if provided a sender that
+completes immediately with `set_stopped()`, leading to rejected work being discarded as a "no-op", while throwing an
+exception will generally lead to that exception escaping from the calling algorithm.
 
-// TODO: update this:
-The `nest()` method on a token
-attempts to associate its input sender with the handle's async scope in a scope-defined way. See
-[`execution::nest`](#executionnest) for the semantics of `nest()`.
+Whenever `try_associate()` returns `true`, the caller is responsible for calling `dissociate()` to undo the association.
+It is undefined behaviour to leave these two calls "unbalanced" (i.e. to invoke `dissociate()` without first receiving
+a successful association, or _not_ invoking `dissociate()` after receiving a successful association).
+
+Tokens also have a method named `wrap` that takes and returns a sender. After a successful call to `try_associate()`,
+the caller is expected to pass the sender it is operating on to `token.wrap()` to give the token's scope a chance to
+modify the input sender's behaviour.
+
+The following sketch implementation of _`nest-sender`_ illustrates how the three methods on an async scope token
+iteract:
+
+```cpp
+template <sender Sender, async_scope_token Token>
+struct @@_nest-sender_@@ {
+  @@_nest-sender_@@(Sender s, Token t)
+    : token_(t) {
+    if (token_.try_associate()) {
+      try {
+        sender_.emplace(token_.wrap(move(s)));
+      }
+      catch (...) {
+        token_.dissociate();
+        throw;
+      }
+    }
+  }
+
+  ~@@_nest-sender_@@() {
+    if (sender_.has_value()) {
+      sender_.reset(); // assume no-throw destructor
+      token_.dissociate();
+    }
+  }
+
+  // ... implement the sender concept in terms of Sender and sender_
+
+private:
+  using wrapper_t = decltype(declval<Token>().wrap(declval<Sender>()));
+
+  Token token_;
+  optional<wrapper_t> sender_;
+};
+```
 
 An async scope token behaves like a pointer-to-async-scope; tokens are no-throw copyable and movable, and it is
-undefined behaviour to invoke `nest()` on a token that has outlived its scope.
+undefined behaviour to invoke any methods on a token that has outlived its scope.
 
 ## `execution::nest`
 
