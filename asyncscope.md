@@ -1117,8 +1117,8 @@ void spawn(Sender&& snd, Token token, Env env = {});
 Attempts to associate the given sender with the given scope token's scope. On success, the given sender is eagerly
 started.  On failure, either the sender is discarded and no further work happens or `spawn()` throws.
 
-Starting the given sender involves a dynamic allocation of the sender's _`operation-state`_. The following algorithm
-determines which _Allocator_ to use for this allocation:
+Starting the given sender without waiting for it to finish requires a dynamic allocation of the sender's
+_`operation-state`_. The following algorithm determines which _Allocator_ to use for this allocation:
 
  - If `get_allocator(env)` is valid and returns an _Allocator_ then choose that _Allocator_.
  - Otherwise, if `get_allocator(get_env(snd))` is valid and returns an _Allocator_ then choose that _Allocator_.
@@ -1129,7 +1129,7 @@ determines which _Allocator_ to use for this allocation:
 1. `token.try_associate()` is invoked; if it returns `false`, `spawn()` returns
 2. an _`operation-state`_ is dynamically allocated by the _Allocator_ chosen as described above
 3. the _`operation-state`_ is initialized with the result of
-   `connect(token.wrap(forward<Sender>(sender)), @@_spawn-receiver_@@{})`
+   `connect(token.wrap(forward<Sender>(sender)), @@_spawn-receiver_@@{...})`
 4. the _`operation-state`_ is started
 
 Upon completion of the _`operation-state`_, the following steps happen in the following order:
@@ -1147,7 +1147,6 @@ work described by the sender. The `simple_counting_scope` and `counting_scope` d
 opportunity to keep a count of spawned senders that haven't finished, and to prevent new senders from being spawned
 once the scope has been closed.
 
-// TODO: this next paragraph is open for debate now
 The given sender must complete with `set_value()` or `set_stopped()` and may not complete with an error; the user must
 explicitly handle the errors that might appear as part of the _`sender-expression`_ passed to `spawn()`.
 
@@ -1163,7 +1162,6 @@ Usage example:
 for (int i = 0; i < 100; i++)
     spawn(on(sched, some_work(i)), scope.get_token());
 ```
-
 
 ## `execution::spawn_future`
 
