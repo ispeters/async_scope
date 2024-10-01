@@ -997,15 +997,9 @@ iteract:
 template <sender Sender, async_scope_token Token>
 struct @@_nest-sender_@@ {
   @@_nest-sender_@@(Sender s, Token t)
-    : token_(t) {
-    if (token_.try_associate()) {
-      try {
-        sender_.emplace(token_.wrap(move(s)));
-      }
-      catch (...) {
-        token_.dissociate();
-        throw;
-      }
+    : token_(t), sender_(token_.wrap(move(s))) {
+    if (!token_.try_associate()) {
+      sender_.reset(); // assume no-throw destructor
     }
   }
 
