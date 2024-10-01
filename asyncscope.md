@@ -25,7 +25,7 @@ Changes
 =======
 
 ## R6
-- Change the scope token's basis operations from `nest()` to `try_associate()` and `dissociate()`
+- Change the scope token's basis operations from `nest()` to `try_associate()`, `dissociate()`, and `wrap()`
 
 ## R5
 - Clarify that the _`nest-sender`_'s operation state must destroy its child operation state before decrementing the
@@ -383,7 +383,7 @@ int main() {
 
   ex::sender auto snd = work(ctx);
 
-  try { 
+  try {
       // fire, but don't forget
       ex::spawn(std::move(snd), scope.get_token());
   } catch (...) {
@@ -1217,7 +1217,8 @@ For all other queries, `Q`, the result of `Q(fenv)` is `Q(env)`.
 
 `spawn_future()` proceeds with the following steps in the following order:
 
-1. `token.try_associate()` is invoked; if it returns `false`, `spawn_future()` returns
+1. `token.try_associate()` is invoked; if it returns `false`, `spawn_future()` returns a future that will complete with
+   `set_stopped()`
 2. storage for the spawned sender's state is dynamically allocated by the _Allocator_ chosen as described above
 3. the state for the spawned sender is constructed in the allocated storage
    - a subset of this state is an _`operation-state`_ created by connecting the result of
@@ -1225,29 +1226,29 @@ For all other queries, `Q`, the result of `Q(fenv)` is `Q(env)`.
 4. the _`operation-state`_ within the allocated state is started
 5. a `future<>` is returned
 
-// TODO: figure out how to describe the shutdown sequence; the timing of `dissociate()` should be _after_ any potential
-consumer is done with the result of the spawned sender
+Given a _`future-sender`_, `fs`, if `fs` is destroyed without being connected, or if it _is_ connected and the resulting
+_`operation-state`_, `fsop`, is destroyed without being started, then the eagerly-started work is "abandoned".
 
-**Cancelling the spawned work**
+Abandoning the eagerly-started work means:
 
-There are several circumstances that lead to a stop request being delivered to the spawned sender:
+- a stop request is sent to the running _`operation-state`_;
+- any result produced by the running _`operation-state`_ is discarded when the operation completes; and
+- after the operation completes, the dynamically-allocated state is "cleaned up".
 
-- `fs` is destroyed before being connected;
-- `fs` is connected but the resulting _`operation-state`_ is destroyed without being started; or
-- `fs` is connected and started and then receives a stop request from its receiver.
+Cleaning up the dynamically-allocated state means doing the following, in order:
 
-In the first two cases, a destructor requests stop on the spawned sender and then continues with object destruction and
-no attention is ever paid to the result of the spawned sender.
+1. the state is destroyed;
+2. the dynamic allocation is deallocated; and
+3. `token.dissociate()` is invoked to end the future's association with its scope.
 
-In the third case, `fs` responds to a stop request from its receiver by:
+When `fsop` is started, if `fsop` receives a stop request from its receiver before the eagerly-started work has
+completed then an attempt is made to abandon the eagerly-started work. Note that it's possible for the eagerly-started
+work to complete while `fsop` is requesting stop; once the stop request has been delivered, either `fsop` completes with
+the result of the eagerly-started work if it's ready, or it completes with `set_stopped()` without waiting for the
+eagerly-started work to complete.
 
-1. forwarding the request to the spawned sender, and then
-2. completing.
-
-If the spawned sender completes between steps 1 and 2, `fs` may complete with the result of the spawned sender;
-otherwise, `fs` completes with `set_stopped()` without waiting for the spawned sender to complete.
-
-----
+When `fsop` is started and does not receive a stop request from its receiver, `fsop` completes after the eagerly-started
+work completes with the same completion. Once `fsop` completes, it cleans up the dynamically-allocated state.
 
 `spawn_future` is similar to `ensure_started()` from [@P2300R7], but the scope may observe and participate in the
 lifetime of the work described by the sender. The `simple_counting_scope` and `counting_scope` described in this paper
@@ -1256,12 +1257,6 @@ started once the scope has been closed.
 
 Unlike `spawn()`, the sender given to `spawn_future()` is not constrained on a given shape. It may send different types
 of values, and it can complete with errors.
-
-_NOTE:_ there is a race between the completion of the given sender and the start of the returned sender. The spawned
-sender and the returned _`future-sender`_ use the synchronization facilities in the dynamically allocated state to
-resolve this race.
-
-Cancelling the returned sender requests cancellation of the given sender, `snd`, but does not affect any other senders.
 
 Usage example:
 ```cpp
