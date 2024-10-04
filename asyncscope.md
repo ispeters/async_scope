@@ -994,7 +994,7 @@ Whenever `try_associate()` returns `true`, the caller is responsible for calling
 It is undefined behaviour to leave these two calls "unbalanced" (i.e. to invoke `dissociate()` without first receiving
 a successful association, or _not_ invoking `dissociate()` after receiving a successful association).
 
-Tokens also have a method named `wrap` that takes and returns a sender. The `wrap()` method givens the token an
+Tokens also have a method named `wrap` that takes and returns a sender. The `wrap()` method gives the token an
 opportunity to modify the input sender's behaviour in a scope-specific way. The proposed `counting_scope` uses this
 opportunity to associate the input sender with a stop token that the scope can use to request stop on all outstanding
 operations nested within the scope.
@@ -1417,17 +1417,21 @@ state, and causes all future calls to `try_associate()` to return `false`.
 
 // TODO: there's no nest() on this scope anymore; update to describe try_associate(), maybe
 
-Any call to `nest()` may throw an exception if copying or moving the input sender into the returned _`nest-sender`_
-throws an exception. `nest()` provides the Strong Exception Guarantee so the scope's state is left unchanged if an
-exception is thrown while constructing the returned _`nest-sender`_.
+Associating work with a `simple_counting_scope` can be done through `simple_counting_scope`'s token. `simple_counting_scope`'s 
+token provides 3 methods: `wrap(Sender&& s)`, `try_associate()`, and `dissociate()`.
 
-Assuming `nest()` does not throw:
+- `wrap(Sender&&s)` takes in a Sender and returns the unmodified input sender.
+- `try_associate()` attempts to create a new association with the `simple_counting_scope` and will return true if the
+  association is successful, or false otherwise. (TODO: need to word in exceptions here somehow).
+  The requirements for `try_associate()`'s success are outlined below: 
+  1. While a scope is in the unused, open, or open-and-joining state, calls to `token.try_associate()` succeeds by
+     incrementing the scope's count of oustanding operations before returning true.
+  2. While a scope is in the closed, unused-and-closed, closed-and-joining, or joined state, calls to
+     `token.try_associate()` will return false and _will not_ increment the scope's count of outstanding operations.  
+- `dissociate()` will undo the association by decrementing the scope's count of oustanding operations. (TODO: maybe
+  include something about what happens if disocciate is called without a prior call to try_associate?)
 
-- While a scope is in the unused, open, or open-and-joining state, calls to `nest()` succeed by returning an "associated
-  sender" (see below) and incrementing the scope's count of outstanding operations _before returning_.
-- While a scope is in the closed, unused-and-closed, closed-and-joining, or joined state, calls to `nest()` fail by
-  returning an "unassociated sender" (see below). Failed calls to `nest()` do _not_ increment the scope's count of
-  outstanding operations.
+//TODO: this needs to be reworded under the context of try_associate and when you move/copy senders
 
 While a scope is open, calls to `nest()` that return normally will have incremented the scope's count of oustanding
 operations. In this case, the resulting _`nest-sender`_ is an associated sender that acts like an RAII handle: the
@@ -1438,20 +1442,11 @@ permitted if the sender it's wrapping is copyable, but the copy may "fail" since
 scope's count, which is only allowed when the scope is open; if copying fails, the new sender is an unassociated sender
 that behaves as if it were the result of a failed call to `nest()`.
 
-While a scope is closed, calls to `nest()` that return normally will have failed to increment the scope's count of
-outstanding operations or otherwise change the scope's state. In this case, the resulting _`nest-sender`_ is an
-unassociated sender. Unassociated _`nest-senders`_ do not have a reference to the scope they came from and always
-complete with `stopped` when connected and started. Copying or moving an unassociated sender produces another
-unassociated sender.
-
-Under the standard assumption that the arguments to `nest()` are and remain valid while evaluating `nest()`, it is
-always safe to invoke any supported operation on the returned _`nest-sender`_.
-
-The state transitions of a `simple_counting_scope` mean that it can be used to protect asynchronous work from
+The state transitions of a `simple_counting_scope` means that it can be used to protect asynchronous work from
 use-after-free errors. Given a resource, `res`, and a `simple_counting_scope`, `scope`, obeying the following policy is
 enough to ensure that there are no attempts to use `res` after its lifetime ends:
 
-- all senders that refer to `res` are nested within `scope`; and
+- all senders that refer to `res` are associated with `scope`; and
 - `scope` is destroyed (and therefore in the joined, unused, or unused-and-closed state) before `res` is destroyed.
 
 It is safe to destroy a scope in the unused or unusued-and-closed state because there can't be any work referring to the
@@ -1513,18 +1508,27 @@ the receiver's scheduler restricts which receivers a _`join-sender`_ may be conn
 the alternative would have the _`join-sender`_ completing on the execution context of whichever nested operation happens
 to be the last one to complete.
 
-### `simple_counting_scope::token::nest`
+### `simple_counting_scope::token::wrap`
 
-// TODO: this doesn't exist; replace with explanations of try_associate() and dissociate()
-
-```cpp
-template <sender S>
-struct @@_nest-sender_@@; // @@_exposition-only_@@
-
-template <sender S>
-@@_nest-sender_@@<std::remove_cvref_t<S>> nest(S&& s) const noexcept(
-        std::is_nothrow_constructible_v<std::remove_cvref_t<S>, S>);
+``cpp
+struct token {
+   template<sender Sender>
+   Sender&& wrap(Sender&&s) noexcept;
+}
 ```
+
+Returns the input sender, unmodified.
+
+### `simple_counting_scope::token::try_associate`
+
+// TODO: Add explanation
+
+### `simple_counting_scope::token::dissociate`
+
+// TODO: Add explanation
+
+
+// TODO: the below needs to be reworded  for try_associate
 
 Attempts to return an associated _`nest-sender`_ constructed from `s`. The attempt will be successful if and only if:
 
