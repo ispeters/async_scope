@@ -842,7 +842,7 @@ struct @@_spawn-receiver_@@ { // @@_exposition-only_@@
     void set_value() noexcept;
     void set_stopped() noexcept;
 
-    @@_spawn-env_@@<Env> get_env() const noexcept;
+    const @@_spawn-env_@@<Env>& get_env() const noexcept;
 };
 
 template <class Env>
@@ -997,7 +997,7 @@ a successful association, or _not_ invoking `dissociate()` after receiving a suc
 Tokens also have a method named `wrap` that takes and returns a sender. The `wrap()` method gives the token an
 opportunity to modify the input sender's behaviour in a scope-specific way. The proposed `counting_scope` uses this
 opportunity to associate the input sender with a stop token that the scope can use to request stop on all outstanding
-operations nested within the scope.
+operations associated within the scope.
 
 In order to provide the Strong Exception Guarantee, the algorithms proposed in this paper invoke `token.wrap(snd)`
 before invoking `token.try_associate()`. Other algorithms written in terms of `async_scope_token` should do the same.
@@ -1114,7 +1114,7 @@ struct @@_spawn-receiver_@@ { // @@_exposition-only_@@
     void set_value() noexcept;
     void set_stopped() noexcept;
 
-    @@_spawn-env_@@<Env> get_env() const noexcept;
+    const @@_spawn-env_@@<Env>& get_env() const noexcept;
 };
 
 }
@@ -1415,21 +1415,20 @@ scope's count of outstanding operations reaches zero, at which point the scope t
 Calling `close()` on a `simple_counting_scope` moves the scope to the closed, unused-and-closed, or closed-and-joining
 state, and causes all future calls to `try_associate()` to return `false`.
 
-// TODO: there's no nest() on this scope anymore; update to describe try_associate(), maybe
+Associating work with a `simple_counting_scope` can be done through `simple_counting_scope`'s token.
+`simple_counting_scope`'s token provides 3 methods: `wrap(Sender&& s)`, `try_associate()`, and `dissociate()`.
 
-Associating work with a `simple_counting_scope` can be done through `simple_counting_scope`'s token. `simple_counting_scope`'s 
-token provides 3 methods: `wrap(Sender&& s)`, `try_associate()`, and `dissociate()`.
-
-- `wrap(Sender&&s)` takes in a Sender and returns the unmodified input sender.
+- `wrap(Sender&&s)` takes in a sender and returns it unmodified.
 - `try_associate()` attempts to create a new association with the `simple_counting_scope` and will return true if the
-  association is successful, or false otherwise. (TODO: need to word in exceptions here somehow).
+  association is successful, or false otherwise.
   The requirements for `try_associate()`'s success are outlined below: 
   1. While a scope is in the unused, open, or open-and-joining state, calls to `token.try_associate()` succeeds by
      incrementing the scope's count of oustanding operations before returning true.
   2. While a scope is in the closed, unused-and-closed, closed-and-joining, or joined state, calls to
      `token.try_associate()` will return false and _will not_ increment the scope's count of outstanding operations.  
-- `dissociate()` will undo the association by decrementing the scope's count of oustanding operations. (TODO: maybe
-  include something about what happens if disocciate is called without a prior call to try_associate?)
+- `dissociate()` will undo an association by decrementing the scope's count of oustanding operations.
+  - When a scope is in the open-and-joining or closed-and-joining state and an invocation of `dissociate()` undoes the
+    final scope association, the scope moves to the joined state and the outstanding _`join-sender`_ completes.
 
 //TODO: this needs to be reworded under the context of try_associate and when you move/copy senders
 
@@ -1953,7 +1952,7 @@ struct spawn_receiver {
     alloc.deallocate(op, 1);
   }
 
-  const Env& get_env() noexcept {
+  const Env& get_env() const noexcept {
     return env;
   }
 };
