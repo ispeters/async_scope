@@ -7,11 +7,12 @@ audience:
   - "LEWG Library Evolution"
 author:
   - name: Ian Petersen
-    email: <ispeters@meta.com>
+    email: <ispeters@gmail.com>
+  - name: Jessica Wong
+    email: <jesswong2011@gmail.com>
+contributor:
   - name: Ján Ondrušek
     email: <ondrusek@meta.com>
-  - name: Jessica Wong
-    email: <jesswong@meta.com>
   - name: Kirk Shoop
     email: <kirk.shoop@gmail.com>
   - name: Lee Howes
@@ -25,7 +26,7 @@ Changes
 =======
 
 ## R6
-- Change the scope token's basis operations from `nest()` to `try_associate()`, `dissociate()`, and `wrap()`
+- Change the scope token's basis operations from `nest()` to `try_associate()`, `dissociate()`, and `wrap()`.
 
 ## R5
 - Clarify that the _`nest-sender`_'s operation state must destroy its child operation state before decrementing the
@@ -814,18 +815,17 @@ Async Scope, usage guide
 An async scope is a type that implements a "bookkeeping policy" for senders that have been `nest()`ed within the scope.
 Depending on the policy, different guarantees can be provided in terms of the lifetimes of the scope and any nested
 senders. The `counting_scope` described in this paper defines a policy that has proven useful while progressively
-adding structure to existing, unstructured code at Meta, but other useful policies are possible. By defining `spawn()`
-and `spawn_future()` in terms of the more fundamental `nest()`, and leaving the definition of `nest()` to the scope,
-this paper's design leaves the set of policies open to extension by user code or future standards.
+adding structure to existing, unstructured code at Meta, but other useful policies are possible. By defining `nest()`,
+`spawn()`, and `spawn_future()` in terms of the more fundamental async scope token interface, and leaving the
+implementation of the abstract interface to concrete token types, this paper's design leaves the set of policies open to
+extension by user code or future standards.
 
-An async scope's implementation of `nest()`:
+An async scope token's implementation of the `async_scope_token` concept:
 
- - must allow an arbitrary sender to be nested within the scope without eagerly starting the sender;
- - must not return a sender that adds new value or error completions to the completions of the sender being nested;
- - may fail to nest a new sender by returning an "unnested" sender that completes with `set_stopped` when run without
-   running the sender that failed to nest;
- - may fail to nest a new sender by eagerly throwing an exception during the call to `nest()`; and
- - is expected to be "cheap" like other sender adaptor objects.
+ - must allow an arbitrary sender to be wrapped without eagerly starting the sender;
+ - must not add new value or error completions when wrapping a sender;
+ - may fail to associate a new sender by returning `false` from `try_associate()`;
+ - may fail to associate a new sender by eagerly throwing an exception from either `try_associate()` or `wrap()`;
 
 More on these items can be found below in the sections below.
 
@@ -941,7 +941,7 @@ struct counting_scope {
 
     struct token {
       template <sender Sender>
-      @@_wrapped-sender_@@<Sender> wrap(Sender&& snd);
+      @@_wrapped-sender_@@<Sender> wrap(Sender&& snd) const;
 
       bool try_associate() const;
 
