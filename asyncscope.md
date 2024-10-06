@@ -1080,6 +1080,33 @@ the Strong Exception Guarantee.
 The _`nest-sender`_ destructor invokes `token.dissociate()` if it contains an initialized sender (e.g. if step 3b, above
 completed normally and the _`nest-sender`_ is destroyed without being connected).
 
+An associated _`nest-sender`_ has many properties of an RAII handle:
+
+- constructing an instance acquires a "resource" (the association with the scope)
+- destructing an instance releases the same resource
+- moving an instance into another transfers ownership of the resource from the source to the destination
+- etc.
+
+Copying a _`nest-sender`_ is possible if the sender it is wrapping is copyable but the copying process is a bit unusual
+as the underlying source of associations (the async scope token) may not reliably allocate new resources (because
+`try_associate()` may return `false`). If the sender, `snd`, provided to `nest()` is copyable then the resulting
+_`nest-sender`_ is also copyable, with the following rules:
+
+- copying an unassociated _`nest-sender`_ invariably produces a new unassociated _`nest-sender`_; and
+- copying an associated _`nest-sender`_ proceeds as follows:
+  1. copy the scope token from the source into the destination _`nest-sender`_
+  2. copy the wrapped sender from the source into the destination _`nest-sender`_
+  3. invoke `token.try_associate()` on the copied scope token
+     - if `try_associate()` returns `true` then mark the destination _`nest-sender`_ as associated
+     - otherwise, destroy the copy of the wrapped sender and mark the destination _`nest-sender`_ as unassociated
+
+When _`nest-sender`_ has a copy constructor, it provides the Strong Exception Guarantee. When _`nest-sender`_ has a copy
+assignment operator
+
+- if the wrapped sender is no-throw copy-assignable, move-assignable, or swappable then the _`nest-sender`_'s copy
+  assignment operator provides the Strong Exception Guarantee;
+- otherwise, the _`nest-sender`_'s copy assignment operator provides the Basic Exception Guarantee.
+
 When connecting an unassociated _`nest-sender`_, the resulting _`operation-state`_ completes immediately with
 `set_stopped()` when started.
 
@@ -1429,17 +1456,6 @@ Associating work with a `simple_counting_scope` can be done through `simple_coun
 - `dissociate()` will undo an association by decrementing the scope's count of oustanding operations.
   - When a scope is in the open-and-joining or closed-and-joining state and an invocation of `dissociate()` undoes the
     final scope association, the scope moves to the joined state and the outstanding _`join-sender`_ completes.
-
-//TODO: this needs to be reworded under the context of try_associate and when you move/copy senders
-
-While a scope is open, calls to `nest()` that return normally will have incremented the scope's count of oustanding
-operations. In this case, the resulting _`nest-sender`_ is an associated sender that acts like an RAII handle: the
-scope's internal count is incremented when the sender is created and decremented when the sender is "done with the
-scope", which happens when the sender or its _`operation-state`_ is destroyed. Moving a _`nest-sender`_ transfers
-responsibility for decrementing the count from the old instance to the new one. Copying an associated _`nest-sender`_ is
-permitted if the sender it's wrapping is copyable, but the copy may "fail" since copying requires incrementing the
-scope's count, which is only allowed when the scope is open; if copying fails, the new sender is an unassociated sender
-that behaves as if it were the result of a failed call to `nest()`.
 
 The state transitions of a `simple_counting_scope` means that it can be used to protect asynchronous work from
 use-after-free errors. Given a resource, `res`, and a `simple_counting_scope`, `scope`, obeying the following policy is
