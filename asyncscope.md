@@ -1502,7 +1502,7 @@ void close() noexcept;
 ```
 
 Moves the scope to the closed, unused-and-closed, or closed-and-joining state. After a call to `close()`, all future
-calls to `nest()` that return normally return unassociated senders.
+calls to `try_associate()` return `false`.
 
 ### `simple_counting_scope::join`
 
@@ -1525,16 +1525,18 @@ to be the last one to complete.
 
 ### `simple_counting_scope::token::wrap`
 
-``cpp
-struct token {
-   template<sender Sender>
-   Sender&& wrap(Sender&&s) noexcept;
-}
+```cpp
+template <sender Sender>
+Sender&& wrap(Sender&& s) const noexcept;
 ```
 
-Returns the input sender, unmodified.
+Returns the input sender unmodified.
 
 ### `simple_counting_scope::token::try_associate`
+
+```cpp
+bool try_associate() const;
+```
 
 // TODO: Add explanation
 
