@@ -1123,6 +1123,13 @@ When connecting an associated _`nest-sender`_, there are four possible outcomes:
 
 An _`operation-state`_ with its own association invokes `token.dissociate()` in its destructor.
 
+Note: the timing of when an associated _`operation-state`_ ends its association with the scope is chosen to avoid
+exposing user code to dangling references. Scopes are expected to serve as mechanisms for signaling when it is safe to
+destroy shared resources being protected by the scope. Ending any given association with a scope may lead to that scope
+signaling that the protected resources can be destroyed so a _`nest-sender`_'s _`operation-state`_ must not permit that
+signal to be sent until the _`operation-state`_ is definitely finished accessing the shared resources, which is at the
+end of the _`operation-state`_'s destructor.
+
 A call to `nest()` does not start the given sender and is not expected to incur allocations.
 
 Regardless of whether the returned sender is associated or unassociated, it is multi-shot if the input sender is
@@ -1530,7 +1537,7 @@ template <sender Sender>
 Sender&& wrap(Sender&& s) const noexcept;
 ```
 
-Returns the input sender unmodified.
+Returns the argument unmodified.
 
 ### `simple_counting_scope::token::try_associate`
 
@@ -1538,7 +1545,13 @@ Returns the input sender unmodified.
 bool try_associate() const;
 ```
 
-// TODO: Add explanation
+The following atomic state change is attempted on the token's scope:
+
+- increment the scope's count of outstanding operations; and
+- move the scope to the open state if it was in the unused state.
+
+The atomic state change succeeds and the method returns `true` if the scope is observed to be in the unused, open, or
+open-and-joining state; otherwise the scope's state is left unchanged and the method returns `false`.
 
 ### `simple_counting_scope::token::dissociate`
 
@@ -1569,12 +1582,6 @@ Move-construction and move-assignment transfer the decrement responsibility to t
 instance to a receiver transfers the decrement responsibility to the resulting _`operation-state`_; that
 _`operation-state`_'s destructor must destroy its "child operation" (i.e. the _`operation-state`_ constructed when
 connecting the sender, `s`, that was originally passed to `nest()`) before performing the decrement.
-
-Note: the timing of when an _`operation-state`_ decrements the scope's count is chosen to avoid exposing user code to
-dangling references. Decrementing the scope's count may move the scope to the joined state, which would allow the
-waiting _`join-sender`_ to complete, potentially leading to the destruction of a resource protected by the scope. In
-general, it's possible that the _`nest-sender`_'s receiver or the child operation's destructor may dereference pointers
-to the protected resource so their execution must be completed before the scope moves to the joined state.
 
 Whenever the balancing decrement happens, it's possible that the scope has transitioned to the open-and-joining or
 closed-and-joining state since the _`nest-sender`_ was constructed, which means that there is a _`join-sender`_ waiting
