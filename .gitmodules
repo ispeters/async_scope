@@ -1,4 +1,4 @@
 [submodule "wg21"]
 	path = wg21
-	url = https://github.com/kirkshoop/wg21.git
-	branch = addplantuml
+	url = https://github.com/ispeters/wg21.git
+	branch = add_contributor_section
