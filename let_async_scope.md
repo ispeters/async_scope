@@ -290,7 +290,8 @@ Please note: this wording is incomplete, and needs review.
               scope-type scope;
               args-variant-type args;
               ops2-variant-type ops2;
-              error-variant-type error;
+              mutex error_mutex;
+              optional<error-variant-type> error;
             };
             return state-type{std::move(fn), std::move(env), {}, {}};
           }(std::forward_like<Sndr>(data), let-async-scope-env(child));
@@ -347,7 +348,14 @@ Please note: this wording is incomplete, and needs review.
           6. Invoking `spawn(snd, token, env)` where `token` is the `async-scope-token` returned from `scope-type::get_token` is equivalent to
           
    ```c++
-          spawn(snd | upon_error([&state](auto&& error){state.errors.emplace(TRANSFORM-ERROR(error));}), token, env);
+          spawn(snd | upon_error(
+                  [&state](auto&& error){
+                    {
+                      lock_guard guard(state.error_mutex);
+                      state.errors.emplace(TRANSFORM-ERROR(error));
+                    }
+                    state.scope.request_stop();
+                  }), token, env);
    ```
 
     if `snd` has any error completions, where `TRANSFORM-ERROR` is
