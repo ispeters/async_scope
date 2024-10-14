@@ -21,15 +21,15 @@ Code with explicit `counting_scope`:
     some_data_type scoped_data = make_scoped_data();
     counting_scope scope;
 
-    spawn(scope,on(exec, [&] {
-        spawn(scope,on(exec, [&] {
+    spawn(on(exec, [&] {
+        spawn(on(exec, [&] {
             if (need_more_work(scoped_data)) {
-                spawn(scope,on(exec, [&] { do_more_work(scoped_data); }));
-                spawn(scope,on(exec, [&] { do_more_other_work(scoped_data); }));
+              spawn(on(exec, [&] { do_more_work(scoped_data); }), scope);
+                spawn(on(exec, [&] { do_more_other_work(scoped_data); }), scope);
             }
-        }));
-        spawn(scope,on(exec, [&] { do_something_else_with(scoped_data); }));
-    }));
+        }),scope);
+        spawn(on(exec, [&] { do_something_else_with(scoped_data); }), scope);
+    }),scope);
 
     maybe_throw();
 
@@ -49,15 +49,15 @@ function passed to `let_async_scope` exits via an exception:
 ```c++
     auto scope_sender = just(make_scoped_data()) | let_async_scope([](auto scope_token,
                                                                            auto& scoped_data) {
-        spawn(scope_token,on(exec, [scope_token, &scoped_data] {
-            spawn(scope_token,on(exec, [scope_token, &scoped_data] {
+        spawn(on(exec, [scope_token, &scoped_data] {
+            spawn(on(exec, [scope_token, &scoped_data] {
                 if (need_more_work(scoped_data)) {
-                    spawn(scope_token,on(exec, [&scoped_data] { do_more_work(scoped_data); }));
-                    spawn(scope_token,on(exec, [&scoped_data] { do_more_other_work(scoped_data); }));
+                    spawn(on(exec, [&scoped_data] { do_more_work(scoped_data); }),scope_token);
+                    spawn(on(exec, [&scoped_data] { do_more_other_work(scoped_data); }),scope_token);
                 }
-            }));
-            spawn(scope_token,on(exec, [&scoped_data] { do_something_else_with(scoped_data); }));
-        }));
+            }),scope_token);
+            spawn(on(exec, [&scoped_data] { do_something_else_with(scoped_data); }),scope_token);
+        }),scope_token);
         maybe_throw();
     });
 
@@ -91,8 +91,8 @@ Given:
 ```c++
     auto scope_sender = just(make_scoped_data()) | let_async_scope([](auto scope_token,
                                                                            auto& scoped_data) {
-        spawn(scope_token,just_error(foo{}));
-        spawn(scope_token,just_error(bar{}));
+        spawn(just_error(foo{}),scope_token);
+        spawn(just_error(bar{}),scope_token);
     });
 
     this_thread::sync_wait(scope_sender);
@@ -116,7 +116,7 @@ in which case errors are *not* converted.
 ```c++
     auto scope_sender = just(make_scoped_data()) | let_async_scope([](auto scope_token,
                                                                            auto& scoped_data) noexcept {
-        spawn(scope_token,just_error(foo{})); // error, sender may fail in "noexcept" scope
+        spawn(just_error(foo{}),scope_token); // error, sender may fail in "noexcept" scope
     });
 
     this_thread::sync_wait(scope_sender);
@@ -127,7 +127,7 @@ in which case errors are *not* converted.
 ```c++
     auto scope_sender = just(make_scoped_data()) | let_async_scope([](auto scope_token,
                                                                            auto& scoped_data) noexcept(false) {
-        spawn(scope_token,just_error(foo{})); // Coerced with AS-EXCEPT-PTR
+        spawn(just_error(foo{}),scope_token); // Coerced with AS-EXCEPT-PTR
     });
 
     this_thread::sync_wait(scope_sender); // throws foo{}
@@ -139,9 +139,9 @@ in which case errors are *not* converted.
     auto scope_sender = just(make_scoped_data()) |
       let_async_scope<completion_signatures<set_error_t(foo),set_error_t(bar)>>(
         [](auto scope_token, auto& scoped_data) noexcept {
-        spawn(scope_token,just_error(foo{})); // OK
-        spawn(scope_token,just_error(bar{})); // OK
-        spawn(scope_token,just_error(baz{})); // error
+        spawn(just_error(foo{}),scope_token); // OK
+        spawn(just_error(bar{}),scope_token); // OK
+        spawn(just_error(baz{}),scope_token); // error
     });
 
     this_thread::sync_wait(scope_sender | upon_error([](auto e){
