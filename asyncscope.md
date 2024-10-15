@@ -142,21 +142,21 @@ place to start structured asynchronous work in an unstructured environment. We a
 // Abstraction for thread that has the ability
 // to execute units of work.
 class Executor {
- public:
-  virtual void add(Func function) noexcept = 0;
+public:
+    virtual void add(Func function) noexcept = 0;
 };
 
 // Example class
 class Foo {
-  std::shared_ptr<Executor> exec_;
+    std::shared_ptr<Executor> exec_;
 
- public:
-  void doSomething() {
-     auto asyncWork = [&]() {
-       // do something
-     };
-     exec_->add(asyncWork);
-  }
+public:
+    void doSomething() {
+        auto asyncWork = [&]() {
+            // do something
+        };
+        exec_->add(asyncWork);
+    }
 };
 ```
 
@@ -165,37 +165,35 @@ class Foo {
 // Utility class for executing async work on an
 // async_scope and on the provided executor
 class ExecutorAsyncScopePair {
-  unifex::v1::async_scope scope_;
-  ExecutorScheduler exec_
+    unifex::v1::async_scope scope_;
+    ExecutorScheduler exec_;
 
- public:
-  void add(Func func) {
-    scope_.detached_spawn_call_on(
-      exec_, func);
-  }
+public:
+    void add(Func func) {
+        scope_.detached_spawn_call_on(exec_, func);
+    }
 
-  auto cleanup() {
-    return scope_.cleanup();
-  }
+    auto cleanup() {
+        return scope_.cleanup();
+    }
 };
 
 // Example class
 class Foo {
- std::shared_ptr<ExecutorAsyncScopePair> exec_;
+    std::shared_ptr<ExecutorAsyncScopePair> exec_;
 
- public:
-  ~Foo() {
-    sync_wait(exec_->cleanup());
-  }
+public:
+    ~Foo() {
+        sync_wait(exec_->cleanup());
+    }
 
-  void doSomething() {
-    auto asyncWork = [&]() {
-      // do something
-    };
+    void doSomething() {
+        auto asyncWork = [&]() {
+            // do something
+        };
 
-
-   exec_->add(asyncWork);
-  }
+        exec_->add(asyncWork);
+    }
 };
 ```
 ::::
@@ -297,20 +295,20 @@ int main() {
 
     // make sure we always join
     unifex::scope_guard join = [&]() noexcept {
-      // wait for all nested work to finish
-      this_thread::sync_wait(scope.join()); // NEW!
+        // wait for all nested work to finish
+        this_thread::sync_wait(scope.join()); // NEW!
     };
 
     std::vector<work_item*> items = get_work_items();
     for (auto item : items) {
-      // Spawn some work dynamically
-      ex::sender auto snd = ex::transfer_just(my_pool.get_scheduler(), item) |
-                            ex::then([&](work_item* item) { do_work(ctx, item); });
+        // Spawn some work dynamically
+        ex::sender auto snd = ex::transfer_just(my_pool.get_scheduler(), item) |
+                              ex::then([&](work_item* item) { do_work(ctx, item); });
 
-      // start `snd` as before, but associate the spawned work with `scope` so that it can
-      // be awaited before destroying the resources referenced by the work (i.e. `my_pool`
-      // and `ctx`)
-      ex::spawn(std::move(snd), scope.get_token()); // NEW!
+        // start `snd` as before, but associate the spawned work with `scope` so that it can
+        // be awaited before destroying the resources referenced by the work (i.e. `my_pool`
+        // and `ctx`)
+        ex::spawn(std::move(snd), scope.get_token()); // NEW!
     }
 
     // `ctx` and `my_pool` are destroyed *after* they are no longer referenced
@@ -327,24 +325,25 @@ void do_work(work_context&, work_item*);
 std::vector<work_item*> get_work_items();
 
 int main() {
-  static_thread_pool my_pool{8};
-  work_context ctx;         // create a global context for the application
+    static_thread_pool my_pool{8};
+    work_context ctx; // create a global context for the application
 
-  this_thread::sync_wait(ex::let_async_scope(ex::just(get_work_items()), [&](auto scope, auto& items) {
-    for (auto item : items) {
-      // Spawn some work dynamically
-      ex::sender auto snd = ex::transfer_just(my_pool.get_scheduler(), item) |
-                            ex::then([&](work_item* item) { do_work(ctx, item); });
+    this_thread::sync_wait(
+            ex::let_async_scope(ex::just(get_work_items()), [&](auto scope, auto& items) {
+                for (auto item : items) {
+                    // Spawn some work dynamically
+                    ex::sender auto snd = ex::transfer_just(my_pool.get_scheduler(), item) |
+                                          ex::then([&](work_item* item) { do_work(ctx, item); });
 
-      // start `snd` as before, but associate the spawned work with `scope` so that it can
-      // be awaited before destroying the resources referenced by the work (i.e. `my_pool`
-      // and `ctx`)
-      ex::spawn(std::move(snd), scope); // NEW!
-    }
-    return just();
-  }));
+                    // start `snd` as before, but associate the spawned work with `scope` so that it
+                    // can be awaited before destroying the resources referenced by the work (i.e.
+                    // `my_pool` and `ctx`)
+                    ex::spawn(std::move(snd), scope); // NEW!
+                }
+                return just();
+            }));
 
-  // `ctx` and `my_pool` are destroyed *after* they are no longer referenced
+    // `ctx` and `my_pool` are destroyed *after* they are no longer referenced
 }
 ```
 
@@ -458,24 +457,21 @@ int main() {
 
     ex::scheduler auto sch = ctx.scheduler();
 
-    ex::sender auto val = ex::just()
-        | ex::let_async_scope([sch](ex::async_scope_token auto scope) {
-          int val = 13;
+    ex::sender auto val = ex::just() | ex::let_async_scope([sch](ex::async_scope_token auto scope) {
+        int val = 13;
 
-          auto print_sender = ex::just()
-              | ex::then([val]() noexcept {
-                std::cout << "Hello world! Have an int with value: " << val << "\n";
-              });
+        auto print_sender = ex::just() | ex::then([val]() noexcept {
+            std::cout << "Hello world! Have an int with value: " << val << "\n";
+        });
 
-          // spawn the print sender on sch
-          //
-          // NOTE: if spawn throws, let_async_scope will capture the exception
-          //       and propagate it through its set_error completion
-          ex::spawn(ex::on(sch, std::move(print_sender)), scope);
+        // spawn the print sender on sch
+        //
+        // NOTE: if spawn throws, let_async_scope will capture the exception
+        //       and propagate it through its set_error completion
+        ex::spawn(ex::on(sch, std::move(print_sender)), scope);
 
-          return ex::just(val);
-        }))
-        | ex::then([&result](auto val) { result = val });
+        return ex::just(val);
+    }) | ex::then([&result](auto val) { result = val });
 
     this_thread::sync_wait(ex::on(sch, std::move(val)));
 
@@ -512,9 +508,10 @@ struct my_window {
     }
 
     my_window(ex::system_scheduler sch, ex::counting_scope::token scope)
-      : sch(sch), scope(scope) {
-      // register this window with the windowing framework somehow so that
-      // it starts receiving calls to onClickClose() and onMessage()
+        : sch(sch)
+        , scope(scope) {
+        // register this window with the windowing framework somehow so that
+        // it starts receiving calls to onClickClose() and onMessage()
     }
 
     ex::system_scheduler sch;
@@ -529,7 +526,7 @@ int main() {
     try {
         my_window window{ctx.get_scheduler(), scope.get_token()};
     } catch (...) {
-      // do something with exception
+        // do something with exception
     }
     // wait for all work nested within scope to finish
     this_thread::sync_wait(scope.join());
@@ -550,22 +547,17 @@ namespace ex = std::execution;
 ex::sender auto some_work(int work_index);
 
 ex::sender auto foo(ex::scheduler auto sch) {
-  return ex::just()
-      | ex::let_async_scope([sch](ex::async_scope_token auto scope) {
-        return ex::schedule(sch)
-            | ex::then([] {
-              std::cout << "Before tasks launch\n";
-            })
-            | ex::then([=] {
-              // Create parallel work
-              for (int i = 0; i < 100; ++i) {
-                // NOTE: if spawn() throws, the exception will be propagated as the
-                //       result of let_async_scope through its set_error completion
-                ex::spawn(ex::on(sch, some_work(i)), scope);
-              }
-            });
-      })
-      | ex::then([] { std::cout << "After tasks complete successfully\n"; });
+    return ex::just() | ex::let_async_scope([sch](ex::async_scope_token auto scope) {
+        return ex::schedule(sch) | ex::then([] { std::cout << "Before tasks launch\n"; }) |
+               ex::then([=] {
+                   // Create parallel work
+                   for (int i = 0; i < 100; ++i) {
+                       // NOTE: if spawn() throws, the exception will be propagated as the
+                       //       result of let_async_scope through its set_error completion
+                       ex::spawn(ex::on(sch, some_work(i)), scope);
+                   }
+               });
+    }) | ex::then([] { std::cout << "After tasks complete successfully\n"; });
 }
 ```
 
@@ -584,23 +576,20 @@ task<size_t> listener(int port, io_context& ctx, static_thread_pool& pool) {
     size_t count{0};
     listening_socket listen_sock{port};
 
-    co_await ex::let_async_scope(
-        ex::just(), [&](ex::async_scope_token auto scope) -> task<void> {
-          while (!ctx.is_stopped()) {
+    co_await ex::let_async_scope(ex::just(), [&](ex::async_scope_token auto scope) -> task<void> {
+        while (!ctx.is_stopped()) {
             // Accept a new connection
             connection conn = co_await async_accept(ctx, listen_sock);
             count++;
 
             // Create work to handle the connection in the scope of `work_scope`
             conn_data data{std::move(conn), ctx, pool};
-            ex::sender auto snd = ex::just(std::move(data))
-                | ex::let_value([](auto& data) {
-                  return handle_connection(data);
-                });
+            ex::sender auto snd = ex::just(std::move(data)) |
+                                  ex::let_value([](auto& data) { return handle_connection(data); });
 
             ex::spawn(std::move(snd), scope);
-          }
-        });
+        }
+    });
 
     // At this point, all the request handling is complete
     co_return count;
@@ -623,11 +612,11 @@ Handle<Feature> Call::get();
 and it's used like this in app-layer code:
 ```cpp
 unifex::task<void> maybeToggleCamera(Call& call) {
-  Handle<Camera> camera = call.get<Camera>();
+    Handle<Camera> camera = call.get<Camera>();
 
-  if (camera) {
-    co_await camera->toggle();
-  }
+    if (camera) {
+        co_await camera->toggle();
+    }
 }
 ```
 
@@ -642,63 +631,63 @@ its many partner teams because it eliminates many crash-at-shutdown bugs.
 namespace rsys {
 
 class Call {
- public:
-  unifex::nothrow_task<void> destroy() noexcept {
-    // first, close the scope to new work and wait for existing work to finish
-    scope_->close();
-    co_await scope_->join();
+public:
+    unifex::nothrow_task<void> destroy() noexcept {
+        // first, close the scope to new work and wait for existing work to finish
+        scope_->close();
+        co_await scope_->join();
 
-    // other clean-up tasks here
-  }
+        // other clean-up tasks here
+    }
 
-  template <typename Feature>
-  Handle<Feature> get() noexcept;
+    template <typename Feature>
+    Handle<Feature> get() noexcept;
 
- private:
-  // an async scope shared between a call and its features
-  std::shared_ptr<std::execution::counting_scope> scope_;
-  // each call has its own set of threads
-  ExecutionContext context_;
+private:
+    // an async scope shared between a call and its features
+    std::shared_ptr<std::execution::counting_scope> scope_;
+    // each call has its own set of threads
+    ExecutionContext context_;
 
-  // the set of features this call supports
-  FeatureBag features_;
+    // the set of features this call supports
+    FeatureBag features_;
 };
 
 class Camera {
- public:
-  std::execution::sender auto toggle() {
-    namespace ex = std::execution;
+public:
+    std::execution::sender auto toggle() {
+        namespace ex = std::execution;
 
-    return ex::just() | ex::let_value([this]() {
-      // this callable is only invoked if the Call's scope is in
-      // the open or unused state when nest() is invoked, making
-      // it safe to assume here that:
-      //
-      //  - scheduler_ is not a dangling reference to the call's
-      //    execution context
-      //  - Call::destroy() has not progressed past starting the
-      //    join-sender so all the resources owned by the call
-      //    are still valid
-      //
-      // if the nest() attempt fails because the join-sender has
-      // started (or even if the Call has been completely destroyed)
-      // then the sender returned from toggle() will safely do
-      // nothing before completing with set_stopped()
+        return ex::just() | ex::let_value([this]() {
+            // this callable is only invoked if the Call's scope is in
+            // the open or unused state when nest() is invoked, making
+            // it safe to assume here that:
+            //
+            //  - scheduler_ is not a dangling reference to the call's
+            //    execution context
+            //  - Call::destroy() has not progressed past starting the
+            //    join-sender so all the resources owned by the call
+            //    are still valid
+            //
+            // if the nest() attempt fails because the join-sender has
+            // started (or even if the Call has been completely destroyed)
+            // then the sender returned from toggle() will safely do
+            // nothing before completing with set_stopped()
 
-      return ex::schedule(scheduler_) | ex::then([this]() {
-        // toggle the camera
-      });
-    }) | ex::nest(callScope_->get_token());
-  }
+            return ex::schedule(scheduler_) | ex::then([this]() {
+                // toggle the camera
+            });
+        }) | ex::nest(callScope_->get_token());
+    }
 
- private:
-  // a copy of this camera's Call's scope_ member
-  std::shared_ptr<ex::counting_scope> callScope_;
-  // a scheduler that refers to this camera's Call's ExecutionContext
-  Scheduler scheduler_;
+private:
+    // a copy of this camera's Call's scope_ member
+    std::shared_ptr<ex::counting_scope> callScope_;
+    // a scheduler that refers to this camera's Call's ExecutionContext
+    Scheduler scheduler_;
 };
 
-}
+} // namespace rsys
 ```
 
 ## Recursively spawning work until completion
@@ -707,61 +696,59 @@ Below are three ways you could recursively spawn work on a scope using `let_asyn
 ### `let_async_scope` with `spawn()`
 ```cpp
 struct tree {
-  std::unique_ptr<tree> left;
-  std::unique_ptr<tree> right;
-  int data;
+    std::unique_ptr<tree> left;
+    std::unique_ptr<tree> right;
+    int data;
 };
 
 auto process(ex::scheduler auto sch, auto scope, tree& t) noexcept {
-  return ex::schedule(sch) | then([sch, &]() {
-    if (t.left)
-      ex::spawn(process(sch, scope, t.left.get()), scope);
-    if (t.right)
-      ex::spawn(process(sch, scope, t.right.get()), scope);
-    do_stuff(t.data);
-  }) | ex::let_error([](auto& e) {
-    // log error
-    return just();
-  });
+    return ex::schedule(sch) | then([sch, &]() {
+        if (t.left)
+            ex::spawn(process(sch, scope, t.left.get()), scope);
+        if (t.right)
+            ex::spawn(process(sch, scope, t.right.get()), scope);
+        do_stuff(t.data);
+    }) | ex::let_error([](auto& e) {
+        // log error
+        return just();
+    });
 }
 
 int main() {
-  ex::scheduler sch;
-  tree t = make_tree();
-  // let_async_scope will ensure all new work will be spawned on the
-  // scope and will not be joined until all work is finished.
-  // NOTE: Exceptions will not be surfaced to let_async_scope; exceptions
-  // will be handled by let_error instead.
-  this_thread::sync_wait(ex::just() | ex::let_async_scope([&, sch](auto scope) {
-	return process(sch, scope, t);
-  }));
+    ex::scheduler sch;
+    tree t = make_tree();
+    // let_async_scope will ensure all new work will be spawned on the
+    // scope and will not be joined until all work is finished.
+    // NOTE: Exceptions will not be surfaced to let_async_scope; exceptions
+    // will be handled by let_error instead.
+    this_thread::sync_wait(ex::just() | ex::let_async_scope([&, sch](auto scope) {
+        return process(sch, scope, t);
+    }));
 }
 ```
 
 ### `let_async_scope` with `spawn_future()`
 ```cpp
 struct tree {
-  std::unique_ptr<tree> left;
-  std::unique_ptr<tree> right;
-  int data;
+    std::unique_ptr<tree> left;
+    std::unique_ptr<tree> right;
+    int data;
 };
 
 auto process(ex::scheduler auto sch, auto scope, tree& t) {
     return ex::schedule(sch) | ex::let_value([sch, &]() {
-      unifex::any_sender_of<> leftFut = ex::just();
-      unifex::any_sender_of<> rightFut = ex::just();
-      if (t.left) {
-         leftFut = ex::spawn_future(
-         scope, process(sch, scope, t.left.get()));
-      }
+        unifex::any_sender_of<> leftFut = ex::just();
+        unifex::any_sender_of<> rightFut = ex::just();
+        if (t.left) {
+            leftFut = ex::spawn_future(scope, process(sch, scope, t.left.get()));
+        }
 
-      if (t.right) {
-         rightFut = ex::spawn_future(
-         scope, process(sch, scope, t.right.get()));
-      }
+        if (t.right) {
+            rightFut = ex::spawn_future(scope, process(sch, scope, t.right.get()));
+        }
 
-      do_stuff(t.data);
-      return ex::when_all(leftFut, rightFut) | ex::then([](auto&&...) noexcept {});
+        do_stuff(t.data);
+        return ex::when_all(leftFut, rightFut) | ex::then([](auto&&...) noexcept {});
     });
 }
 
@@ -781,32 +768,32 @@ int main() {
 ### `counting_scope`
 ```cpp
 struct tree {
-  std::unique_ptr<tree> left;
-  std::unique_ptr<tree> right;
-  int data;
+    std::unique_ptr<tree> left;
+    std::unique_ptr<tree> right;
+    int data;
 };
 
 auto process(ex::counting_scope_token scope, ex::scheduler auto sch, tree& t) noexcept {
-  return ex::schedule(sch) | ex::then([sch, &]() noexcept {
-    if (t.left)
-       ex::spawn(process(scope, sch, t.left.get()), scope);
+    return ex::schedule(sch) | ex::then([sch, &]() noexcept {
+        if (t.left)
+            ex::spawn(process(scope, sch, t.left.get()), scope);
 
-    if (t.right)
-       ex::spawn(process(scope, sch, t.right.get()), scope);
+        if (t.right)
+            ex::spawn(process(scope, sch, t.right.get()), scope);
 
-     do_stuff(t.data);
-   }) | ex::let_error([](auto& e) {
-       // log error
-       return just();
-   });
+        do_stuff(t.data);
+    }) | ex::let_error([](auto& e) {
+        // log error
+        return just();
+    });
 }
 
 int main() {
-  ex::scheduler sch;
-  tree t = make_tree();
-  ex::counting_scope scope;
-  ex::spawn(process(scope.get_token(), sch, t), scope.get_token());
-  this_thread::sync_wait(scope.join());
+    ex::scheduler sch;
+    tree t = make_tree();
+    ex::counting_scope scope;
+    ex::spawn(process(scope.get_token(), sch, t), scope.get_token());
+    this_thread::sync_wait(scope.join());
 }
 ```
 
@@ -862,14 +849,14 @@ template <class Assoc>
 concept async_scope_association =
     semiregular<Assoc> &&
     requires(Assoc assoc) {
-      { static_cast<bool>(assoc) } noexcept;
+        { static_cast<bool>(assoc) } noexcept;
     };
 
 template <class Token>
 concept async_scope_token =
     copyable<Token> &&
     requires(Token token) {
-      { token.try_associate() } -> async_scope_association;
+        { token.try_associate() } -> async_scope_association;
     };
 
 template <async_scope_token Token>
@@ -880,13 +867,13 @@ using @@_wrapped-sender-from_@@ = decay_t<decltype(declval<Token&>().wrap(declva
 
 template <sender Sender, async_scope_token Token>
 struct @@_nest-sender_@@ { // @@_exposition-only_@@
-  nest-sender(Sender&& sender, Token token);
+    nest-sender(Sender&& sender, Token token);
 
-  ~nest-sender();
+    ~nest-sender();
 
 private:
-  optional<@@_wrapped-sender-from_@@<Token, Sender>> sender_;
-  @@_association-from_@@<Token> token;
+    optional<@@_wrapped-sender-from_@@<Token, Sender>> sender_;
+    @@_association-from_@@<Token> token;
 };
 
 template <sender Sender, async_scope_token Token>
@@ -915,38 +902,38 @@ struct simple_counting_scope {
     struct token;
 
     struct assoc {
-      assoc() noexcept = default;
+        assoc() noexcept = default;
 
-      assoc(const assoc&) noexcept;
+        assoc(const assoc&) noexcept;
 
-      assoc(assoc&&) noexcept;
+        assoc(assoc&&) noexcept;
 
-      ~assoc();
+        ~assoc();
 
-      assoc& operator=(assoc) noexcept;
+        assoc& operator=(assoc) noexcept;
 
-      explicit operator bool() const noexcept;
+        explicit operator bool() const noexcept;
 
-     private:
-      friend token;
+    private:
+        friend token;
 
-      explicit assoc(simple_counting_scope*) noexcept; // @@_exposition-only_@@
+        explicit assoc(simple_counting_scope*) noexcept; // @@_exposition-only_@@
 
-      simple_counting_scope* scope_{}; // @@_exposition-only_@@
+        simple_counting_scope* scope_{}; // @@_exposition-only_@@
     };
 
     struct token {
-      template <sender Sender>
-      Sender&& wrap(Sender&& snd) const noexcept;
+        template <sender Sender>
+        Sender&& wrap(Sender&& snd) const noexcept;
 
-      assoc try_associate() const;
+        assoc try_associate() const;
 
-     private:
-      friend simple_counting_scope;
+    private:
+        friend simple_counting_scope;
 
-      explicit token(simple_counting_scope* s) noexcept; // @@_exposition-only_@@
+        explicit token(simple_counting_scope* s) noexcept; // @@_exposition-only_@@
 
-      simple_counting_scope* scope_; // @@_exposition-only_@@
+        simple_counting_scope* scope_; // @@_exposition-only_@@
     };
 
     token get_token() noexcept;
@@ -969,20 +956,20 @@ struct counting_scope {
     counting_scope& operator=(counting_scope&&) = delete;
 
     template <sender Sender>
-    struct @@_wrapped-sender_@@; // @@_exposition-only_@@
+    struct @@_wrapper-sender_@@; // @@_exposition-only_@@
 
     struct token {
-      template <sender Sender>
-      @@_wrapped-sender_@@<Sender> wrap(Sender&& snd) const;
+        template <sender Sender>
+        @@_wrapper-sender_@@<Sender> wrap(Sender&& snd) const;
 
-      async_scope_association auto try_associate() const;
+        async_scope_association auto try_associate() const;
 
-     private:
-      friend counting_scope;
+    private:
+        friend counting_scope;
 
-      explicit token(counting_scope* s) noexcept; // @@_exposition-only_@@
+        explicit token(counting_scope* s) noexcept; // @@_exposition-only_@@
 
-      counting_scope* scope_; // @@_exposition-only_@@
+        counting_scope* scope_; // @@_exposition-only_@@
     };
 
     token get_token() noexcept;
@@ -1004,7 +991,7 @@ template <class Assoc>
 concept async_scope_association =
     semiregular<Assoc> &&
     requires(Assoc assoc) {
-      { static_cast<bool>(assoc) } noexcept;
+        { static_cast<bool>(assoc) } noexcept;
     };
 ```
 
@@ -1021,7 +1008,7 @@ template <class Token>
 concept async_scope_token =
     copyable<Token> &&
     requires(Token token) {
-      { token.try_associate() } -> async_scope_association;
+        { token.try_associate() } -> async_scope_association;
     };
 ```
 
@@ -1045,31 +1032,31 @@ The following sketch implementation of _`nest-sender`_ illustrates how the metho
 ```cpp
 template <sender Sender, async_scope_token Token>
 struct @@_nest-sender_@@ {
-  @@_nest-sender_@@(Sender&& s, Token t)
-    : sender_(t.wrap(forward<Sender>(s))) {
-    assoc_ = t.try_associate();
-    if (!assoc_) {
-      sender_.reset(); // assume no-throw destructor
+    @@_nest-sender_@@(Sender&& s, Token t)
+        : sender_(t.wrap(forward<Sender>(s))) {
+        assoc_ = t.try_associate();
+        if (!assoc_) {
+            sender_.reset(); // assume no_throw destructor
+        }
     }
-  }
 
-  @@_nest-sender_@@(const @@_nest-sender_@@& other)
-    requires copy_constructible<@@_wrapped-sender-from_@@<Token, Sender>>
-    : assoc_(t.try_associate()) {
-    if (assoc_) {
-      sender_ = other.sender_;
+    @@_nest-sender_@@(const @@_nest-sender_@@& other)
+        requires copy_constructible<@@_wrapped-sender-from_@@<Token, Sender>>
+        : assoc_(t.try_associate()) {
+        if (assoc_) {
+            sender_ = other.sender_;
+        }
     }
-  }
 
-  @@_nest-sender_@@(@@_nest-sender_@@&& other) noexcept = default;
+    @@_nest-sender_@@(@@_nest-sender_@@&& other) noexcept = default;
 
-  ~@@_nest-sender_@@() = default;
+    ~@@_nest-sender_@@() = default;
 
-  // ... implement the sender concept in terms of Sender and sender_
+    // ... implement the sender concept in terms of Sender and sender_
 
 private:
-  @@_association-from_@@<Token> assoc_;
-  optional<@@_wrapped-sender-from_@@<Token, Sender>> sender_;
+    @@_association-from_@@<Token> assoc_;
+    optional<@@_wrapped-sender-from_@@<Token, Sender>> sender_;
 };
 ```
 
@@ -1382,38 +1369,38 @@ struct simple_counting_scope {
     struct token;
 
     struct assoc {
-      assoc() noexcept = default;
+        assoc() noexcept = default;
 
-      assoc(const assoc&) noexcept;
+        assoc(const assoc&) noexcept;
 
-      assoc(assoc&&) noexcept;
+        assoc(assoc&&) noexcept;
 
-      ~assoc();
+        ~assoc();
 
-      assoc& operator=(assoc) noexcept;
+        assoc& operator=(assoc) noexcept;
 
-      explicit operator bool() const noexcept;
+        explicit operator bool() const noexcept;
 
-     private:
-      friend token;
+    private:
+        friend token;
 
-      explicit assoc(simple_counting_scope*) noexcept; // @@_exposition-only_@@
+        explicit assoc(simple_counting_scope*) noexcept; // @@_exposition-only_@@
 
-      simple_counting_scope* scope_{}; // @@_exposition-only_@@
+        simple_counting_scope* scope_{}; // @@_exposition-only_@@
     };
 
     struct token {
-      template <sender Sender>
-      Sender&& wrap(Sender&& snd) const noexcept;
+        template <sender Sender>
+        Sender&& wrap(Sender&& snd) const noexcept;
 
-      assoc try_associate() const;
+        assoc try_associate() const;
 
-     private:
-      friend simple_counting_scope;
+    private:
+        friend simple_counting_scope;
 
-      explicit token(simple_counting_scope* s) noexcept; // @@_exposition-only_@@
+        explicit token(simple_counting_scope* s) noexcept; // @@_exposition-only_@@
 
-      simple_counting_scope* scope_; // @@_exposition-only_@@
+        simple_counting_scope* scope_; // @@_exposition-only_@@
     };
 
     token get_token() noexcept;
@@ -1548,7 +1535,7 @@ A `simple_counting_scope` is uncopyable and immovable so its copy and move opera
 ### `simple_counting_scope::simple_counting_scope`
 
 ```cpp
-simple_counting_scope::simple_counting_scope() noexcept;
+simple_counting_scope() noexcept;
 ```
 
 Initializes a `simple_counting_scope` in the unused state with the count of outstanding operations set to zero.
@@ -1556,7 +1543,7 @@ Initializes a `simple_counting_scope` in the unused state with the count of outs
 ### `simple_counting_scope::~simple_counting_scope`
 
 ```cpp
-simple_counting_scope::~simple_counting_scope();
+~simple_counting_scope();
 ```
 
 Checks that the `simple_counting_scope` is in the joined, unused, or unused-and-closed state and invokes
@@ -1643,13 +1630,13 @@ The `assoc` destructor either:
 ### `simple_counting_scope::assoc::operator=`
 
 ```cpp
-assoc& assoc::operator=(assoc) noexcept;
+assoc& operator=(assoc) noexcept;
 ```
 
 The assignment operator behaves as if it is implemented as follows:
 
 ```cpp
-assoc& assoc::operator=(assoc rhs) noexcept
+assoc& operator=(assoc rhs) noexcept
   swap(scope_, rhs.scope_);
   return *this;
 }
@@ -1660,7 +1647,7 @@ where `scope_` is a private member of type `simple_counting_scope*` that points 
 ### `simple_counting_scope::assoc::operator bool`
 
 ```cpp
-explicit assoc::operator bool() const noexcept;
+explicit operator bool() const noexcept;
 ```
 
 Returns `true` when the association is engaged and `false` when it is disengaged.
@@ -1702,21 +1689,21 @@ struct counting_scope {
     counting_scope& operator=(const counting_scope&) = delete;
     counting_scope& operator=(counting_scope&&) = delete;
 
-    struct wrapper-sender; // @@_exposition-only_@@
+    template <sender Sender>
+    struct @@_wrapper-sender_@@; // @@_exposition-only_@@
 
     struct token {
-      bool try_associate() const;
+        template <sender Sender>
+        @@_wrapper-sender_@@<Sender> wrap(Sender&& snd);
 
-      wrapper-sender wrap(sender auto&&);
+        async_scope_association auto try_associate() const;
 
-      void dissociate() const;
+    private:
+        friend counting_scope;
 
-     private:
-      friend counting_scope;
+        explicit token(counting_scope* s) noexcept; // @@_exposition-only_@@
 
-      explicit token(counting_scope* s) noexcept; // @@_exposition-only_@@
-
-      counting_scope* scope; // @@_exposition-only_@@
+        counting_scope* scope; // @@_exposition-only_@@
     };
 
     token get_token() noexcept;
@@ -1732,51 +1719,45 @@ struct counting_scope {
 ```
 
 A `counting_scope` augments a `simple_counting_scope` with a stop source and gives to each of its associated
-_`nest-senders`_ a stop token from its stop source. This extension of `simple_counting_scope` allows a `counting_scope`
-to request stop on all of its outstanding operations by requesting stop on its stop source.
+_`wrapper-senders`_ a stop token from its stop source. This extension of `simple_counting_scope` allows a
+`counting_scope` to request stop on all of its outstanding operations by requesting stop on its stop source.
 
 Assuming an exposition-only _`stop_when(sender auto&&, stoppable_token auto)`_ (explained below), `counting_scope`
 behaves as if it were implemented like so:
 
 ```cpp
 struct counting_scope {
-  struct token {
-    template <sender S>
-    sender auto nest(S&& snd) const
-        noexcept(std::is_nothrow_constructible_v<std::remove_cvref_t<S>, S>) {
-      return std::forward<Sender>(snd)
-          | @@_stop_when_@@(scope_->source_.get_token())
-          | ex::nest(scope_->scope_.get_token());
-    }
+    struct token {
+        template <sender S>
+        sender auto wrap(S&& snd) const
+                noexcept(std::is_nothrow_constructible_v<std::remove_cvref_t<S>, S>) {
+            return @@_stop_when_@@(std::forward<S>(snd), scope_->source_.get_token());
+        }
 
-   private:
-    friend counting_scope;
+        async_scope_association auto try_associate() const {
+            return scope_->scope_.get_token().try_associate();
+        }
 
-    explicit token(counting_scope* scope) noexcept
-      : scope_(scope) {}
+    private:
+        friend counting_scope;
 
-    counting_scope* scope_;
-  };
+        explicit token(counting_scope* scope) noexcept
+            : scope_(scope) {}
 
-  token get_token() noexcept {
-    return token{this};
-  }
+        counting_scope* scope_;
+    };
 
-  void close() noexcept {
-    return scope_.close();
-  }
+    token get_token() noexcept { return token{this}; }
 
-  void request_stop() noexcept {
-    source_.request_stop();
-  }
+    void close() noexcept { return scope_.close(); }
 
-  sender auto join() noexcept {
-    return scope_.join();
-  }
+    void request_stop() noexcept { source_.request_stop(); }
 
- private:
-  simple_counting_scope scope_;
-  inplace_stop_source source_;
+    sender auto join() noexcept { return scope_.join(); }
+
+private:
+    simple_counting_scope scope_;
+    inplace_stop_source source_;
 };
 ```
 
@@ -1786,13 +1767,13 @@ _`operation-state`_ behaves the same as connecting the original sender, `snd`, t
 stop request when either the token returned from `get_stop_token(r)` receives a stop request or when `stoken` receives a
 stop request.
 
-Other than the use of _`stop_when()`_ in `counting_scope::token::nest()` and the addition of `request_stop()` to the
+Other than the use of _`stop_when()`_ in `counting_scope::token::wrap()` and the addition of `request_stop()` to the
 interface, `counting_scope` has the same behavior and lifecycle as `simple_counting_scope`.
 
 ### `counting_scope::counting_scope`
 
 ```cpp
-counting_scope::counting_scope() noexcept;
+counting_scope() noexcept;
 ```
 
 Initializes a `counting_scope` in the unused state with the count of outstanding operations set to zero.
@@ -1800,7 +1781,7 @@ Initializes a `counting_scope` in the unused state with the count of outstanding
 ### `counting_scope::~counting_scope`
 
 ```cpp
-counting_scope::~counting_scope();
+~counting_scope();
 ```
 
 Checks that the `counting_scope` is in the joined, unused, or unused-and-closed state and invokes `std::terminate()` if
@@ -1845,20 +1826,25 @@ starting the _`join-sender`_ moves the scope to the open-and-joining or closed-a
 completes when the scope's count of outstanding operations drops to zero, at which point the scope moves to the joined
 state.
 
-### `counting_scope::token::nest`
+### `counting_scope::token::wrap`
 
 ```cpp
 template <sender S>
-struct @@_nest-sender_@@; // @@_exposition-only_@@
+struct @@_wrapper-sender_@@; // @@_exposition-only_@@
 
-template <sender S>
-@@_nest-sender_@@<std::remove_cvref_t<S>> nest(S&& s) const noexcept(
-        std::is_nothrow_constructible_v<std::remove_cvref_t<S>, S>);
+template <sender Sender>
+@@_wrapper-sender_@@<Sender> wrap(Sender&& snd);
 ```
 
-Attempts to return an associated _`nest-sender`_ constructed from `s` following the same algorithm as
-`simple_counting_scope::token::nest()`, with the addition that senders associated with a `counting_scope` receive stop
-requests _both_ from their (eventual) receivers _and_ from the `counting_scope`'s internal stop source.
+Returns a `@@_wrapper-sender_@@<Sender>`, `osnd`, that behaves in all ways the same as the input sender, `snd`, except
+that, when `osnd` is connected to a receiver, the resulting _`operation-state`_ receives stop requests from _both_ the
+connected receiver _and_ the stop source in the token's `counting_scope`.
+
+### `counting_scope::token::try_associate`
+
+```cpp
+async_scope_association auto try_associate() const;
+```
 
 ## When to use `counting_scope` vs [@P3296R2]'s `let_async_scope`
 
