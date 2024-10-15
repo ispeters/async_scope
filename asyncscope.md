@@ -39,14 +39,14 @@ Changes
 - Remove `[[nodiscard]]`.
 - Make `simple_counting_scope::token::token()` and `counting_scope::token::token()` explicit and exposition-only.
 - Remove redundant `concept async_scope`.
-- Remove last vestiges of `let_with_async_scope`.
+- Remove last vestiges of `let_async_scope`.
 - Add some wording to a new [Specification](#specification) section
 
 ## R3
 - Update slide code to be exception safe
 - Split the async scope concept into a scope and token; update `counting_scope` to match
 - Rename `counting_scope` to `simple_counting_scope` and give the name `counting_scope` to a scope with a stop source
-- Add example for recursively spawned work using `let_with_async_scope` and `counting_scope`
+- Add example for recursively spawned work using `let_async_scope` and `counting_scope`
 
 ## R2
 - Update `counting_scope::nest()` to explain when the scope's count of outstanding senders is decremented and remove
@@ -113,7 +113,7 @@ The proposed solution comes in the following parts:
 - `sender auto nest(sender auto&& snd, async_scope_token auto token)`{.cpp};
 - `void spawn(sender auto&& snd, async_scope_token auto token, auto&& env)`{.cpp};
 - `sender auto spawn_future(sender auto&& snd, async_scope_token auto token, auto&& env)`{.cpp};
-- Proposed in [@P3296R0]: `sender auto let_with_async_scope(callable auto&& senderFactory)`{.cpp};
+- Proposed in [@P3296R2]: `sender auto let_async_scope(callable auto&& senderFactory)`{.cpp};
 - `struct simple_counting_scope`{.cpp}; and
 - `struct counting_scope`{.cpp}.
 
@@ -279,7 +279,7 @@ crashes.
 
 [@P2300R7] doesn't give us out-of-the-box facilities to use in solving these types of problems.
 
-This paper proposes the `counting_scope` and [@P3296R0]'s `let_with_async_scope` facilities that would help us avoid the
+This paper proposes the `counting_scope` and [@P3296R2]'s `let_async_scope` facilities that would help us avoid the
 invalid behavior. With `counting_scope`, one might write safe code this way:
 
 ```cpp
@@ -317,7 +317,7 @@ int main() {
 }
 ```
 
-With [@P3296R0]'s `let_with_async_scope`, one might write safe code this way:
+With [@P3296R2]'s `let_async_scope`, one might write safe code this way:
 ```cpp
 namespace ex = std::execution;
 
@@ -330,7 +330,7 @@ int main() {
   static_thread_pool my_pool{8};
   work_context ctx;         // create a global context for the application
 
-  this_thread::sync_wait(ex::let_with_async_scope(ex::just(get_work_items()), [&](auto scope) {
+  this_thread::sync_wait(ex::let_async_scope(ex::just(get_work_items()), [&](auto scope, auto& items) {
     for (auto item : items) {
       // Spawn some work dynamically
       ex::sender auto snd = ex::transfer_just(my_pool.get_scheduler(), item) |
@@ -401,7 +401,7 @@ int main() {
 }
 ```
 
-### With `let_with_async_scope`
+### With `let_async_scope`
 ```cpp
 namespace ex = std::execution;
 
@@ -411,7 +411,7 @@ ex::sender auto work(const context&);
 int main() {
   context ctx;
   this_thread::sync_wait(ex::just()
-      | ex::let_with_async_scope([&](auto scope) {
+      | ex::let_async_scope([&](auto scope) {
         ex::sender auto snd = work(ctx);
 
         // fire, but don't forget
@@ -427,7 +427,7 @@ int main() {
 
 Please see below for more examples.
 
-## `counting_scope` and `let_with_async_scope` are a step forward towards Structured Concurrency
+## `counting_scope` and `let_async_scope` are a step forward towards Structured Concurrency
 
 Structured Programming [@Dahl72] transformed the software world by making it easier to reason about the code, and build
 large software from simpler constructs. We want to achieve the same effect on concurrent programming by ensuring that
@@ -441,14 +441,14 @@ given work. Moreover, the lifetime of the work started by `start_detached` canno
 will prevent local reasoning, which will make the program harder to understand.
 
 To properly structure our concurrency, we need an abstraction that ensures that all async work that is spawned has a
-defined, observable, and controllable lifetime. This is the goal of `counting_scope` and `let_with_async_scope`.
+defined, observable, and controllable lifetime. This is the goal of `counting_scope` and `let_async_scope`.
 
 Examples of use
 ===============
 
 ## Spawning work from within a task
 
-Use `let_with_async_scope` in combination with a `system_context` from [@P2079R2] to spawn work from within a task:
+Use `let_async_scope` in combination with a `system_context` from [@P2079R2] to spawn work from within a task:
 ```cpp
 namespace ex = std::execution;
 
@@ -459,7 +459,7 @@ int main() {
     ex::scheduler auto sch = ctx.scheduler();
 
     ex::sender auto val = ex::just()
-        | ex::let_with_async_scope([sch](ex::async_scope_token auto scope) {
+        | ex::let_async_scope([sch](ex::async_scope_token auto scope) {
           int val = 13;
 
           auto print_sender = ex::just()
@@ -469,7 +469,7 @@ int main() {
 
           // spawn the print sender on sch
           //
-          // NOTE: if spawn throws, let_with_async_scope will capture the exception
+          // NOTE: if spawn throws, let_async_scope will capture the exception
           //       and propagate it through its set_error completion
           ex::spawn(ex::on(sch, std::move(print_sender)), scope);
 
@@ -482,8 +482,8 @@ int main() {
     std::cout << "Result: " << result << "\n";
 }
 
-// 'let_with_async_scope' ensures that, if all work is completed successfully, the result will be 13
-// `sync_wait` will throw whatever exception is thrown by the callable passed to `let_with_async_scope`
+// 'let_async_scope' ensures that, if all work is completed successfully, the result will be 13
+// `sync_wait` will throw whatever exception is thrown by the callable passed to `let_async_scope`
 ```
 
 ## Starting work nested within a framework
@@ -540,7 +540,7 @@ int main() {
 
 ## Starting parallel work
 
-In this example we use `let_with_async_scope` to construct an algorithm that performs parallel work. Here `foo`
+In this example we use `let_async_scope` to construct an algorithm that performs parallel work. Here `foo`
 launches 100 tasks that concurrently run on some scheduler provided to `foo`, through its connected receiver, and then
 the tasks are asynchronously joined. This structure emulates how we might build a parallel algorithm where each
 `some_work` might be operating on a fragment of data.
@@ -551,7 +551,7 @@ ex::sender auto some_work(int work_index);
 
 ex::sender auto foo(ex::scheduler auto sch) {
   return ex::just()
-      | ex::let_with_async_scope([sch](ex::async_scope_token auto scope) {
+      | ex::let_async_scope([sch](ex::async_scope_token auto scope) {
         return ex::schedule(sch)
             | ex::then([] {
               std::cout << "Before tasks launch\n";
@@ -560,7 +560,7 @@ ex::sender auto foo(ex::scheduler auto sch) {
               // Create parallel work
               for (int i = 0; i < 100; ++i) {
                 // NOTE: if spawn() throws, the exception will be propagated as the
-                //       result of let_with_async_scope through its set_error completion
+                //       result of let_async_scope through its set_error completion
                 ex::spawn(ex::on(sch, some_work(i)), scope);
               }
             });
@@ -584,7 +584,7 @@ task<size_t> listener(int port, io_context& ctx, static_thread_pool& pool) {
     size_t count{0};
     listening_socket listen_sock{port};
 
-    co_await ex::let_with_async_scope(
+    co_await ex::let_async_scope(
         ex::just(), [&](ex::async_scope_token auto scope) -> task<void> {
           while (!ctx.is_stopped()) {
             // Accept a new connection
@@ -702,9 +702,9 @@ class Camera {
 ```
 
 ## Recursively spawning work until completion
-Below are three ways you could recursively spawn work on a scope using `let_with_async_scope` or `counting_scope`.
+Below are three ways you could recursively spawn work on a scope using `let_async_scope` or `counting_scope`.
 
-### `let_with_async_scope` with `spawn()`
+### `let_async_scope` with `spawn()`
 ```cpp
 struct tree {
   std::unique_ptr<tree> left;
@@ -728,17 +728,17 @@ auto process(ex::scheduler auto sch, auto scope, tree& t) noexcept {
 int main() {
   ex::scheduler sch;
   tree t = make_tree();
-  // let_with_async_scope will ensure all new work will be spawned on the
+  // let_async_scope will ensure all new work will be spawned on the
   // scope and will not be joined until all work is finished.
-  // NOTE: Exceptions will not be surfaced to let_with_async_scope; exceptions
+  // NOTE: Exceptions will not be surfaced to let_async_scope; exceptions
   // will be handled by let_error instead.
-  this_thread::sync_wait(ex::let_with_async_scope([&, sch](auto scope) {
+  this_thread::sync_wait(ex::just() | ex::let_async_scope([&, sch](auto scope) {
 	return process(sch, scope, t);
   }));
 }
 ```
 
-### `let_with_async_scope` with `spawn_future()`
+### `let_async_scope` with `spawn_future()`
 ```cpp
 struct tree {
   std::unique_ptr<tree> left;
@@ -750,12 +750,12 @@ auto process(ex::scheduler auto sch, auto scope, tree& t) {
     return ex::schedule(sch) | ex::let_value([sch, &]() {
       unifex::any_sender_of<> leftFut = ex::just();
       unifex::any_sender_of<> rightFut = ex::just();
-      if (t.left) {  
+      if (t.left) {
          leftFut = ex::spawn_future(
          scope, process(sch, scope, t.left.get()));
       }
 
-      if (t.right) { 
+      if (t.right) {
          rightFut = ex::spawn_future(
          scope, process(sch, scope, t.right.get()));
       }
@@ -768,11 +768,11 @@ auto process(ex::scheduler auto sch, auto scope, tree& t) {
 int main() {
     ex::scheduler sch;
     tree t = make_tree();
-    // let_with_async_scope will ensure all new work will be spawned on the
+    // let_async_scope will ensure all new work will be spawned on the
     // scope and will not be joined until all work is finished
-    // NOTE: Exceptions will be surfaced to let_with_async_scope which will
+    // NOTE: Exceptions will be surfaced to let_async_scope which will
     // call set_error with the exception_ptr
-    this_thread::sync_wait(ex::let_with_async_scope([&, sch](auto scope) { 
+    this_thread::sync_wait(ex::just() | ex::let_async_scope([&, sch](auto scope) {
         return process(sch, scope, t);
     }));
 }
@@ -1860,11 +1860,11 @@ Attempts to return an associated _`nest-sender`_ constructed from `s` following 
 `simple_counting_scope::token::nest()`, with the addition that senders associated with a `counting_scope` receive stop
 requests _both_ from their (eventual) receivers _and_ from the `counting_scope`'s internal stop source.
 
-## When to use `counting_scope` vs [@P3296R0]'s `let_with_async_scope`
+## When to use `counting_scope` vs [@P3296R2]'s `let_async_scope`
 
-Although `counting_scope` and `let_with_async_scope` have overlapping use-cases, we specifically designed the two
+Although `counting_scope` and `let_async_scope` have overlapping use-cases, we specifically designed the two
 facilities to address separate problems. In short, `counting_scope` is best used in an unstructured context and
-`let_with_async_scope` is best used in a structured context.
+`let_async_scope` is best used in a structured context.
 
 We define "unstructured context" as:
 
@@ -1877,17 +1877,17 @@ We define "unstructured context" as:
 called before the owning object's destruction in order to ensure that the object's lifetime lives at least until all
 asynchronous work completes. Note that exception safety needs to be handled explicitly in the use of `counting_scope`.
 
-`let_with_async_scope` returns a sender, and therefore can only be started in one of 3 ways:
+`let_async_scope` returns a sender, and therefore can only be started in one of 3 ways:
 
 1. `sync_wait`
 2. `spawn` on a `counting_scope`
 3. `co_await`
 
-`let_with_async_scope` will manage the scope for you, ensuring that the managed scope is always joined before
-`let_with_async_scope` completes.  The algorithm frees the user from having to manage the coupling between the lifetimes
+`let_async_scope` will manage the scope for you, ensuring that the managed scope is always joined before
+`let_async_scope` completes.  The algorithm frees the user from having to manage the coupling between the lifetimes
 of the managed scope and the resource(s) it protects with the limitation that the nested work must be fully structured.
-This behavior is a feature, since the scope being managed by `let_with_async_scope` is intended to live only until the
-sender completes. This also means that `let_with_async_scope` will be exception safe by default.
+This behavior is a feature, since the scope being managed by `let_async_scope` is intended to live only until the
+sender completes. This also means that `let_async_scope` will be exception safe by default.
 
 Design considerations
 =====================
@@ -2425,12 +2425,12 @@ references:
     title: "A smaller, faster video calling library for our apps"
     url: https://engineering.fb.com/2020/12/21/video-engineering/rsys/
     company: Meta Platforms, Inc
-  - id: P3296R0
-    citation-label: P3296R0
+  - id: P3296R2
+    citation-label: P3296R2
     title: "let_async_scope"
     author:
       - family: Williams
         given: Anthony
-    url: https://wg21.link/p3296r0
+    url: https://wg21.link/p3296r2
 
 ---
