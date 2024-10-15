@@ -934,7 +934,7 @@ An async scope token's implementation of the `async_scope_token` concept:
 
  - must allow an arbitrary sender to be wrapped without eagerly starting the sender;
  - must not add new value or error completions when wrapping a sender;
- - may fail to associate a new sender by returning an association that converts to `false` from `try_associate()`;
+ - may fail to associate a new sender by returning a disengaged association from `try_associate()`;
  - may fail to associate a new sender by eagerly throwing an exception from either `try_associate()` or `wrap()`;
 
 More on these items can be found below in the sections below.
@@ -1620,7 +1620,7 @@ state---the _`operation-state`_ must be started to effect the state change. A st
 scope's count of outstanding operations reaches zero, at which point the scope transitions to the joined state.
 
 Calling `close()` on a `simple_counting_scope` moves the scope to the closed, unused-and-closed, or closed-and-joining
-state, and causes all future calls to `try_associate()` to return `false`.
+state, and causes all future calls to `try_associate()` to return disengaged associations.
 
 Associating work with a `simple_counting_scope` can be done through `simple_counting_scope`'s token.
 `simple_counting_scope`'s token provides 2 methods: `wrap(Sender&& s)`, and `try_associate()`.
@@ -1686,7 +1686,7 @@ void close() noexcept;
 ```
 
 Moves the scope to the closed, unused-and-closed, or closed-and-joining state. After a call to `close()`, all future
-calls to `try_associate()` return `false`.
+calls to `try_associate()` return disengaged associations.
 
 ### `simple_counting_scope::join`
 
