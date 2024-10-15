@@ -26,7 +26,129 @@ Changes
 =======
 
 ## R6
-- Change the scope token's basis operations from `nest()` to `try_associate()`, `dissociate()`, and `wrap()`.
+
+In revision 4 of this paper, Lewis Baker discovered a problem with using `nest()` as the basis operation for
+implementing `spawn()` (and `spawn_future()`) when the `counting_scope` that tracks the spawned work is being used to
+protect against out-of-lifetime accesses to the allocator provided to `spawn()`. Revision 5 of this paper raised Lewis's
+concerns and presented several solutions. Revision 6 has selected the solution originally presented as "option 4":
+define a new set of refcounting basis operations and define `nest()`, `spawn()`, and `spawn_future()` in terms of them.
+
+### The Problem
+
+What follows is a description, taken from revision 5, section 6.5.1, of the problem with using `nest()` as the basis
+operation for implementing `spawn()` (a similar problem exists for `spawn_future()` but `spawn()` is simpler to
+explain).
+
+When a spawned operation completes, the order of operations was as follows:
+
+1. The spawned operation completes by invoking `set_value()` or `set_stopped()` on a receiver, `rcvr`, provided by
+   `spawn()` to the `nest-sender`.
+2. `rcvr` destroys the `nest-sender`'s _`operation-state`_ by invoking its destructor.
+3. `rcvr` deallocates the storage previously allocated for the just-destroyed _`operation-state`_ using a copy of the
+   allocator that was chosen when `spawn()` was invoked. Assume this allocator was passed to `spawn()` in the optional
+   environment argument.
+
+Note that in step 2, above, the destruction of the `nest-sender`'s _`operation-state`_ has the side effect of
+decrementing the associated `counting_scope`'s count of outstanding operations. If the scope has a `join-sender` waiting
+and this decrement brings the count to zero, the code waiting on the `join-sender` to complete may start to destroy the
+allocator while step 3 is busy using it.
+
+### Some Solutions
+
+Revision 5 presented the following possible solutions:
+
+1. Do nothing; declare that `counting_scope` can't be used to protect memory allocators.
+2. Remove allocator support from `spawn()` and `spawn_future()` and require allocation with `::operator new`.
+3. Make `spawn()` and `spawn_future()` basis operations of `async_scope_token`s (alongside `nest()`) so that the
+   derement in step 2 can be deferred until after step 3 completes.
+4. Define a new set of refcounting basis operations and define `nest()`, `spawn()`, and `spawn_future()` in terms of
+   them.
+5. Treat `nest-sender`s as RAII handles to "scope references" and change how `spawn()` is defined to defer the
+   decrement. (There are a few implementation possibilities here.)
+6. Give `async_scope_token`s a new basis operation that can wrap an allocator in a new allocator wrapper that increments
+   the scope's refcount in `allocate()` and decrements it in `deallocate()`.
+
+### LEWG Discussion in St Louis
+
+The authors opened the discussion by recommending option 6. By the end of the discussion, the authors' expressed
+preferences were: "4 & 6 are better than 5; 5 is better than 3." The biggest concern with option 4 was the time required
+to rework the paper in terms of the new basis operation.
+
+The room took the following two straw polls:
+
+1. In P3149R5 strike option 1 from 6.5.2 (option 1 would put the responsibility to coordinate the lifetime of the memory
+   resource on the end user)
+
+   +---+---+---+---+---+
+   |SF |F  |N  |A  |SA |
+   +==:+==:+==:+==:+==:+
+   |10 |2  |3  |1  |1  |
+   +---+---+---+---+---+
+
+   Attendance: 21 in-person + 10 remote
+
+   \# of Authors: 2
+
+   Authors' position: 2x SF
+
+   Outcome: Consensus in favor
+
+   SA: I'm SA because I don't think async scope needs to protect memory allocations or resources, it's fine for this not
+   to be a capability and I think adding this capability will add complexity, and that'll mean it doesn't make C++26.
+2. In P3149R5 strike option 2 from 6.5.2 (option 2 would prevent spawn from supporting allocators)
+
+   +---+---+---+---+---+
+   |SF |F  |N  |A  |SA |
+   +==:+==:+==:+==:+==:+
+   |8  |4  |2  |2  |0  |
+   +---+---+---+---+---+
+
+   Attendance: 21 in-person + 10 remote
+
+   \# of Authors: 2
+
+   Authors' position: 2x SF
+
+   Outcome: Consensus in favor
+
+   WA: As someone who was weakly against I'm not ready to rule out this possibility yet.
+
+Ultimately, the authors chose option 4, leading to revision 6 of the paper changing from this:
+
+```cpp
+template <class Token, class Sender>
+concept async_scope_token =
+    copyable<Token> &&
+    is_nothrow_move_constructible_v<Token> &&
+    is_nothrow_move_assignable_v<Token> &&
+    is_nothrow_copy_constructible_v<Token> &&
+    is_nothrow_copy_assignable_v<Token> &&
+    sender<Sender> &&
+    requires(Token token, Sender&& snd) {
+      { token.nest(std::forward<Sender>(snd)) } -> sender;
+    };
+```
+
+with `execution::nest()` forwarding to the `nest()` method on the provided token and `spawn()` and `spawn_future()`
+being expressed in terms of `nest()`, to this:
+
+```cpp
+template <class Assoc>
+concept async_scope_association =
+    semiregular<Assoc> &&
+    requires(const Assoc& assoc) {
+        { static_cast<bool>(assoc) } noexcept;
+    };
+
+template <class Token>
+concept async_scope_token =
+    copyable<Token> &&
+    requires(Token token) {
+        { token.try_associate() } -> async_scope_association;
+    };
+```
+
+with `nest()`, `spawn()`, and `spawn_future()` all being expressed in terms of the `async_scope_token` concept.
 
 ## R5
 - Clarify that the _`nest-sender`_'s operation state must destroy its child operation state before decrementing the
@@ -848,7 +970,7 @@ using @@_future-sender-t_@@ = // @@_exposition-only_@@
 template <class Assoc>
 concept async_scope_association =
     semiregular<Assoc> &&
-    requires(Assoc assoc) {
+    requires(const Assoc& assoc) {
         { static_cast<bool>(assoc) } noexcept;
     };
 
@@ -990,7 +1112,7 @@ struct counting_scope {
 template <class Assoc>
 concept async_scope_association =
     semiregular<Assoc> &&
-    requires(Assoc assoc) {
+    requires(const Assoc& assoc) {
         { static_cast<bool>(assoc) } noexcept;
     };
 ```
@@ -1969,159 +2091,7 @@ and `unifex::spawn_future()`) and Unifex users have not been confused by this ch
 
 To keep consistency with `spawn()` this paper doesn't support pipe operator for `spawn_future()`.
 
-## Problems Protecting Allocators with `counting_scope`
 
-Lewis Baker discovered a problem with using `nest()` as the basis operation for implementing `spawn()` when the
-`counting_scope` that tracks the spawned work is being used to protect against accesses to the allocator provided to
-`spawn()` after the allocator has been destroyed. (The problem arises with `spawn_future()`, too, but we'll restrict the
-discussion to `spawn()` for simplicity.) We seek LEWG's guidance in resolving this problem.
-
-### The Problem
-
-When a spawned operation completes, the order of operations is as follows:
-
-1. The spawned operation completes by invoking `set_value()` or `set_stopped()` on a receiver, `rcvr`, provided by
-   `spawn()` to the `nest-sender`.
-2. `rcvr` destroys the `nest-sender`'s _`operation-state`_ by invoking its destructor.
-3. `rcvr` deallocates the storage previously allocated for the just-destroyed _`operation-state`_ using a copy of the
-   allocator that was chosen when `spawn()` was invoked. Assume this allocator was passed to `spawn()` in the optional
-   environment argument.
-
-Note that in step 2, above, the destruction of the `nest-sender`'s _`operation-state`_ has the side effect of
-decrementing the associated `counting_scope`'s count of outstanding operations. If the scope has a `join-sender` waiting
-and this decrement brings the count to zero, the code waiting on the `join-sender` to complete may start to destroy the
-allocator while step 3 is busy using it.
-
-### Some Solutions
-
-We have several options to address the above problem:
-
-1. Do nothing; declare that `counting_scope` can't be used to protect memory allocators.
-2. Remove allocator support from `spawn()` and `spawn_future()` and require allocation with `::operator new`.
-3. Make `spawn()` and `spawn_future()` basis operations of `async_scope_token`s (alongside `nest()`) so that the
-   derement in step 2 can be deferred until after step 3 completes.
-4. Define a new set of refcounting basis operations and define `nest()`, `spawn()`, and `spawn_future()` in terms of
-   them.
-5. Treat `nest-sender`s as RAII handles to "scope references" and change how `spawn()` is defined to defer the
-   decrement. (There are a few implementation possibilities here.)
-6. Give `async_scope_token`s a new basis operation that can wrap an allocator in a new allocator wrapper that increments
-   the scope's refcount in `allocate()` and decrements it in `deallocate()`.
-
-Recommended: 6.
-
-### Discussion of Reasons to Reject Options 1-5
-
-Option 1 leaves `spawn()` and `spawn_future()` broken.
-
-Option 2 simplifies the proposal but eliminates support for use cases requiring custom allocators.
-
-Option 3 adds significant complexity to the task of writing a custom scope type. Furthermore, there's another useful
-algorithm (it's called `detach_on_cancel` in Unifex) that could be added to the Standard later if `nest()` remains the
-only basis operation on scopes, but that probably could never be added if every scope-related algorithm is a basis
-operation.
-
-Option 4 is a) unlikely to be ready in time for C++26, and b) difficult to distinguish from `std:shared_ptr<>`, which
-implementation experience at Meta has proven to be worse than `unifex::nest()` for reference-counting async work.
-
-Option 5 is the least-bad of the first five options but it feels silly. One implementation of `spawn()` in this option
-would look like this:
-```cpp
-template <class Op, class Alloc, class Env, sender Sender>
-struct spawn_receiver {
-  Op* op;
-  Alloc alloc;
-  Env env;
-  // in practice, this is a nest-sender that exists solely to hold
-  // a reference on the associated scope until it's destroyed
-  Sender sender;
-
-  void set_stopped() noexcept {
-    set_value();
-  }
-
-  void set_value() noexcept {
-    op->~Op();
-    alloc.deallocate(op, 1);
-  }
-
-  const Env& get_env() const noexcept {
-    return env;
-  }
-};
-
-template <sender Sender, async_scope_token<Sender> Token, class Env = empty_env>
-void spawn(Sender&& sndr, Token token, Env env = {}) {
-  auto nestSender = nest(just(), token); // try to grab a reference
-
-  // assume nest-senders are contextually convertable to bool and convert to false
-  // when they are unassociated (i.e. when the nest failed because the scope is closed)
-  if (!nestSender) {
-    return;
-  }
-
-  using op_t = connect_result_t<Sender, spawn_receiver>;
-
-  // choose an allocator (either from env, or sndr, or std::allocator<>)
-  // and rebind it to allocate op_ts.
-  auto alloc = choose_allocator<op_t>(env, sndr);
-
-  op_t* op = alloc.allocate(1);
-
-  try {
-    new ((void)op) op_t{
-        connect(forward<Sender>(sndr), spawn_receiver{op, alloc, env, move(nestSender)})};
-  }
-  catch (...) {
-    alloc.deallocate(op, 1);
-    throw;
-  }
-
-  op->start();
-}
-```
-
-### Discussion of Option 6
-
-Option 6 amounts to giving `async_scope_token` a new basis operation for contructing an allocator wrapper that
-increments the associated scope's reference count in `allocate()` and decrementing it in `deallocate()`. If the
-following were made valid:
-```cpp
-auto wrapper = scopeToken.wrap_allocator(alloc);
-```
-then `spawn()` could work like this:
-```cpp
-template <sender Sender, async_scope_token<Sender> Token, class Env = empty_env>
-void spawn(Sender&& sndr, Token token, Env env = {}) {
-  using op_t = connect_result_t<Sender, spawn_receiver>;
-
-  // choose an allocator (either from env, or sndr, or std::allocator<>)
-  // and rebind it to allocate op_ts.
-  auto alloc = token.wrap_allocator(choose_allocator<op_t>(env, sndr));
-
-  // expected to throw std::bad_alloc on failure
-  op_t* op = alloc.allocate(1);
-
-  // expected to return nullptr if the scope is closed
-  if (!op) {
-    return;
-  }
-
-  try {
-    new ((void)op) op_t{
-        connect(forward<Sender>(sndr), spawn_receiver{op, alloc, env})};
-  }
-  catch (...) {
-    alloc.deallocate(op, 1);
-    throw;
-  }
-
-  op->start();
-}
-```
-
-Since `spawn()` makes the allocator it used available to the spawned work by putting it in the `spawn-receiver`'s
-environment, a side effect of this choice is that all allocations that happen inside the spawned work through the
-wrapped allocator would be manipulating the scope's refcount.
 
 Naming
 ======
@@ -2153,18 +2123,13 @@ _scheme_ than good _names_:
 - The likely use of the `async_scope_token` concept will be to constrain algorithms that accept a sender and a token
   with code like the following:
   ```cpp
-  template <sender Sender, async_scope_token<Sender> Token>
+  template <sender Sender, async_scope_token Token>
   void foo(Sender, Token);
   ```
-  Perhaps the concept name should end in `_for` so that the above code would read
+  We propose the token concept should be named `async_` `<new name of counting_scope>` `<new word for token>`.
+  Assuming we choose `task_pool` and `ref`, that would produce `async_task_pool_ref`, which would look like this:
   ```cpp
-  template <sender Sender, async_scope_token_for<Sender> Token>
-  void foo(Sender, Token);
-  ```
-  We propose the token concept should be named `async_` `<new name of counting_scope>` `<new word for token>` `_for`.
-  Assuming we choose `task_pool` and `ref`, that would produce `async_task_pool_ref_for`, which would look like this:
-  ```cpp
-  template <sender Sender, async_task_pool_ref_for<Sender> Ref>
+  template <sender Sender, async_task_pool_ref Ref>
   void foo(Sender, Ref);
   ```
 - The `simple` prefix does not convey much about how `simple_counting_scope` is "simple". Suggestions for alternatives
@@ -2174,18 +2139,6 @@ _scheme_ than good _names_:
   - `non_cancellable` to speak to what's "missing" relative to `counting_scope`, however, `simple_counting_scope` does
     not change the cancellability of senders nested within it and we worry that this suggestion might convey that
     senders nested within a `non_cancellable` scope might somehow _lose_ cancellability.
-
-## `nest()`
-
-This provides a way to build a sender that is associated with a "scope", which is a type that implements and enforces
-some bookkeeping policy regarding the senders nested within it. `nest()` does not allocate state, call connect, or call
-start. `nest()` is the basis operation for async scopes. `spawn()` and `spawn_future()` use `nest()` to associate a
-given sender with a given scope, and then they allocate, connect, and start the resulting sender.
-
-It would be good for the name to indicate that it is a simple operation (insert, add, embed, extend might communicate
-allocation, which `nest()` does not do).
-
-alternatives: `wrap()`, `attach()`, `track()`, `add()`, `associate()`
 
 ## `async_scope_token`
 
@@ -2201,6 +2154,17 @@ scope's type alone. Nothing satisfying comes to mind.
 
 alternatives: `task_pool_ref`, `task_pool_token`, `task_group_ref`, `sender_group_ref`, `task_group_token`,
 `sender_group_token`, don't name it and leave it as _`exposition-only`_
+
+## `nest()`
+
+This provides a way to build a sender that is associated with a "scope", which is a type that implements and enforces
+some bookkeeping policy regarding the senders nested within it. `nest()` does not allocate state, call connect, or call
+start.
+
+It would be good for the name to indicate that it is a simple operation (insert, add, embed, extend might communicate
+allocation, which `nest()` does not do).
+
+alternatives: `wrap()`, `attach()`, `track()`, `add()`, `associate()`
 
 ## `spawn()`
 
@@ -2235,12 +2199,12 @@ and nested blocks.
 Another mental model for this is a container. This is the least accurate model. This container is a value that does not
 contain values. This container contains a set of active senders (an active sender is not a value, it is an operation).
 
-alternatives: `simple_async_scope`, `simple_task_pool`, `fast_task_pool`, `non_cancellable_task_pool`, `simple_task_group`,
-`simple_sender_group`
+alternatives: `simple_async_scope`, `simple_task_pool`, `fast_task_pool`, `non_cancellable_task_pool`,
+`simple_task_group`, `simple_sender_group`
 
 ## `counting_scope`
-Has all of the same behavior as `simple_counting_scope`, with the added functionality of cancellation; work `nest`-ed
-on this scope can be asked to cancel _en masse_ from the scope.
+Has all of the same behavior as `simple_counting_scope`, with the added functionality of cancellation; work nested in
+this scope can be asked to cancel _en masse_ from the scope.
 
 alternatives: `async_scope`, `task_pool`, `task_group`, `sender_group`
 
@@ -2263,30 +2227,51 @@ alternatives: `complete()`, `close()`
 Specification
 ============
 
-## `execution::async_scope_token`
+## Async scope concepts
 
 Add the following as a new subsection immediately after __[exec.utils.tfxcmplsigs]__:
 
 ::: add
-__`std::execution::async_scope_token` [exec.asyncscopetoken.concept]__
+__`std::execution::async_scope_association` [exec.asyncscopeassociation.concept]__
 
-[1]{.pnum} The `async_scope_token<Token, Sndr>` concept defines the requirements on an object of type `Token` that can
-be used to associate a sender of type `Sndr` with the token's associated async scope object.
+[1]{.pnum} The `async_scope_association<Assoc>` concept defines the requirements on an object of type `Assoc` that
+represents a possible assocation with an async scope object.
 ```cpp
 namespace std::execution {
 
-template <class Token, class Sender>
+template <class Assoc>
+concept async_scope_association =
+    semiregular<Assoc> &&
+    requires(const Assoc& assoc) {
+        { static_cast<bool>(assoc) } noexcept;
+    };
+}
+```
+[2]{.pnum} `async_scope_association<Assoc>` is modeled only if `Assoc`'s copy and move operations are not potentially
+throwing.
+
+__`std::execution::async_scope_token` [exec.asyncscopetoken.concept]__
+
+[1]{.pnum} The `async_scope_token<Token>` concept defines the requirements on an object of type `Token` that can
+be used to create associations between senders and an async scope.
+```cpp
+namespace std::execution {
+
+template <class Token>
 concept async_scope_token =
-    sender<Sender> &&
-    requires(Token token, Sender&& snd) {
-      { token.nest(std::forward<Sender>(snd)) } -> sender;
+    copyable<Token> &&
+    requires(Token token) {
+        { token.try_associate() } -> async_scope_association;
     } &&
-    copyable<Token>;
 
 }
 ```
-[2]{.pnum} `async_scope_token<Token, Sndr>` is modeled only if `Token`'s copy and move operations are not potentially
+[2]{.pnum} `async_scope_token<Token>` is modeled only if `Token`'s copy and move operations are not potentially
 throwing.
+
+[3]{.pnum} For a subexpression `snd`, let `Sndr` be `decltype((snd))` and let `sender<Sndr>` be true;
+`async_scope_token<Token>` is modeled only if, for an object, `token`, of type `Token`, the expression
+`token.wrap(snd)` is a valid expression and returns an object that satisfies `sender`.
 :::
 
 ## `execution::nest`
@@ -2300,13 +2285,12 @@ __`std::execution::nest` [exec.nest]__
 async operations created with the sender.
 
 [2]{.pnum} The name `nest` denotes a customization point object. For subexpressions `sndr` and `token`, let `Sndr` be
-`decltype((sndr))` and let `Token` be `decltype((token))`. If `async_scope_token<Sender, Token>` is false, the
-expression `nest(sndr, token)` is ill-formed.
+`decltype((sndr))` and let `Token` be `decltype((token))`. If `sender<Sndr>` or `async_scope_token<Sender>` is false,
+the expression `nest(sndr, token)` is ill-formed.
 
 [3]{.pnum} Otherwise, the expression `nest(sndr, token)` is expression-equivalent to:
-```cpp
-auto(token).nest(sndr);
-```
+
+- TODO figure out how to express this in terms of `token.wrap(sndr)` and `token.try_associate()`
 
 [4]{.pnum} The evaluation of `nest(sndr, token)` may cause side effects observable via `token`'s associated async scope
 object.
@@ -2337,6 +2321,9 @@ spec here
 
 Acknowledgements
 ================
+
+Thanks to Lewis Baker, Robert Leahy, Dmitry Prokoptsev, Anthony Williams, and everyone else who contributed to
+discussions leading to this paper.
 
 Thanks to Andrew Royes for unwavering support for the development and deployment of Unifex at Meta and for recognizing
 the importance of contributing this paper to the C++ Standard.
