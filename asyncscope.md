@@ -1,6 +1,6 @@
 ---
 title: "`async_scope` -- Creating scopes for non-sequential concurrency"
-document: D3149R6
+document: P3149R6
 date: today
 audience:
   - "SG1 Parallelism and Concurrency"
@@ -1241,7 +1241,7 @@ resulting _`nest-sender`_ is also copyable, with the following rules:
   1. copy the association from the source into the destination _`nest-sender`_
      - if the copied association is engaged then copy the wrapped sender from the source into the destination
        _`nest-sender`_; the destination is associated
-     - otherwise, the destination is unassociate
+     - otherwise, the destination is unassociated
 
 When _`nest-sender`_ has a copy constructor, it provides the Strong Exception Guarantee.
 
@@ -1967,6 +1967,10 @@ connected receiver _and_ the stop source in the token's `counting_scope`.
 ```cpp
 async_scope_association auto try_associate() const;
 ```
+
+Returns an `async_scope_association` that is engaged if the token's scope is open, and disengaged if it's closed.
+`try_associate()` behaves as if its `counting_scope` owns a `simple_counting_scope`, `scope`, and the result is
+equivalent to the result of invoking `scope.get_token().try_associate()`.
 
 ## When to use `counting_scope` vs [@P3296R2]'s `let_async_scope`
 
