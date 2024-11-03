@@ -2246,7 +2246,7 @@ To the `<version>` synopsis [version.syn]{.sref}, add the following:
 To the `<execution>` synopsis [execution.syn]{.sref}, add the following after
 the declaraiton of `run_loop`:
 
-> ```c++
+> ```
 > ...
 > namespace std::execution {
 >   ...
@@ -2311,7 +2311,7 @@ the declaraiton of `run_loop`:
 > ```
 :::
 
-> ```c++
+> ```
 > }
 > ```
 
@@ -2320,10 +2320,12 @@ the declaraiton of `run_loop`:
 Add the following as a new subsection immediately after __[exec.utils.tfxcmplsigs]__:
 
 ::: add
-__`std::execution::async_scope_association` [exec.asyncscopeassociation.concept]__
+__Scope concepts [exec.scope.concepts]__
 
 [1]{.pnum} The `async_scope_association<Assoc>` concept defines the requirements on an object of type `Assoc` that
 represents a possible assocation with an async scope object.
+The `async_scope_token<Token>` concept defines the requirements on an object of type `Token` that can
+be used to create associations between senders and an async scope.
 ```cpp
 namespace std::execution {
 
@@ -2333,31 +2335,25 @@ concept async_scope_association =
     requires(const Assoc& assoc) {
         { static_cast<bool>(assoc) } noexcept;
     };
+
+template <class Token, class Sender>
+concept async_scope_token_for =
+    copyable<Token> &&
+    sender<Sender> &&
+    requires(Token token, Sender&& snd) {
+        { token.try_associate() } -> async_scope_association;
+        { token.wrap(std::forward<Sender>(snd) } -> sender;
+    };
+
 }
 ```
 [2]{.pnum} `async_scope_association<Assoc>` is modeled only if `Assoc`'s copy and move operations are not potentially
 throwing.
 
-__`std::execution::async_scope_token` [exec.asyncscopetoken.concept]__
-
-[1]{.pnum} The `async_scope_token<Token>` concept defines the requirements on an object of type `Token` that can
-be used to create associations between senders and an async scope.
-```cpp
-namespace std::execution {
-
-template <class Token>
-concept async_scope_token =
-    copyable<Token> &&
-    requires(Token token) {
-        { token.try_associate() } -> async_scope_association;
-    } &&
-
-}
-```
-[2]{.pnum} `async_scope_token<Token>` is modeled only if `Token`'s copy and move operations are not potentially
+[3]{.pnum} `async_scope_token<Token>` is modeled only if `Token`'s copy and move operations are not potentially
 throwing.
 
-[3]{.pnum} For a subexpression `snd`, let `Sndr` be `decltype((snd))` and let `sender<Sndr>` be true;
+[4]{.pnum} For a subexpression `snd`, let `Sndr` be `decltype((snd))` and let `sender<Sndr>` be true;
 `async_scope_token<Token>` is modeled only if, for an object, `token`, of type `Token`, the expression
 `token.wrap(snd)` is a valid expression and returns an object that satisfies `sender`.
 :::
