@@ -2389,7 +2389,41 @@ creates an asynchronous operation (__[async.ops]__) that, when started:
 
 ## `execution::spawn`
 
-spec here
+Add the following as a new subsection immediately after __[exec.nest]__:
+
+::: add
+__`std::execution::spawn` [exec.scope.spawn]__
+
+[1]{.pnum} `spawn` associates the given input sender with the given token's async scope and, on success, eagerly starts the input sender.
+
+[2]{.pnum} The name `spawn` denotes a customization point object. For subexpressions `sndr`, `token`, and `env`, let `Sndr` be 
+`decltype((sndr))`, let `Token` be `decltype((token)), and let `Env` be `decltype((env))`. If `sender<Sndr>` or `async_scope_token<Snder>` is false, 
+the expression `spawn(sndr, token, env)` is ill-formed. 
+
+// TODO: when/how do I specify that env is optional?  Or do we get the env from sender-in?
+
+`[3]{.pnum} The exposition-only class template `impls-for` ([exec.snd.general])  is specialized for `spawn_t` as follows:
+
+```cpp
+namespace std::execution {
+template<>
+struct impls-for<spawn_t> : default_impls {
+  static constexpr auto get-env = see below;
+  static constexpr auto start = see below;
+  static constexpr auto complete = see below;
+};
+}
+```
+
+- [3.1]{.pnum} The member `impls-for<spawn_t>::get-env` is initialized with
+// TODO: how to express what get-env does. Also is this the right exposition-only function?
+
+- [3.2]{.pnum} The member `impls-for<spawn_t>::start` is initialized with a callable object equivalent to the following lambda expression:
+// TODO: is this the right exposition only function?
+
+- [3.3]{.pnum} The member `impls-for<spawn_t>::complete` is initialized with a callable object equivalent to the following lambda 
+expression:
+// TODO: is this the right exposition only function?
 
 ## `execution::spawn_future`
 
