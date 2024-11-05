@@ -2520,8 +2520,8 @@ private:
 - [2.3]{.pnum} `@_open-and-joining_@` changes `@_state_@` to `@_closed-and-joining_@`;
 
 [3]{.pnum} Any call to `t.try_associate()` for a `token` object `t`
-    referring to a `simple_counting_scope` object `s` which are
-    sequenced after a call to `s.close()` return a disengaged
+    referring to a `simple_counting_scope` object `s` which is
+    sequenced after a call to `s.close()` returns a disengaged
     association ([exec.scounting.assoc]{.sref}, p1).
 
 `auto join() noexcept;`
