@@ -2539,8 +2539,19 @@ private:
         struct @_state_@ {  // @_exposition-only_@
             simple_counting_scope* @_scope_@; // @_exposition-only_@
             remove_cvref_t<Receiver>& @_receiver_@; // @_exposition-only_@
+            using @_op_t_@ = decltype(connect(schedule(get_scheduler(receiver)), receiver)); // @_exposition-only_@
+            op_t @_op_@; // @_exposition-only_@
+
+            @_state_@(simple_counting_scope* scope, Receiver& receiver) // @_exposition-only_@
+              : @_scope_@(scope),
+                @_receiver_@(receiver),
+                @_op_@(connect(schedule(get_scheduler(receiver)), receiver)) {}
 
             void @_complete_@() { // @_exposition-only_@
+                @_op_@.start();
+            }
+
+            void @_complete-inline_@() { // @_exposition-only_@
                 set_value(std::move(@_receiver_@));
             }
         };
@@ -2553,20 +2564,6 @@ private:
         static constexpr auto @_start_@ =
             [](auto& s, auto&) { @_see-below_@; };
     };
-```
-
-[7]{.pnum} In the function object used to initialize
-    `@_impls-for_@<@_join-t_@>::@_start_@` let `state` be `s.@_scope_@->@_state_@`.
-    If `state` is
-
-- [7.1]{.pnum} `@_unused_@`, `@_unused-and-closed_@`, or `@_joined_@`,
-    `s.@_complete_@()` is invoked;
-- [7.2]{.pnum} `@_open_@`, changes the state of `*s.@_scope_@` to `@_open-and-joining_@`;
-- [7.3]{.pnum} `@_closed_@`, changes the state of `*s.@_scope_@` to `@_closed-and-joining_@`;
-
-[8]{.pnum} If `s.@_complete_@()` was not invoked, registers `s` with
-    `*s.@_scope_@` to have `s.@_complete_@()` invoked when `s.@_scope_@->@_count_@` becomes
-    zero.
 
 ##### Token [exec.scounting.token]
 
