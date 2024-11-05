@@ -2508,7 +2508,7 @@ private:
 
 `token get_token() noexcept;`
 
-[1]{.pnum} _Returns:_ An object `t` of type token such that
+[1]{.pnum} _Returns:_ An object `t` of type `simple_counting_scope::token` such that
     `t.@_scope_@ == this` is `true`.
 
 `void close() noexcept;`
