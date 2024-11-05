@@ -2486,7 +2486,7 @@ private:
     state.
 - [1.6]{.pnum} `@_closed-and-joining_@`: when `s.close()` is called while
     `s` is in `@_open-and-joining_@` state or the operation state `o` is 
-    started while `s` is in `@_closed_@` or `@_unused-and-close_@` state, `s`
+    started while `s` is in `@_closed_@` or `@_unused-and-closed_@` state, `s`
     moves to the `@_closed-and-joining_@` state.
 - [1.7]{.pnum} `@_joined_@`: when the count of associated objects drops to
     zero while `s` is in `@_open-and-joining_@` or `@_closed-and-joining_@`
@@ -2501,7 +2501,7 @@ private:
 `~simple_counting_scope();`
 
 [2]{.pnum} _Effects:_ If `@_state_@` is not one of `@_joined_@`, `@_unused_@`,
-    or `@_unused-and-close_@`, invokes `terminate` ([except.terminate]{.sref}).
+    or `@_unused-and-closed_@`, invokes `terminate` ([except.terminate]{.sref}).
     Otherwise, has no effects.
 
 ##### Members [exec.scounting.mem]
@@ -2515,7 +2515,7 @@ private:
 
 [2]{.pnum} _Efects:_ If `@_state_@` is
 
-- [2.1]{.pnum} `@_unused_@` changes `@_state_@` to `@_unused-and_close_@`;
+- [2.1]{.pnum} `@_unused_@` changes `@_state_@` to `@_unused-and-closed_@`;
 - [2.2]{.pnum} `@_open_@` changes `@_state_@` to `@_closed_@`;
 - [2.3]{.pnum} `@_open-and-joining_@` changes `@_state_@` to `@_closed-and-joining_@`;
 
