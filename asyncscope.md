@@ -2465,7 +2465,7 @@ private:
 
 [1]{.pnum} A `simple_counting_scope` maintains a count of outstanding
     operations.  Let `s` be an object of type `simple_counting_scope`,
-    `t` be an object of type `token` obtained from `s.get_token()`,
+    `t` be an object of type `simple_counting_scope::token` obtained from `s.get_token()`,
     let `j` be a sender obtained from `s.join()`, and let `o` be
     an operation state obtained from connecting `j` to a receiver.
     During its life-time `s` goes through different states which
