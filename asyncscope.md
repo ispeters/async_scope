@@ -2597,9 +2597,9 @@ private:
 
 [4]{.pnum} _Effects_: If the object is disengaged, does nothing;
     otherwise decrements `@_scope_@->@_count_@`. If `@_scope_@->@_count_@`
-    is zero after decrementing, changes the state of `*@_scope_@`
-    to `@_joined_@` and calls `@_complete_@()` on all objects
-    registered with `*@_scope_@`.
+    is zero after decrementing and `@_scope_@->@_state_@` is `@_open-and-joining_@`
+    or `@_closed-and-joining_@`, changes the state of `*@_scope_@` to `@_joined_@`
+    and calls `@_complete_@()` on all objects registered with `*@_scope_@`.
 
 [5]{.pnum} [_Note:_ Calling `@_complete_@()` on any registered object
     may cause `*@_scope_@` to get destroyed.  _--End-Note_]
