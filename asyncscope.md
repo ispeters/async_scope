@@ -2336,13 +2336,11 @@ concept async_scope_association =
         { static_cast<bool>(assoc) } noexcept;
     };
 
-template <class Token, class Sender>
-concept async_scope_token_for =
+template <class Token>
+concept async_scope_token =
     copyable<Token> &&
-    sender<Sender> &&
-    requires(Token token, Sender&& snd) {
+    requires(Token token) {
         { token.try_associate() } -> async_scope_association;
-        { token.wrap(std::forward<Sender>(snd) } -> sender;
     };
 
 }
