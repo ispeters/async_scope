@@ -985,7 +985,7 @@ template <async_scope_token Token>
 using @@_association-from_@@ = decltype(declval<Token&>().try_associate()); // @@_exposition-only_@@
 
 template <async_scope_token Token, sender Sender>
-using @@_wrapped-sender-from_@@ = decay_t<decltype(declval<Token&>().wrap(declval<Sender>()))>; // @@_exposition-only_@
+using @@_wrapped-sender-from_@@ = decay_t<decltype(declval<Token&>().wrap(declval<Sender>()))>; // @@_exposition-only_@@
 
 template <sender Sender, async_scope_token Token>
 struct @@_nest-sender_@@ { // @@_exposition-only_@@
@@ -1006,7 +1006,7 @@ auto nest(Sender&& snd, Token token)
 template <sender Sender, async_scope_token Token, class Env = empty_env>
 void spawn(Sender&& snd, Token token, Env env = {})
     requires sender_to<decltype(token.wrap(forward<Sender>(snd))),
-                       @@_spawn-receiver_@@<End>>;
+                       @@_spawn-receiver_@@<Env>>;
 
 template <sender Sender, async_scope_token Token, class Env = empty_env>
 @@_future-sender-t_@@<Sender, Env> spawn_future(Sender&& snd, Token token, Env env = {});
@@ -2231,15 +2231,101 @@ alternatives: `complete()`, `close()`
 Specification
 ============
 
+## Header `<version>` synopsis [version.syn]{.sref}
+
+To the `<version>` synopsis [version.syn]{.sref}, add the following:
+
+```c++
+#define __cpp_lib_coroutine                         201902L // also in <coroutine>
+@[`#define __cpp_lib_counting_scope                    2025XXL // also in <execution>`]{.add}@
+#define __cpp_lib_debugging                         202403L // freestanding, also in <debugging>
+```
+
+## Header `<execution>` synopsis [execution.syn]{.sref}
+
+To the `<execution>` synopsis [execution.syn]{.sref}, add the following after
+the declaration of `run_loop`:
+
+> ```
+> ...
+> namespace std::execution {
+>   ...
+>   // [exec.run.loop], run_loop
+>   class run_loop;
+>
+> ```
+
+::: add
+
+> ```c++
+>   // [exec.scope.concepts], scope concepts
+>   template <class Assoc>
+>     concept async_scope_association = @_see below_@;
+>
+>   template <class Token>
+>     concept async_scope_token = @_see below_@;
+>
+>   // [exec.scope.expos]
+>   template <class Env>
+>     struct @_spawn-env_@; // @_exposition-only_@
+>
+>   template <class Env>
+>     struct @_spawn-receiver_@; // @_exposition-only_@
+>
+>   template <class Env>
+>     struct @_future-env_@; // @_exposition-only_@
+>
+>   template <@_valid-completion-signatures_@ Sig>
+>     struct @_future-sender_@; // @_exposition-only_@
+>
+>   template <sender Sender, class Env>
+>     using @_future-sender-t_@; // @_exposition-only_@
+>
+>   template <async_scope_token Token>
+>       using @_association-from_@ = decltype(declval<Token&>().try_associate()); // @_exposition-only_@
+>
+>   template <async_scope_token Token, sender Sender>
+>     using @_wrapped-sender-from_@ = decay_t<decltype(declval<Token&>().wrap(declval<Sender>()))>; // @_exposition-only_@
+>
+>   // [exec.scope.algos]
+>   template <sender Sender, async_scope_token Token>
+>     struct @_nest-sender_@; // @_exposition-only_@
+>
+>   template <sender Sender, async_scope_token Token>
+>     auto nest(Sender&& snd, Token token)
+>       noexcept(is_nothrow_constructible_v<@_nest-sender_@<Sender, Token>, Sender, Token>)
+>     -> @_nest-sender_@<Sender, Token>;
+>
+>   template <sender Sender, async_scope_token Token, class Env = empty_env>
+>     void spawn(Sender&& snd, Token token, Env env = {})
+>       requires sender_to<decltype(token.wrap(forward<Sender>(snd))), @_spawn-receiver_@<Env>>;
+>
+>   template <sender Sender, async_scope_token Token, class Env = empty_env>
+>     @_future-sender-t_@<Sender, Env> spawn_future(Sender&& snd, Token token, Env env = {});
+>
+>   // [exec.simple.counting.scope]
+>   class simple_counting_scope;
+>
+>   // [exec.counting.scope]
+>   class counting_scope;
+> ```
+:::
+
+> ```
+> }
+> ```
+
 ## Async scope concepts
 
 Add the following as a new subsection immediately after __[exec.utils.tfxcmplsigs]__:
 
 ::: add
-__`std::execution::async_scope_association` [exec.asyncscopeassociation.concept]__
+__Scope concepts [exec.scope.concepts]__
 
 [1]{.pnum} The `async_scope_association<Assoc>` concept defines the requirements on an object of type `Assoc` that
 represents a possible assocation with an async scope object.
+The `async_scope_token<Token>` concept defines the requirements on an object of type `Token` that can
+be used to create associations between senders and an async scope.
 ```cpp
 namespace std::execution {
 
@@ -2249,31 +2335,23 @@ concept async_scope_association =
     requires(const Assoc& assoc) {
         { static_cast<bool>(assoc) } noexcept;
     };
-}
-```
-[2]{.pnum} `async_scope_association<Assoc>` is modeled only if `Assoc`'s copy and move operations are not potentially
-throwing.
-
-__`std::execution::async_scope_token` [exec.asyncscopetoken.concept]__
-
-[1]{.pnum} The `async_scope_token<Token>` concept defines the requirements on an object of type `Token` that can
-be used to create associations between senders and an async scope.
-```cpp
-namespace std::execution {
 
 template <class Token>
 concept async_scope_token =
     copyable<Token> &&
     requires(Token token) {
         { token.try_associate() } -> async_scope_association;
-    } &&
+    };
 
 }
 ```
-[2]{.pnum} `async_scope_token<Token>` is modeled only if `Token`'s copy and move operations are not potentially
+[2]{.pnum} `async_scope_association<Assoc>` is modeled only if `Assoc`'s copy and move operations are not potentially
 throwing.
 
-[3]{.pnum} For a subexpression `snd`, let `Sndr` be `decltype((snd))` and let `sender<Sndr>` be true;
+[3]{.pnum} `async_scope_token<Token>` is modeled only if `Token`'s copy and move operations are not potentially
+throwing.
+
+[4]{.pnum} For a subexpression `snd`, let `Sndr` be `decltype((snd))` and let `sender<Sndr>` be true;
 `async_scope_token<Token>` is modeled only if, for an object, `token`, of type `Token`, the expression
 `token.wrap(snd)` is a valid expression and returns an object that satisfies `sender`.
 :::
