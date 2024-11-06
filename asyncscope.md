@@ -2244,7 +2244,7 @@ To the `<version>` synopsis [version.syn]{.sref}, add the following:
 ## Header `<execution>` synopsis [execution.syn]{.sref}
 
 To the `<execution>` synopsis [execution.syn]{.sref}, add the following after
-the declaraiton of `run_loop`:
+the declaration of `run_loop`:
 
 > ```
 > ...
