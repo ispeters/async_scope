@@ -2539,7 +2539,7 @@ struct @_impls-for_@<@_join-t_@>: @_default-impls_@> {
     struct @_state_@ {  // @_exposition-only_@
         simple_counting_scope* @_scope_@; // @_exposition-only_@
         remove_cvref_t<Receiver>& @_receiver_@; // @_exposition-only_@
-        using @_op_t_@ = decltype(connect(schedule(get_scheduler(receiver)), receiver)); // @_exposition-only_@
+        using @_op_t_@ = decltype(connect(schedule(get_scheduler(get_env(receiver))), receiver)); // @_exposition-only_@
         @_op_t_@ @_op_@; // @_exposition-only_@
 
         @_state_@(simple_counting_scope* scope, Receiver& receiver) // @_exposition-only_@
