@@ -2545,7 +2545,7 @@ struct @_impls-for_@<@_join-t_@>: @_default-impls_@> {
         @_state_@(simple_counting_scope* scope, Receiver& receiver) // @_exposition-only_@
           : @_scope_@(scope),
             @_receiver_@(receiver),
-            @_op_@(connect(schedule(get_scheduler(receiver)), receiver)) {}
+            @_op_@(connect(schedule(get_scheduler(get_env(receiver))), receiver)) {}
 
         void @_complete_@() { // @_exposition-only_@
             @_op_@.start();
