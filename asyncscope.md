@@ -2366,31 +2366,137 @@ __`std::execution::nest` [exec.nest]__
 [1]{.pnum} `nest` tries to associate a sender with an async scope such that the scope can track the lifetime of any
 async operations created with the sender.
 
-[2]{.pnum} The name `nest` denotes a pipeable sender adaptor object. For subexpressions `sndr` and `token`, if
+[2]{.pnum} Let _`nest-data`_ be the following exposition-only class template:
+```cpp
+namespace std::execution {
+
+template <async_scope_token Token, sender Sender>
+struct @_nest-data_@ {
+  using @_wrap-sender_@ = decay_t<decltype(declval<Token&>().wrap(declval<Sender>()))>;
+  using @_association_@ = decltype(declval<Token&>().try_associate());
+
+  @_association_@ assoc;
+  optional<@_wrap-sender_@> sndr;
+
+  @_nest-data_@(Token t, Sender&& s)
+    : sndr(t.wrap(std::forward<Sender>(s))) {
+    assoc = t.try_associate();
+
+    if (!assoc) {
+      sndr.reset();
+    }
+  }
+
+  @_nest-data_@(const @_nest-data_@& other) noexcept(is_nothrow_copy_constructible_v<@_wrap-sender_@>)
+    requires copy_constructible<@_wrap-sender_@>
+    : assoc(other.assoc) {
+    if (assoc) {
+      sndr = other.sndr;
+    }
+  }
+
+  // TODO: is this providing the Strong Exception Guarantee?
+  @_nest-data_@(@_nest-data_@&& other) noexcept(is_nothrow_move_constructible_v<@_wrap-sender_@>) = default;
+};
+
+template <async_scope_token Token, sender Sender>
+@_nest-data_@(Token, Sender&&) -> @_nest-data_@<Token, Sender>;
+
+}
+```
+
+[3]{.pnum} The name `nest` denotes a pipeable sender adaptor object. For subexpressions `sndr` and `token`, if
 `decltype((sndr))` does not satisfy `sender`, or `decltype((token))` does not satisfy `async_scope_token`, then
 `nest(sndr, token)` is ill-formed.
 
-[3]{.pnum} Otherwise, the expression `nest(sndr, token)` is expression-equivalent to:
+[4]{.pnum} Otherwise, the expression `nest(sndr, token)` is expression-equivalent to:
 
 ```
-transform_sender(@_get-domain-early_@(sndr), @_make-sender_@(nest, token, sndr))
+transform_sender(@_get-domain-early_@(sndr), @_make-sender_@(nest, @_nest-data_@{token, sndr}))
 ```
 
 except that `sndr` is evaluated only once.
 
-[4]{.pnum} The exposition-only class template _`impls-for`_ ([exec.snd.general]{.sref}) is specialized for `nest` as
+[5]{.pnum} The exposition-only class template _`impls-for`_ ([exec.snd.general]{.sref}) is specialized for `nest_t` as
 follows:
 
 ```
 namespace std::execution {
   template <>
-  struct @_impls-for_@<@_decayed-typeof_@<nest>> : @_default-impls_@ {
+  struct @_impls-for_@<nest_t> : @_default-impls_@ {
     static constexpr auto @_get-state_@ = @_see below_@;
+
+    static constexpr auto @_start_@ = @_see below_@;
   };
 }
 ```
 
-[5]{.pnum} The evaluation of `nest(sndr, token)` may cause side effects observable via `token`'s associated async scope
+[6]{.pnum} The member `@_impls-for_@<nest_t>::@_get-state_@` is initialized with a callable object equivalent to the
+following lambda:
+```cpp
+[]<class Sndr, class Rcvr>(Sndr&& sndr, Rcvr& rcvr) noexcept(@_see below_@) {
+  auto& [_, data, ...child] = sndr;
+
+  static_assert(sizeof...(child) == 0);
+
+  struct op_state {
+    @_association_@ assoc;
+    union {
+      Rcvr& rcvr;
+      op_t op;
+    };
+
+    op_state(Rcvr& rcvr) noexcept
+      : rcvr(rcvr) {}
+
+    op_state(@_association_@ assoc, @_wrap-sender_@&& sndr, Rcvr& rcvr)
+      : assoc(std::move(assoc)),
+        op(connect(std::move(sndr), std::move(rcvr))) {}
+
+    op_state(@_association_@ assoc, const @_wrap-sender_@& sndr, Rcvr& rcvr)
+      : assoc(std::move(assoc)),
+        rcvr(rcvr) {
+      if (assoc) {
+        new (&op) op_t(connect(sndr, std::move(rcvr)));
+      }
+    }
+
+    op_state(op_state&&) = delete;
+
+    ~op_state() {
+      if (assoc) {
+        op.~op_t();
+      }
+    }
+
+    void start() {
+      if (assoc) {
+        op.start();
+      }
+      else {
+        set_stopped(std::move(rcvr));
+      }
+    }
+  };
+
+  if (data.assoc) {
+    return op_state{std::forward_like<Sndr>(data.assoc), std::forward_like<Sndr>(data.sndr.value()), rcvr};
+  }
+  else {
+    return op_state{rcvr};
+  }
+}
+```
+
+[7]{.pnum} The member `@_impls-for_@<nest_t>::@_start_@` is initialized with a callable object equivalent to the
+following lambda:
+```cpp
+[](auto& state, auto&) noexcept -> void {
+  state.start();
+}
+```
+
+[8]{.pnum} The evaluation of `nest(sndr, token)` may cause side effects observable via `token`'s associated async scope
 object.
 
 :::
