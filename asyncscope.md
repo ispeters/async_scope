@@ -2588,18 +2588,26 @@ zero.
 
 `assoc try_associate() const;`
 
-[2]{.pnum} _Effects:_ **TODO**
+[2]{.pnum} _Effects:_ A invocation of this member function has the
+    following atomic effect:
 
-[3]{.pnum} _Returns:_ **TODO**
+- [2.1]{.pnum} If `@_scope_@->@_state_@` is not one of `@_unused_@`,
+    `@_open_@`, or `@_open-and-joining_@` the operation has no effect;
+- [2.2]{.pnum} otherwise increment `@_scope_@->@_count_@` and
+    if `@_scope_@->@_state_@ == @_unused_@` change this value to `@_open_@`.
+
+[3]{.pnum} _Returns:_ An engaged `assoc` object `a` with
+    `a.@_scope_@ == @_scope_@` if `@_scope_@->@_count_@` was
+    incremented, a disengaged `assoc` object otherwise.
 
 ##### Assoc [exec.scounting.assoc]
 
-[1]{.pnum} An object `a` of type `assoc` is _disengaged_ if `a.@_scope_@
-    == nullptr` is `true` and _engaged_ otherwise.
+[1]{.pnum} An object `a` of type `assoc` is _disengaged_ if
+    `a.@_scope_@ == nullptr` is `true` and _engaged_ otherwise.
 
 `assoc(const assoc& other) noexcept;`
 
-[2]{.pnum} _Effects_: If `other` is engaged evalutes
+[2]{.pnum} _Effects_: If `other` is engaged evaluates
     `*this = other.@_scope_@->get_token().try_associate()`.
 
 `assoc(assoc&& other) noexcept;`
