@@ -1,6 +1,6 @@
 ---
 title: "`async_scope` -- Creating scopes for non-sequential concurrency"
-document: P3149R6
+document: D3149R7
 date: today
 audience:
   - "SG1 Parallelism and Concurrency"
@@ -11,6 +11,8 @@ author:
   - name: Jessica Wong
     email: <jesswong2011@gmail.com>
 contributor:
+  - name: Dietmar Kühl
+    email: <dkuhl@bloomberg.net>
   - name: Ján Ondrušek
     email: <ondrusek@meta.com>
   - name: Kirk Shoop
@@ -19,11 +21,20 @@ contributor:
     email: <lwh@fb.com>
   - name: Lucian Radu Teodorescu
     email: <lucteo@lucteo.ro>
+  - name: Ruslan Arutyunyan
+    email: <ruslan.arutyunyan@intel.com>
 toc: true
 ---
 
 Changes
 =======
+
+## R7
+
+- Add wording to section 8.
+- Remove the allocator from the environment in `spawn` and `spawn_future` when the allocator selection algorithm falls
+  all the way back to using `std::allocator<>` because there's no other choice.
+- Fix the last two typos in the example code.
 
 ## R6
 
@@ -862,11 +873,11 @@ auto process(ex::scheduler auto sch, auto scope, tree& t) {
         unifex::any_sender_of<> leftFut = ex::just();
         unifex::any_sender_of<> rightFut = ex::just();
         if (t.left) {
-            leftFut = ex::spawn_future(scope, process(sch, scope, t.left.get()));
+            leftFut = ex::spawn_future(process(sch, scope, t.left.get()), scope);
         }
 
         if (t.right) {
-            rightFut = ex::spawn_future(scope, process(sch, scope, t.right.get()));
+            rightFut = ex::spawn_future(process(sch, scope, t.right.get()), scope);
         }
 
         do_stuff(t.data);
