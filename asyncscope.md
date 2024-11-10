@@ -2288,20 +2288,13 @@ the declaration of `run_loop`:
 >     using @_wrapped-sender-from_@ = decay_t<decltype(declval<Token&>().wrap(declval<Sender>()))>; // @_exposition-only_@
 >
 >   // [exec.scope.algos]
->   template <sender Sender, async_scope_token Token>
->     struct @_nest-sender_@; // @_exposition-only_@
+>   struct nest_t { @_unspecified_@ };
+>   struct spawn_t { @_unspecified_@ };
+>   struct spawn_future_t { @_unspecified_@ };
 >
->   template <sender Sender, async_scope_token Token>
->     auto nest(Sender&& snd, Token token)
->       noexcept(is_nothrow_constructible_v<@_nest-sender_@<Sender, Token>, Sender, Token>)
->     -> @_nest-sender_@<Sender, Token>;
->
->   template <sender Sender, async_scope_token Token, class Env = empty_env>
->     void spawn(Sender&& snd, Token token, Env env = {})
->       requires sender_to<decltype(token.wrap(forward<Sender>(snd))), @_spawn-receiver_@<Env>>;
->
->   template <sender Sender, async_scope_token Token, class Env = empty_env>
->     @_future-sender-t_@<Sender, Env> spawn_future(Sender&& snd, Token token, Env env = {});
+>   inline constexpr nest_t nest{};
+>   inline constexpr spawn_t spawn{};
+>   inline constexpr spawn_future_t spawn_future{};
 >
 >   // [exec.simple.counting.scope]
 >   class simple_counting_scope;
