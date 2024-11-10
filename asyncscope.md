@@ -2397,7 +2397,7 @@ __`std::execution::spawn` [exec.scope.spawn]__
 [1]{.pnum} `spawn` associates the given input sender with the given token's async scope and, on success, eagerly starts the input sender.
 
 [2]{.pnum} The name `spawn` denotes a customization point object. For subexpressions `sndr`, `token`, and `env`, let `Sndr` be 
-`decltype((sndr))`, let `Token` be `decltype((token)), and let `Env` be `decltype((env))`. If `sender<Sndr>` or `async_scope_token<Snder>` is false, 
+`decltype((sndr))`, let `Token` be `decltype((token))`, and let `Env` be `decltype((env))`. If `sender<Sndr>` or `async_scope_token<Snder>` is false, 
 the expression `spawn(sndr, token, env)` is ill-formed. 
 
 // TODO: when/how do I specify that env is optional?  Or do we get the env from sender-in?
