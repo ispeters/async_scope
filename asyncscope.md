@@ -2524,7 +2524,7 @@ private:
     sequenced after a call to `s.close()` returns a disengaged
     association ([exec.scounting.assoc]{.sref}, p1).
 
-`auto join() noexcept;`
+`sender auto join() noexcept;`
 
 [4]{.pnum} _Returns:_ `@_make_sender_@(@_join-t_@, this)`
 
@@ -2628,7 +2628,7 @@ zero.
 
 `assoc& operator=(assoc rhs) noexcept;`
 
-[6]{.pnum} _Effects_: Equivalent to `swap(@_scope_@, other.@_rhs_@)`.
+[6]{.pnum} _Effects_: Equivalent to `swap(@_scope_@, rhs.@_scope_@)`.
 
 [7]{.pnum} _Returns_: `*this;`
 
