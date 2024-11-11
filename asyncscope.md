@@ -2390,40 +2390,126 @@ creates an asynchronous operation (__[async.ops]__) that, when started:
 ## `execution::spawn`
 
 Add the following as a new subsection immediately after __[exec.nest]__:
+// TODO: should this be part of exec.consumers?
 
 ::: add
 __`std::execution::spawn` [exec.scope.spawn]__
 
-[1]{.pnum} `spawn` associates the given input sender with the given token's async scope and, on success, eagerly starts the input sender.
+[1]{.pnum} `spawn` attempts to associate the given input sender with the given token's async scope and, on success, eagerly starts the input sender.
 
-[2]{.pnum} The name `spawn` denotes a customization point object. For subexpressions `sndr`, `token`, and `env`, let `Sndr` be 
-`decltype((sndr))`, let `Token` be `decltype((token))`, and let `Env` be `decltype((env))`. If `sender<Sndr>` or `async_scope_token<Snder>` is false, 
-the expression `spawn(sndr, token, env)` is ill-formed. 
+[2]{.pnum} The name `spawn` denotes a customization point object. For subexpressions `sndr`, `token`, and `env`, let `Sndr` be
+`decltype((sndr))`, let `Token` be `decltype((token))`, and let `Env` be `decltype((env))`. If `sender<Sndr>` or `async_scope_token<Token>` is false,
+the expression `spawn(sndr, token, env)` is ill-formed.
 
-// TODO: when/how do I specify that env is optional?  Or do we get the env from sender-in?
+[3]{.pnum} For the expression `spawn(sndr, token, env)` let _`new-sender`_ be the expression `token.wrap(sndr)` and let `alloc` and `senv` be defined as follows:
+- if the expression `get_allocator(env)` is well defined, then `alloc` is the result of `get_allocator(env)` and `senv` is the expression `env`,
+- otherwise if the expression `get_allocator(get_env(@_new-sender_@))` is well-defined, then `alloc` is the result of `get_allocator(get_env(@_new-sender_@))`
+  and `senv` is the expression `@_JOIN-ENV_@(env, @_MAKE-ENV_@(get_allocator, alloc))`
+- otherwise `alloc` is `std::allocator<void>{}` and `senv` is the expression `env`
 
-`[3]{.pnum} The exposition-only class template `impls-for` ([exec.snd.general])  is specialized for `spawn_t` as follows:
+[4]{.pnum} Let _`spawn-state-base`_ be an expositon only class defined below:
 
 ```cpp
 namespace std::execution {
-template<>
-struct impls-for<spawn_t> : default_impls {
-  static constexpr auto get-env = see below;
-  static constexpr auto start = see below;
-  static constexpr auto complete = see below;
+struct @_spawn-state-base_@ { // exposition-only
+    virtual void complete() = 0; // exposition-only
 };
 }
 ```
 
-- [3.1]{.pnum} The member `impls-for<spawn_t>::get-env` is initialized with
-// TODO: how to express what get-env does. Also is this the right exposition-only function?
+[5]{.pnum} Let _`spawn-receiver`_ be an exposition only class defined below:
+```cpp
+namespace std::execution {
+struct @_spawn-receiver_@ { // exposition-only
+    @_spawn-state-base_@* state; // exposition-only
+    void set_value() && noexcept { state->complete(); }
+    void set_stopped() && noexcept { state->complete(); }
+};
+}
+```
 
-- [3.2]{.pnum} The member `impls-for<spawn_t>::start` is initialized with a callable object equivalent to the following lambda expression:
-// TODO: is this the right exposition only function?
+[6]{.pnum} Let_`spawn-state`_ be an exposition only class template defined
+below:
 
-- [3.3]{.pnum} The member `impls-for<spawn_t>::complete` is initialized with a callable object equivalent to the following lambda 
-expression:
-// TODO: is this the right exposition only function?
+```cpp
+namespace std::execution {
+template<class Alloc, async_scope_token Token, sender Sender>
+struct @_spawn-state_@ : @_spawn_state_base_@ {
+    using Op = decltype(connect(declval<Sender>(), spawn-receiver{nullptr}));
+
+    @_spawn-state_@(Alloc alloc, Sender sndr, Token token); // see below
+    void start(); // see below
+    void complete() override; // see below
+
+    private:
+        Alloc alloc;
+        Op op;
+        association-from<Token> assoc;
+};
+}
+```
+`@_spawn-state_@(Alloc alloc, Sender sndr, Token token);`
+[6]{.pnum} _Effects_: Equivalent to:
+```cpp
+    this->alloc = alloc;
+    this->op = connect(sndr, spawn-receiver{this});
+    this->assoc = token.try_associate();
+```
+
+`void start();`
+[7]{.pnum} _Effects_: Equivalent to:
+```cpp
+    if (assoc) {
+        op.start()
+    } else {
+        complete();
+    }
+```
+
+`void complete() override;`
+[8]{.pnum} _Effects_: Equivalent to:
+```cpp
+    auto assoc = std::move(this->assoc);
+    auto alloc = std::move(this->alloc);
+    this->~spawn-state();
+    // TODO: add something for deallocating with alloc
+```
+
+[9]{.pnum} The evaluation of `spawn(sndr, token, env)` creates an operation state `o` using `connect(@_write-env_@(@_new-sender_@, senv), @_spawn-receiver@_{&s})` whose life-time is managed by an object `s` whose type derives from `@_spawn-state-base_@`. Any memory used by `s` is allocated and deallocated using `alloc`. When `s.complete()` is evaluated, all of the state is deallocated. After `s` has been allocated and `o` has been created, an async scope association, `assoc`, is created in `s` with `token.try_associate()`.
+
+[10]{.pnum} The member function `spawn-state` be the following exposition-only class template:
+
+```cpp
+template<class Alloc, async_scope_token Token, sender Sender>
+struct @_spawn-state_@ : @_spawn_state_base_@ {
+  using Op = decltype(connect(declval<Sender>(), spawn-receiver{nullptr}));
+  Alloc alloc;
+  Op op;
+  association-from<Token> assoc;
+  public:
+    spawn-state(Alloc alloc, Sender sndr, Token token):
+            alloc(alloc),
+            op(connect(sndr, spawn-receiver{this})),
+            assoc(token.try_associate()) {}
+
+    // TODO: how to express how to use the chosen allocator with the spawn-state.
+    void start() {
+        if (assoc) {
+            op.start()
+        } else {
+            complete();
+        }
+    }
+
+    void complete() {
+        auto assoc = std::move(this->assoc);
+        auto alloc = std::move(this->alloc);
+        this->~spawn-state();
+        // see below
+    }
+}
+```
+:::
 
 ## `execution::spawn_future`
 
