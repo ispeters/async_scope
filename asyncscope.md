@@ -2304,7 +2304,7 @@ the declaration of `run_loop`:
 >
 >   template <sender Sender, async_scope_token Token>
 >     auto nest(Sender&& snd, Token token)
->       noexcept(is_nothrow_constructible_v<@_nest-sender_@<Sender, Token> Sender, Token>)
+>       noexcept(is_nothrow_constructible_v<@_nest-sender_@<Sender, Token>, Sender, Token>)
 >     -> @_nest-sender_@<Sender, Token>;
 >
 >   template <sender Sender, async_scope_token Token, class Env = empty_env>
@@ -2365,7 +2365,7 @@ concept async_scope_token =
 
 }
 ```
-[2]{.pnum} `async_scope_token<Token>` is modeled only if `Token`'s copy and move operations are not potentially
+[2]{.pnum} `async_scope_token<Token>` is modeled only if `Token`'s copy and move operations are not potentially throwing.
 
 [3]{.pnum} For a subexpression `snd`, let `Sndr` be `decltype((snd))` and let `sender<Sndr>` be true;
 `async_scope_token<Token>` is modeled only if, for an object, `token`, of type `Token`, the expression
