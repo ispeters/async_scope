@@ -873,11 +873,11 @@ auto process(ex::scheduler auto sch, auto scope, tree& t) {
         unifex::any_sender_of<> leftFut = ex::just();
         unifex::any_sender_of<> rightFut = ex::just();
         if (t.left) {
-            leftFut = ex::spawn_future(process(sch, scope, t.left.get()), scope);
+            leftFut = ex::spawn_future(scope, process(sch, scope, t.left.get()));
         }
 
         if (t.right) {
-            rightFut = ex::spawn_future(process(sch, scope, t.right.get()), scope);
+            rightFut = ex::spawn_future(scope, process(sch, scope, t.right.get()));
         }
 
         do_stuff(t.data);
@@ -2299,13 +2299,20 @@ the declaration of `run_loop`:
 >     using @_wrapped-sender-from_@ = decay_t<decltype(declval<Token&>().wrap(declval<Sender>()))>; // @_exposition-only_@
 >
 >   // [exec.scope.algos]
->   struct nest_t { @_unspecified_@ };
->   struct spawn_t { @_unspecified_@ };
->   struct spawn_future_t { @_unspecified_@ };
+>   template <sender Sender, async_scope_token Token>
+>     struct @_nest-sender_@; // @_exposition-only_@
 >
->   inline constexpr nest_t nest{};
->   inline constexpr spawn_t spawn{};
->   inline constexpr spawn_future_t spawn_future{};
+>   template <sender Sender, async_scope_token Token>
+>     auto nest(Sender&& snd, Token token)
+>       noexcept(is_nothrow_constructible_v<@_nest-sender_@<Sender, Token> Sender, Token>)
+>     -> @_nest-sender_@<Sender, Token>;
+>
+>   template <sender Sender, async_scope_token Token, class Env = empty_env>
+>     void spawn(Sender&& snd, Token token, Env env = {})
+>       requires sender_to<decltype(token.wrap(forward<Sender>(snd))), @_spawn-receiver_@<Env>>;
+>
+>   template <sender Sender, async_scope_token Token, class Env = empty_env>
+>     @_future-sender-t_@<Sender, Env> spawn_future(Sender&& snd, Token token, Env env = {});
 >
 >   // [exec.simple.counting.scope]
 >   class simple_counting_scope;
@@ -2324,12 +2331,10 @@ the declaration of `run_loop`:
 Add the following as a new subsection immediately after __[exec.utils.tfxcmplsigs]__:
 
 ::: add
-__Scope concepts [exec.scope.concepts]__
+__`std::execution::async_scope_association` [exec.asyncscopeassociation.concept]__
 
 [1]{.pnum} The `async_scope_association<Assoc>` concept defines the requirements on an object of type `Assoc` that
 represents a possible assocation with an async scope object.
-The `async_scope_token<Token>` concept defines the requirements on an object of type `Token` that can
-be used to create associations between senders and an async scope.
 ```cpp
 namespace std::execution {
 
@@ -2339,6 +2344,17 @@ concept async_scope_association =
     requires(const Assoc& assoc) {
         { static_cast<bool>(assoc) } noexcept;
     };
+}
+```
+[2]{.pnum} `async_scope_association<Assoc>` is modeled only if `Assoc`'s copy and move operations are not potentially
+throwing.
+
+__`std::execution::async_scope_token` [exec.asyncscopetoken.concept]__
+
+[1]{.pnum} The `async_scope_token<Token>` concept defines the requirements on an object of type `Token` that can
+be used to create associations between senders and an async scope.
+```cpp
+namespace std::execution {
 
 template <class Token>
 concept async_scope_token =
@@ -2349,13 +2365,9 @@ concept async_scope_token =
 
 }
 ```
-[2]{.pnum} `async_scope_association<Assoc>` is modeled only if `Assoc`'s copy and move operations are not potentially
-throwing.
+[2]{.pnum} `async_scope_token<Token>` is modeled only if `Token`'s copy and move operations are not potentially
 
-[3]{.pnum} `async_scope_token<Token>` is modeled only if `Token`'s copy and move operations are not potentially
-throwing.
-
-[4]{.pnum} For a subexpression `snd`, let `Sndr` be `decltype((snd))` and let `sender<Sndr>` be true;
+[3]{.pnum} For a subexpression `snd`, let `Sndr` be `decltype((snd))` and let `sender<Sndr>` be true;
 `async_scope_token<Token>` is modeled only if, for an object, `token`, of type `Token`, the expression
 `token.wrap(snd)` is a valid expression and returns an object that satisfies `sender`.
 :::
