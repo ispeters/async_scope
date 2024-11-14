@@ -2392,7 +2392,6 @@ creates an asynchronous operation (__[async.ops]__) that, when started:
 ## `execution::spawn`
 
 Add the following as a new subsection immediately after __[exec.nest]__:
-// TODO: should this be part of exec.consumers?
 
 ::: add
 __`std::execution::spawn` [exec.scope.spawn]__
@@ -2404,22 +2403,24 @@ __`std::execution::spawn` [exec.scope.spawn]__
 the expression `spawn(sndr, token, env)` is ill-formed.
 
 [3]{.pnum} For the expression `spawn(sndr, token, env)` let _`new-sender`_ be the expression `token.wrap(sndr)` and let `alloc` and `senv` be defined as follows:
+
 - if the expression `get_allocator(env)` is well defined, then `alloc` is the result of `get_allocator(env)` and `senv` is the expression `env`,
 - otherwise if the expression `get_allocator(get_env(@_new-sender_@))` is well-defined, then `alloc` is the result of `get_allocator(get_env(@_new-sender_@))`
   and `senv` is the expression `@_JOIN-ENV_@(env, @_MAKE-ENV_@(get_allocator, alloc))`
 - otherwise `alloc` is `std::allocator<void>{}` and `senv` is the expression `env`
 
-[4]{.pnum} Let _`spawn-state-base`_ be an expositon only class defined below:
+[4]{.pnum} Let _`spawn-state-base`_ be an exposition only class defined below:
 
 ```cpp
 namespace std::execution {
 struct @_spawn-state-base_@ { // exposition-only
-    virtual void complete() = 0; // exposition-only
+    virtual void @_complete_@() = 0; // exposition-only
 };
 }
 ```
 
 [5]{.pnum} Let _`spawn-receiver`_ be an exposition only class defined below:
+
 ```cpp
 namespace std::execution {
 struct @_spawn-receiver_@ { // exposition-only
@@ -2430,36 +2431,41 @@ struct @_spawn-receiver_@ { // exposition-only
 }
 ```
 
-[6]{.pnum} Let_`spawn-state`_ be an exposition only class template defined
+[6]{.pnum} Let _`spawn-state`_ be an exposition only class template defined
 below:
 
 ```cpp
 namespace std::execution {
 template<class Alloc, async_scope_token Token, sender Sender>
-struct @_spawn-state_@ : @_spawn_state_base_@ {
-    using Op = decltype(connect(declval<Sender>(), spawn-receiver{nullptr}));
+struct @_spawn-state_@ : @_spawn-state-base_@ {
+    using Op = decltype(connect(declval<Sender>(), @_spawn-receiver_@{nullptr}));
 
     @_spawn-state_@(Alloc alloc, Sender sndr, Token token); // see below
-    void start(); // see below
-    void complete() override; // see below
+    void @_run_@(); // see below
+    void @_complete_@() override; // see below
 
     private:
         Alloc alloc;
         Op op;
-        association-from<Token> assoc;
+        @_association-from_@<Token> assoc;
 };
 }
 ```
+
 `@_spawn-state_@(Alloc alloc, Sender sndr, Token token);`
-[6]{.pnum} _Effects_: Equivalent to:
+
+[7]{.pnum} _Effects_: Equivalent to:
+
 ```cpp
     this->alloc = alloc;
-    this->op = connect(sndr, spawn-receiver{this});
+    this->op = connect(sndr, @_spawn-receiver_@{this});
     this->assoc = token.try_associate();
 ```
 
-`void start();`
-[7]{.pnum} _Effects_: Equivalent to:
+`void @_run_@();`
+
+[9]{.pnum} _Effects_: Equivalent to:
+
 ```cpp
     if (assoc) {
         op.start()
@@ -2468,48 +2474,15 @@ struct @_spawn-state_@ : @_spawn_state_base_@ {
     }
 ```
 
-`void complete() override;`
-[8]{.pnum} _Effects_: Equivalent to:
+`void @_complete_@() override;`
+
+[10]{.pnum} _Effects_: Equivalent to:
+
 ```cpp
     auto assoc = std::move(this->assoc);
     auto alloc = std::move(this->alloc);
     this->~spawn-state();
     // TODO: add something for deallocating with alloc
-```
-
-[9]{.pnum} The evaluation of `spawn(sndr, token, env)` creates an operation state `o` using `connect(@_write-env_@(@_new-sender_@, senv), @_spawn-receiver@_{&s})` whose life-time is managed by an object `s` whose type derives from `@_spawn-state-base_@`. Any memory used by `s` is allocated and deallocated using `alloc`. When `s.complete()` is evaluated, all of the state is deallocated. After `s` has been allocated and `o` has been created, an async scope association, `assoc`, is created in `s` with `token.try_associate()`.
-
-[10]{.pnum} The member function `spawn-state` be the following exposition-only class template:
-
-```cpp
-template<class Alloc, async_scope_token Token, sender Sender>
-struct @_spawn-state_@ : @_spawn_state_base_@ {
-  using Op = decltype(connect(declval<Sender>(), spawn-receiver{nullptr}));
-  Alloc alloc;
-  Op op;
-  association-from<Token> assoc;
-  public:
-    spawn-state(Alloc alloc, Sender sndr, Token token):
-            alloc(alloc),
-            op(connect(sndr, spawn-receiver{this})),
-            assoc(token.try_associate()) {}
-
-    // TODO: how to express how to use the chosen allocator with the spawn-state.
-    void start() {
-        if (assoc) {
-            op.start()
-        } else {
-            complete();
-        }
-    }
-
-    void complete() {
-        auto assoc = std::move(this->assoc);
-        auto alloc = std::move(this->alloc);
-        this->~spawn-state();
-        // see below
-    }
-}
 ```
 :::
 
