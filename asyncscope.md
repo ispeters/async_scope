@@ -2376,8 +2376,8 @@ namespace std::execution {
 
 template <async_scope_token Token, sender Sender>
 struct @_nest-data_@ {
-  using @_wrap-sender_@ = decay_t<decltype(declval<Token&>().wrap(declval<Sender>()))>;
-  using @_association_@ = decltype(declval<Token&>().try_associate());
+  using @_wrap-sender_@ = @_wrapped-sender-from_@<Token, Sender>;
+  using @_association_@ = @_association-from_@<Token>;
 
   @_association_@ assoc;
   optional<@_wrap-sender_@> sndr;
@@ -2399,7 +2399,6 @@ struct @_nest-data_@ {
     }
   }
 
-  // TODO: is this providing the Strong Exception Guarantee?
   @_nest-data_@(@_nest-data_@&& other) noexcept(is_nothrow_move_constructible_v<@_wrap-sender_@>) = default;
 };
 
