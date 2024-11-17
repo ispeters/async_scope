@@ -953,21 +953,13 @@ More on these items can be found below in the sections below.
 ## Definitions
 
 ```cpp
-namespace { // @@_exposition-only_@@
-
-template <class Env>
-struct @@_spawn-env_@@; // @@_exposition-only_@@
+namespace std::execution {
 
 template <class Env>
 struct @@_spawn-receiver_@@ { // @@_exposition-only_@@
     void set_value() noexcept;
     void set_stopped() noexcept;
-
-    const @@_spawn-env_@@<Env>& get_env() const noexcept;
 };
-
-template <class Env>
-struct @@_future-env_@@; // @@_exposition-only_@@
 
 template <@@_valid-completion-signatures_@@ Sigs>
 struct @@_future-sender_@@; // @@_exposition-only_@@
@@ -975,8 +967,6 @@ struct @@_future-sender_@@; // @@_exposition-only_@@
 template <sender Sender, class Env>
 using @@_future-sender-t_@@ = // @@_exposition-only_@@
     @@_future-sender_@@<completion_signatures_of_t<Sender, @@_future-env_@@<Env>>>;
-
-}
 
 template <class Assoc>
 concept async_scope_association =
@@ -998,61 +988,36 @@ using @@_association-from_@@ = decltype(declval<Token&>().try_associate()); // @
 template <async_scope_token Token, sender Sender>
 using @@_wrapped-sender-from_@@ = decay_t<decltype(declval<Token&>().wrap(declval<Sender>()))>; // @@_exposition-only_@@
 
-template <sender Sender, async_scope_token Token>
-struct @@_nest-sender_@@ { // @@_exposition-only_@@
-    nest-sender(Sender&& sender, Token token);
+struct nest_t { @_unspecified_@ };
+struct spawn_t { @_unspecified_@ };
+struct spawn_future_T { @_unspecified_@ };
 
-    ~nest-sender();
+// nest is a CPO
+// its signature is: sender auto nest(sender auto&&, async_scope_token auto) noexcept(...)
+inline constexpr nest_t nest{};
 
-private:
-    optional<@@_wrapped-sender-from_@@<Token, Sender>> sender_;
-    @@_association-from_@@<Token> token;
-};
+// spawn is a CPO
+// its signature is: void spawn(sender auto&&, async_scope_token auto, auto = {})
+// the final argument is an environment that defaults to an empty environment
+inline constexpr spawn_t spawn{};
 
-template <sender Sender, async_scope_token Token>
-auto nest(Sender&& snd, Token token)
-    noexcept(is_nothrow_constructible_v<@@_nest-sender_@@<Sender, Token>, Sender, Token>)
-    -> @@_nest-sender_@@<Sender, Token>;
-
-template <sender Sender, async_scope_token Token, class Env = empty_env>
-void spawn(Sender&& snd, Token token, Env env = {})
-    requires sender_to<decltype(token.wrap(forward<Sender>(snd))),
-                       @@_spawn-receiver_@@<Env>>;
-
-template <sender Sender, async_scope_token Token, class Env = empty_env>
-@@_future-sender-t_@@<Sender, Env> spawn_future(Sender&& snd, Token token, Env env = {});
+// spawn_future is a CPO
+// its signature is: sender auto spawn_future(sender auto&&, async_scope_token auto, auto = {})
+// the final argument is an environment that defaults to an empty environment
+inline constexpr spawn_future_t spawn_future{};
 
 struct simple_counting_scope {
-    simple_counting_scope() noexcept;
-    ~simple_counting_scope();
-
-    // simple_counting_scope is immovable and uncopyable
-    simple_counting_scope(const simple_counting_scope&) = delete;
-    simple_counting_scope(simple_counting_scope&&) = delete;
-    simple_counting_scope& operator=(const simple_counting_scope&) = delete;
-    simple_counting_scope& operator=(simple_counting_scope&&) = delete;
-
-    struct token;
-
     struct assoc {
         assoc() noexcept = default;
-
         assoc(const assoc&) noexcept;
-
         assoc(assoc&&) noexcept;
-
         ~assoc();
-
         assoc& operator=(assoc) noexcept;
 
         explicit operator bool() const noexcept;
 
     private:
-        friend struct token;
-
-        explicit assoc(simple_counting_scope*) noexcept; // @@_exposition-only_@@
-
-        simple_counting_scope* scope_{}; // @@_exposition-only_@@
+        simple_counting_scope* @_scope_@{}; // @@_exposition-only_@@
     };
 
     struct token {
@@ -1062,48 +1027,51 @@ struct simple_counting_scope {
         assoc try_associate() const;
 
     private:
-        friend simple_counting_scope;
-
-        explicit token(simple_counting_scope* s) noexcept; // @@_exposition-only_@@
-
-        simple_counting_scope* scope_; // @@_exposition-only_@@
+        simple_counting_scope* @_scope_@; // @@_exposition-only_@@
     };
+
+    simple_counting_scope() noexcept;
+    ~simple_counting_scope();
+
+    // simple_counting_scope is immovable and uncopyable
+    simple_counting_scope(simple_counting_scope&&) = delete;
 
     token get_token() noexcept;
 
     void close() noexcept;
 
-    struct @@_join-sender_@@; // @@_exposition-only_@@
-
-    @@_join-sender_@@ join() noexcept;
+    sender auto join() noexcept;
 };
 
 struct counting_scope {
+    struct assoc {
+        assoc() noexcept = default;
+        assoc(const assoc&) noexcept;
+        assoc(assoc&&) noexcept;
+        ~assoc();
+        assoc& operator=(assoc) noexcept;
+
+        explicit operator bool() const noexcept;
+
+    private:
+        counting_scope* @_scope_@{}; // @@_exposition-only_@@
+    };
+
+    struct token {
+        template <sender Sender>
+        sender auto wrap(Sender&& snd) const;
+
+        assoc try_associate() const;
+
+    private:
+        counting_scope* @_scope_@; // @@_exposition-only_@@
+    };
+
     counting_scope() noexcept;
     ~counting_scope();
 
     // counting_scope is immovable and uncopyable
-    counting_scope(const counting_scope&) = delete;
     counting_scope(counting_scope&&) = delete;
-    counting_scope& operator=(const counting_scope&) = delete;
-    counting_scope& operator=(counting_scope&&) = delete;
-
-    template <sender Sender>
-    struct @@_wrapper-sender_@@; // @@_exposition-only_@@
-
-    struct token {
-        template <sender Sender>
-        @@_wrapper-sender_@@<Sender> wrap(Sender&& snd) const;
-
-        async_scope_association auto try_associate() const;
-
-    private:
-        friend counting_scope;
-
-        explicit token(counting_scope* s) noexcept; // @@_exposition-only_@@
-
-        counting_scope* scope_; // @@_exposition-only_@@
-    };
 
     token get_token() noexcept;
 
@@ -1111,10 +1079,10 @@ struct counting_scope {
 
     void request_stop() noexcept;
 
-    struct @@_join-sender_@@; // @@_exposition-only_@@
-
-    @@_join-sender_@@ join() noexcept;
+    sender auto join() noexcept;
 };
+
+} // namespace std::execution
 ```
 
 ## `execution::async_scope_association`
