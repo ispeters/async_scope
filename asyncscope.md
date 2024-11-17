@@ -1113,12 +1113,15 @@ concept async_scope_token =
     };
 ```
 
-An async scope token is a non-owning handle to an async scope. The `try_associate()` method on a token attempts to
-create a new association with the scope; `try_associate()` returns an engaged association when the association is
-successful, and it may either return a disengaged association or throw an exception to indicate failure. Returning a
-disengaged association will generally lead to algorithms that operate on tokens behaving as if provided a sender that
-completes immediately with `set_stopped()`, leading to rejected work being discarded as a "no-op". Throwing an exception
-will generally lead to that exception escaping from the calling algorithm.
+An async scope token is a non-owning handle to an async scope that behaves like a reference-to-async-scope; tokens are
+no-throw copyable and movable, and it is undefined behaviour to invoke any methods on a token that has outlived its
+scope.
+
+The `try_associate()` method on a token attempts to create a new association with the scope; `try_associate()` returns
+an engaged association when the association is successful, and it may either return a disengaged association or throw an
+exception to indicate failure. Returning a disengaged association will generally lead to algorithms that operate on
+tokens behaving as if provided a sender that completes immediately with `set_stopped()`, leading to rejected work being
+discarded as a "no-op". Throwing an exception will generally lead to that exception escaping from the calling algorithm.
 
 Tokens also have a `wrap()` method that takes and returns a sender. The `wrap()` method gives the token an opportunity
 to modify the input sender's behaviour in a scope-specific way. The proposed `counting_scope` uses this opportunity to
@@ -1127,9 +1130,6 @@ associated within the scope.
 
 In order to provide the Strong Exception Guarantee, the algorithms proposed in this paper invoke `token.wrap(snd)`
 before invoking `token.try_associate()`. Other algorithms written in terms of `async_scope_token` should do the same.
-
-An async scope token behaves like a reference-to-async-scope; tokens are no-throw copyable and movable, and it is
-undefined behaviour to invoke any methods on a token that has outlived its scope.
 
 ## `execution::nest`
 
