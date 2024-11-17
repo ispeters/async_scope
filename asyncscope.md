@@ -1128,39 +1128,6 @@ associated within the scope.
 In order to provide the Strong Exception Guarantee, the algorithms proposed in this paper invoke `token.wrap(snd)`
 before invoking `token.try_associate()`. Other algorithms written in terms of `async_scope_token` should do the same.
 
-The following sketch implementation of _`nest-sender`_ illustrates how the methods on an async scope token interact:
-
-```cpp
-template <sender Sender, async_scope_token Token>
-struct @@_nest-sender_@@ {
-    @@_nest-sender_@@(Sender&& s, Token t)
-        : sender_(t.wrap(forward<Sender>(s))) {
-        assoc_ = t.try_associate();
-        if (!assoc_) {
-            sender_.reset(); // assume no_throw destructor
-        }
-    }
-
-    @@_nest-sender_@@(const @@_nest-sender_@@& other)
-        requires copy_constructible<@@_wrapped-sender-from_@@<Token, Sender>>
-        : assoc_(t.try_associate()) {
-        if (assoc_) {
-            sender_ = other.sender_;
-        }
-    }
-
-    @@_nest-sender_@@(@@_nest-sender_@@&& other) noexcept = default;
-
-    ~@@_nest-sender_@@() = default;
-
-    // ... implement the sender concept in terms of Sender and sender_
-
-private:
-    @@_association-from_@@<Token> assoc_;
-    optional<@@_wrapped-sender-from_@@<Token, Sender>> sender_;
-};
-```
-
 An async scope token behaves like a reference-to-async-scope; tokens are no-throw copyable and movable, and it is
 undefined behaviour to invoke any methods on a token that has outlived its scope.
 
