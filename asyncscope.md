@@ -247,8 +247,8 @@ The proposed solution comes in the following parts:
 - `void spawn(sender auto&& snd, async_scope_token auto token, auto&& env)`{.cpp};
 - `sender auto spawn_future(sender auto&& snd, async_scope_token auto token, auto&& env)`{.cpp};
 - Proposed in [@P3296R2]: `sender auto let_async_scope(callable auto&& senderFactory)`{.cpp};
-- `struct simple_counting_scope`{.cpp}; and
-- `struct counting_scope`{.cpp}.
+- `class simple_counting_scope`{.cpp}; and
+- `class counting_scope`{.cpp}.
 
 ## Implementation experience
 
@@ -989,7 +989,7 @@ inline constexpr nest_t nest{};
 inline constexpr spawn_t spawn{};
 inline constexpr spawn_future_t spawn_future{};
 
-struct simple_counting_scope {
+class simple_counting_scope {
     struct assoc {
         assoc() noexcept = default;
         assoc(const assoc&) noexcept;
@@ -1026,7 +1026,7 @@ struct simple_counting_scope {
     sender auto join() noexcept;
 };
 
-struct counting_scope {
+class counting_scope {
     struct assoc {
         assoc() noexcept = default;
         assoc(const assoc&) noexcept;
@@ -1404,7 +1404,7 @@ return when_all(scope.join(), std::move(snd));
 ## `execution::simple_counting_scope`
 
 ```cpp
-struct simple_counting_scope {
+class simple_counting_scope {
     struct assoc {
         assoc() noexcept = default;
         assoc(const assoc&) noexcept;
@@ -1695,7 +1695,7 @@ open, or open-and-joining state; otherwise the scope's state is left unchanged a
 ## `execution::counting_scope`
 
 ```cpp
-struct counting_scope {
+class counting_scope {
     struct assoc {
         assoc() noexcept = default;
         assoc(const assoc&) noexcept;
@@ -1744,7 +1744,7 @@ Assuming an exposition-only _`stop_when(sender auto&&, stoppable_token auto)`_ (
 behaves as if it were implemented like so:
 
 ```cpp
-struct counting_scope {
+class counting_scope {
     struct token {
         template <sender S>
         sender auto wrap(S&& snd) const
