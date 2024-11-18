@@ -1,6 +1,6 @@
 ---
 title: "`async_scope` -- Creating scopes for non-sequential concurrency"
-document: D3149R7
+document: P3149R7
 date: today
 audience:
   - "SG1 Parallelism and Concurrency"
@@ -957,10 +957,20 @@ More on these items can be found below in the sections below.
 ```cpp
 namespace std::execution {
 
-template <class Env>
-struct @@_spawn-receiver_@@ { // @@_exposition-only_@@
-    void set_value() noexcept;
-    void set_stopped() noexcept;
+struct @_spawn-receiver_@ { // @_exposition-only_@
+    void set_value() && noexcept;
+    void set_stopped() && noexcept;
+};
+
+template <class Sigs>
+struct @_spawn-future-receiver_@ { // @_exposition-only_@
+    template <class... T>
+    void set_value(T&&... t) && noexcept;
+
+    template <class E>
+    void set_error(E&& e) && noexcept;
+
+    void set_stopped() && noexcept;
 };
 
 template <class Assoc>
@@ -1301,6 +1311,17 @@ for (int i = 0; i < 100; i++)
 ## `execution::spawn_future`
 
 ```cpp
+template <class Sigs>
+struct @_spawn-future-receiver_@ { // @_exposition-only_@
+    template <class... T>
+    void set_value(T&&... t) && noexcept;
+
+    template <class E>
+    void set_error(E&& e) && noexcept;
+
+    void set_stopped() && noexcept;
+};
+
 struct spawn_future_t { @_unspecified_@ };
 
 inline constexpr spawn_future_t spawn_future{};
@@ -2164,8 +2185,7 @@ the declaration of `run_loop`:
 >   // [exec.scope.expos]
 >   struct @_spawn-state-base_@; // @_exposition-only_@
 >
->   template <class Env>
->     struct @_spawn-receiver_@; // @_exposition-only_@
+>   struct @_spawn-receiver_@; // @_exposition-only_@
 >
 >   template <class Alloc, async_scope_token Token, sender Sender>
 >     struct @_spawn-state_@; // @_exposition-only_@
@@ -2183,7 +2203,8 @@ the declaration of `run_loop`:
 >     using @_association-from_@ = decltype(declval<Token&>().try_associate()); // @_exposition-only_@
 >
 >   template <async_scope_token Token, sender Sender>
->     using @_wrapped-sender-from_@ = decay_t<decltype(declval<Token&>().wrap(declval<Sender>()))>; // @_exposition-only_@
+>     using @_wrapped-sender-from_@ =
+>         decay_t<decltype(declval<Token&>().wrap(declval<Sender>()))>; // @_exposition-only_@
 >
 >   // [exec.scope.algos]
 >   struct nest_t { @_unspecified_@ };
@@ -2780,11 +2801,11 @@ the following:
 Add the following new section immediately after **TODO**:
 
 ::: add
-### Scopes [exec.scopes]
+__Scopes [exec.scopes]__
 
-#### Simple Counting Scope [exec.simple.counting.scope]
+__Simple Counting Scope [exec.simple.counting.scope]__
 
-##### General [exec.simple.counting.general]
+__General [exec.simple.counting.general]__
 
 ```
 class simple_counting_scope {
@@ -2862,7 +2883,7 @@ operations:
 - [1.7]{.pnum} `@_joined_@`: when the count of associated objects drops to zero while `s` is in `@_open-and-joining_@`
   or `@_closed-and-joining_@` state, `s` moves to the `@_joined_@` state.
 
-##### Constructor and Destructor [exec.simple.counting.ctor]
+__Constructor and Destructor [exec.simple.counting.ctor]__
 
 `simple_counting_scope() noexcept;`
 
@@ -2873,7 +2894,7 @@ operations:
 [2]{.pnum} _Effects:_ If `@_state_@` is not one of `@_joined_@`, `@_unused_@`, or `@_unused-and-closed_@`, invokes
 `terminate` ([except.terminate]{.sref}). Otherwise, has no effects.
 
-##### Members [exec.simple.counting.mem]
+__Members [exec.simple.counting.mem]__
 
 `token get_token() noexcept;`
 
@@ -2943,7 +2964,7 @@ struct @_impls-for_@<@_join-t_@>: @_default-impls_@ {
 [8]{.pnum} If `s.@_complete-inline_@()` was not invoked, registers s with `*s.@_scope_@` to have `s.@_complete_@()`
 invoked when `s.@_scope_@->@_count_@` becomes zero.
 
-##### Token [exec.simple.counting.token]
+__Token [exec.simple.counting.token]__
 
 `template <sender Sender>` \
 `Sender&& wrap(Sender&& snd) const noexcept;`
@@ -2962,7 +2983,7 @@ invoked when `s.@_scope_@->@_count_@` becomes zero.
 [3]{.pnum} _Returns:_ An engaged `assoc` object `a` with `a.@_scope_@ == @_scope_@` if `@_scope_@->@_count_@` was
 incremented, a disengaged `assoc` object otherwise.
 
-##### Assoc [exec.simple.counting.assoc]
+__Assoc [exec.simple.counting.assoc]__
 
 [1]{.pnum} An object `a` of type `assoc` is _disengaged_ if `a.@_scope_@ == nullptr` is `true` and _engaged_ otherwise.
 
@@ -2995,9 +3016,9 @@ _--End-Note_]
 [8]{.pnum} _Returns_: `@_scope_@ != nullptr;`
 
 
-#### Counting Scope [exec.counting.scope]
+__Counting Scope [exec.counting.scope]__
 
-##### General [exec.counting.general]
+__General [exec.counting.general]__
 
 ```
 class counting_scope {
@@ -3076,7 +3097,7 @@ life-time `s` goes through different states which govern what operations are all
 - [1.7]{.pnum} `@_joined_@`: when the count of associated objects drops to zero while `s` is in `@_open-and-joining_@`
   or `@_closed-and-joining_@` state, `s` moves to the `@_joined_@` state.
 
-##### Constructor and Destructor [exec.counting.ctor]
+__Constructor and Destructor [exec.counting.ctor]__
 
 `counting_scope() noexcept;`
 
@@ -3087,7 +3108,7 @@ life-time `s` goes through different states which govern what operations are all
 [2]{.pnum} _Effects:_ If `@_state_@` is not one of `@_joined_@`, `@_unused_@`, or `@_unused-and-closed_@`, invokes
 `terminate` ([except.terminate]{.sref}). Otherwise, has no effects.
 
-##### Members [exec.counting.mem]
+__Members [exec.counting.mem]__
 
 `token get_token() noexcept;`
 
@@ -3161,7 +3182,7 @@ invoked when `s.@_scope_@->@_count_@` becomes zero.
 
 [9]{.pnum} _Effects_: Calls `@_s_source_@.request_stop()`
 
-##### Token [exec.counting.token]
+__Token [exec.counting.token]__
 
 `template <sender Sender>` \
 `sender auto wrap(Sender&& snd) const noexcept;`
@@ -3184,7 +3205,7 @@ sender, _`snd`_, to `r`, except that the operation will receive a stop request w
 [3]{.pnum} _Returns:_ An engaged `assoc` object `a` with `a.@_scope_@ == @_scope_@` if `@_scope_@->@_count_@` was
 incremented, a disengaged `assoc` object otherwise.
 
-##### Assoc [exec.counting.assoc]
+__Assoc [exec.counting.assoc]__
 
 [1]{.pnum} An object `a` of type `assoc` is _disengaged_ if `a.@_scope_@ == nullptr` is `true` and _engaged_ otherwise.
 
