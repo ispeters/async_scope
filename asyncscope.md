@@ -35,6 +35,8 @@ Changes
 - Remove the allocator from the environment in `spawn` and `spawn_future` when the allocator selection algorithm falls
   all the way back to using `std::allocator<>` because there's no other choice.
 - Fix the last two typos in the example code.
+- Small changes to how `spawn` and `spawn_future` set up the environment for the spawned operation based on feedback
+  from Dietmar and Ruslan.
 
 ## R6
 
@@ -1311,8 +1313,8 @@ sender auto spawn_future(Sender&& snd, Token token, Env env = {});
 ```
 
 `spawn_future` attempts to associate the given sender with the given scope token's scope. On success, the given sender
-is eagerly started and `spawn_future` returns a future-sender that provides access to the result of the given sender. On
-failure, either `spawn_future` returns a future-sender that unconditionally completes with `set_stopped()` or it throws.
+is eagerly started and `spawn_future` returns a sender that provides access to the result of the given sender. On
+failure, either `spawn_future` returns a sender that unconditionally completes with `set_stopped()` or it throws.
 
 Similar to `spawn()`, starting the given sender involves a dynamic allocation of some state. `spawn_future()` chooses
 an _Allocator_ for this allocation in the same way `spawn()` does: use the result of `get_allocator(env)` if that is a
@@ -1323,43 +1325,44 @@ Compared to `spawn()`, the dynamically allocated state is more complicated becau
 result of the given sender, however it eventually completes, and synchronization facilities for resolving the race
 between the given sender's production of its result and the returned sender's consumption or abandonment of that result.
 
-Unlike `spawn()`, `spawn_future()` returns a future-sender rather than `void`. The returned sender, `fs`, is a handle to
-the spawned work that can be used to consume or abandon the result of that work. The completion signatures of `fs`
-include `set_stopped()` and all the completion signatures of the spawned sender. When `fs` is connected and started, it
-waits for the spawned sender to complete and then completes itself with the spawned sender's result.
+Unlike `spawn()`, `spawn_future()` returns a sender rather than `void`. The returned sender, `fs`, is a handle to the
+spawned work that can be used to consume or abandon the result of that work. The completion signatures of `fs` include
+`set_stopped()` and all the completion signatures of the spawned sender. When `fs` is connected and started, it waits
+for the spawned sender to complete and then completes itself with the spawned sender's result.
 
-The receiver, `fr`, that is connected to the given sender responds to `get_env(fr)` with an instance of
-`@@_future-env_@@<Env>`, `fenv`. The result of `get_allocator(fenv)` is a copy of the _Allocator_ used to allocate the
-dynamically allocated state. The result of `get_stop_token(fenv)` is a stop token that will be "triggered" (i.e. signal
-that stop is requested) when:
+`spawn_future(snd, token, env)` proceeds with the following steps in the following order:
 
-- the returned _`future-sender`_ is dropped;
-- the returned _`future-sender`_ receives a stop request; or
-- the stop token returned from `get_stop_token(env)` is triggered if `get_stop_token(env)` is a valid expression.
-
-For all other queries, `Q`, the result of `Q(fenv)` is `Q(env)`.
-
-`spawn_future()` proceeds with the following steps in the following order:
-
-1. storage for the spawned sender's state is dynamically allocated by the _Allocator_ chosen as described above
-2. the state for the spawned sender is constructed in the allocated storage
-   - a subset of this state is an _`operation-state`_ created by connecting the result of
-     `token.wrap(forward<Sender>(sender))` with a receiver
-   - the last field to be initialized in the dynamically allocated state is an async scope association that is
-     initialized with the result of `token.try_associate()`
-     - if the resulting association is engaged then
-       - the _`operation-state`_ within the allocated state is started; and
-       - a _`future-sender`_ is returned that, when connected and started, will complete with the result of the
-         eagerly-started work
-     - otherwise
-       - the dynamically-allocated state is destroyed and deallocated; and
-       - a _`future-sender`_ is returned that will complete with `set_stopped()`
+1. An allocator, `alloc`, is chosen as described above.
+2. A stop token, `stok`, is chosen as follows:
+   - if `get_stop_token(env)` is a well-defined then `stok` is a stop token that receives stop requests sent by the
+     returned future _and_ any stop requests received by the stop token returned from `get_stop_token(env)`;
+   - otherwise, `stok` is a stop token that receives stop requests sent by the returned future.
+3. An environment, `senv`, is chosen as follows:
+   - if `alloc` is `get_allocator(env)` then `senv` is `@_JOIN-ENV_@(env, @_MAKE-ENV_@(get_stop_token, stok))`;
+   - otherwise, if `alloc` is `get_allocator(get_env(token.wrap(snd)))` then `senv` is
+     `@_JOIN-ENV_@(env, @_MAKE-ENV_@(get_allocator, alloc), @_MAKE-ENV_@(get_stop_token, stok))`;
+   - otherwise, `senv` is `@_JOIN-ENV_@(env, @_MAKE-ENV(get_stop_token, stok))`.
+4. Storage for the spawned sender's state is dynamically allocated using `alloc`; the address of this storage is known
+   as `op`.
+5. The state for the spawned sender is constructed in the allocated storage
+   - A subset of this state is an _`operation-state`_ created with the following expression:
+     ```cpp
+     connect(
+         @_write-env_@(token.wrap(snd), senv),
+         @_spawn-future-receiver_@<@_completion-signatures-of_@<Sender>>{op}));
+     ```
+   - The last field to be initialized in the dynamically allocated state is an async scope association that is
+     initialized with the result of `token.try_associate()`.
+     - If the resulting association is engaged then the _`operation-state`_ within the allocated state is started.
+     - Otherwise the dynamically-allocated state is marked as having completed with `set_stopped()`.
+6. A sender is returned that, when connected and started, will complete with the result of the eagerly-started work.
 
 Any exceptions thrown during the execution of `spawn_future()` are allowed to escape; nevertheless, `spawn_future()`
 provides the Strong Exception Guarantee.
 
-Given a _`future-sender`_, `fs`, if `fs` is destroyed without being connected, or if it _is_ connected and the resulting
-_`operation-state`_, `fsop`, is destroyed without being started, then the eagerly-started work is "abandoned".
+Given a sender returned from `spawn_future()`, `fs`, if `fs` is destroyed without being connected, or if it _is_
+connected and the resulting _`operation-state`_, `fsop`, is destroyed without being started, then the eagerly-started
+work is "abandoned".
 
 Abandoning the eagerly-started work means:
 
