@@ -1696,31 +1696,34 @@ open, or open-and-joining state; otherwise the scope's state is left unchanged a
 
 ```cpp
 struct counting_scope {
+    struct assoc {
+        assoc() noexcept = default;
+        assoc(const assoc&) noexcept;
+        assoc(assoc&&) noexcept;
+        ~assoc();
+        assoc& operator=(assoc) noexcept;
+
+        explicit operator bool() const noexcept;
+
+    private:
+        counting_scope* @_scope_@{}; // @_exposition-only_@
+    };
+
+    struct token {
+        template <sender Sender>
+        sender auto wrap(Sender&& snd);
+
+        assoc try_associate() const;
+
+    private:
+        counting_scope* scope; // @@_exposition-only_@@
+    };
+
     counting_scope() noexcept;
     ~counting_scope();
 
     // counting_scope is immovable and uncopyable
-    counting_scope(const counting_scope&) = delete;
     counting_scope(counting_scope&&) = delete;
-    counting_scope& operator=(const counting_scope&) = delete;
-    counting_scope& operator=(counting_scope&&) = delete;
-
-    template <sender Sender>
-    struct @@_wrapper-sender_@@; // @@_exposition-only_@@
-
-    struct token {
-        template <sender Sender>
-        @@_wrapper-sender_@@<Sender> wrap(Sender&& snd);
-
-        async_scope_association auto try_associate() const;
-
-    private:
-        friend counting_scope;
-
-        explicit token(counting_scope* s) noexcept; // @@_exposition-only_@@
-
-        counting_scope* scope; // @@_exposition-only_@@
-    };
 
     token get_token() noexcept;
 
@@ -1728,15 +1731,14 @@ struct counting_scope {
 
     void request_stop() noexcept;
 
-    struct @@_join-sender_@@; // @@_exposition-only_@@
-
-    @@_join-sender_@@ join() noexcept;
+    sender auto join() noexcept;
 };
 ```
 
-A `counting_scope` augments a `simple_counting_scope` with a stop source and gives to each of its associated
-_`wrapper-senders`_ a stop token from its stop source. This extension of `simple_counting_scope` allows a
-`counting_scope` to request stop on all of its outstanding operations by requesting stop on its stop source.
+A `counting_scope` behaves like a `simple_counting_scope` augmented with a stop source; the `wrap` method on a
+`counting_scope`'s `token` returns a sender that, when connected and started, produces an _`operation-state`_ that
+receives stop requests from both its receiver and from the `counting_scope`. This extension of `simple_counting_scope`
+allows a `counting_scope` to request stop on all of its outstanding operations by requesting stop on its stop source.
 
 Assuming an exposition-only _`stop_when(sender auto&&, stoppable_token auto)`_ (explained below), `counting_scope`
 behaves as if it were implemented like so:
@@ -1809,7 +1811,7 @@ not.
 counting_scope::token get_token() noexcept;
 ```
 
-Returns a `counting_scope::token` referring to the current scope, as if by invoking `token{this}`.
+Returns a `counting_scope::token` with _`scope`_ set to `this`.
 
 ### `counting_scope::close`
 
@@ -1818,7 +1820,7 @@ void close() noexcept;
 ```
 
 Moves the scope to the closed, unused-and-closed, or closed-and-joining state. After a call to `close()`, all future
-calls to `nest()` that return normally return unassociated senders.
+calls to `try_associate()` return disengaged associations.
 
 ### `counting_scope::request_stop`
 
@@ -1826,8 +1828,9 @@ calls to `nest()` that return normally return unassociated senders.
 void request_stop() noexcept;
 ```
 
-Requests stop on the scope's internal stop source. Since all senders nested within the scope have been given stop tokens
-from this internal stop source, the effect is to send stop requests to all outstanding (and future) nested operations.
+Requests stop on the scope's internal stop source. Since all senders associated with the scope have been given stop
+tokens from this internal stop source, the effect is to send stop requests to all outstanding (and future) nested
+operations.
 
 ### `counting_scope::join`
 
@@ -1837,34 +1840,30 @@ struct @@_join-sender_@@; // @@_exposition-only_@@
 @@_join-sender_@@ join() noexcept;
 ```
 
-Returns a _`join-sender`_ that behaves the same as the result of `simple_counting_scope::join()`. Connecting and
-starting the _`join-sender`_ moves the scope to the open-and-joining or closed-and-joining state; the _`join-sender`_
-completes when the scope's count of outstanding operations drops to zero, at which point the scope moves to the joined
-state.
+Returns a join-sender that behaves the same as the result of `simple_counting_scope::join()`. Connecting and starting
+the join-sender moves the scope to the open-and-joining or closed-and-joining state; the join-sender completes when the
+scope's count of outstanding operations drops to zero, at which point the scope moves to the joined state.
 
 ### `counting_scope::token::wrap`
 
 ```cpp
-template <sender S>
-struct @@_wrapper-sender_@@; // @@_exposition-only_@@
-
 template <sender Sender>
-@@_wrapper-sender_@@<Sender> wrap(Sender&& snd);
+sender auto wrap(Sender&& snd);
 ```
 
-Returns a `@@_wrapper-sender_@@<Sender>`, `osnd`, that behaves in all ways the same as the input sender, `snd`, except
-that, when `osnd` is connected to a receiver, the resulting _`operation-state`_ receives stop requests from _both_ the
-connected receiver _and_ the stop source in the token's `counting_scope`.
+Returns a sender, `osnd`, that behaves in all ways the same as the input sender, `snd`, except that, when `osnd` is
+connected to a receiver, the resulting _`operation-state`_ receives stop requests from _both_ the connected receiver
+_and_ the stop source in the token's `counting_scope`.
 
 ### `counting_scope::token::try_associate`
 
 ```cpp
-async_scope_association auto try_associate() const;
+assoc try_associate() const;
 ```
 
-Returns an `async_scope_association` that is engaged if the token's scope is open, and disengaged if it's closed.
-`try_associate()` behaves as if its `counting_scope` owns a `simple_counting_scope`, `scope`, and the result is
-equivalent to the result of invoking `scope.get_token().try_associate()`.
+Returns an `assoc` that is engaged if the token's scope is open, and disengaged if it's closed. `try_associate()`
+behaves as if its `counting_scope` owns a `simple_counting_scope`, `scope`, and the result is equivalent to the result
+of invoking `scope.get_token().try_associate()`.
 
 ## When to use `counting_scope` vs [@P3296R2]'s `let_async_scope`
 
