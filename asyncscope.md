@@ -961,13 +961,6 @@ struct @@_spawn-receiver_@@ { // @@_exposition-only_@@
     void set_stopped() noexcept;
 };
 
-template <@@_valid-completion-signatures_@@ Sigs>
-struct @@_future-sender_@@; // @@_exposition-only_@@
-
-template <sender Sender, class Env>
-using @@_future-sender-t_@@ = // @@_exposition-only_@@
-    @@_future-sender_@@<completion_signatures_of_t<Sender, @@_future-env_@@<Env>>>;
-
 template <class Assoc>
 concept async_scope_association =
     semiregular<Assoc> &&
@@ -990,20 +983,10 @@ using @@_wrapped-sender-from_@@ = decay_t<decltype(declval<Token&>().wrap(declva
 
 struct nest_t { @_unspecified_@ };
 struct spawn_t { @_unspecified_@ };
-struct spawn_future_T { @_unspecified_@ };
+struct spawn_future_t { @_unspecified_@ };
 
-// nest is a CPO
-// its signature is: sender auto nest(sender auto&&, async_scope_token auto) noexcept(...)
 inline constexpr nest_t nest{};
-
-// spawn is a CPO
-// its signature is: void spawn(sender auto&&, async_scope_token auto, auto = {})
-// the final argument is an environment that defaults to an empty environment
 inline constexpr spawn_t spawn{};
-
-// spawn_future is a CPO
-// its signature is: sender auto spawn_future(sender auto&&, async_scope_token auto, auto = {})
-// the final argument is an environment that defaults to an empty environment
 inline constexpr spawn_future_t spawn_future{};
 
 struct simple_counting_scope {
@@ -1316,42 +1299,34 @@ for (int i = 0; i < 100; i++)
 ## `execution::spawn_future`
 
 ```cpp
-namespace { // @@_exposition-only_@@
+struct spawn_future_t { @_unspecified_@ };
 
-template <class Env>
-struct @@_future-env_@@; // @@_exposition-only_@@
-
-template <@@_valid-completion-signatures_@@ Sigs>
-struct @@_future-sender_@@; // @@_exposition-only_@@
-
-template <sender Sender, class Env>
-using @@_future-sender-t_@@ = // @@_exposition-only_@@
-    @@_future-sender_@@<completion_signatures_of_t<Sender, @@_future-env_@@<Env>>>;
-
-}
-
-template <sender Sender, async_scope_token Token, class Env = empty_env>
-@@_future-sender-t_@@<Sender, Env> spawn_future(Sender&& snd, Token token, Env env = {});
+inline constexpr spawn_future_t spawn_future{};
 ```
 
-Attempts to associate the given sender with the given scope token's scope. On success, the given sender is eagerly
-started and `spawn_future` returns a _`future-sender`_ that provides access to the result of the given sender. On
-failure, either `spawn_future` returns a _`future-sender`_ that unconditionally completes with `set_stopped()` or it
-throws.
+`spawn_future` is a CPO with the following signature:
+```cpp
+template <sender Sender, async_scope_token Token, class Env = empty_env>
+sender auto spawn_future(Sender&& snd, Token token, Env env = {});
+```
+
+`spawn_future` attempts to associate the given sender with the given scope token's scope. On success, the given sender
+is eagerly started and `spawn_future` returns a future-sender that provides access to the result of the given sender. On
+failure, either `spawn_future` returns a future-sender that unconditionally completes with `set_stopped()` or it throws.
 
 Similar to `spawn()`, starting the given sender involves a dynamic allocation of some state. `spawn_future()` chooses
 an _Allocator_ for this allocation in the same way `spawn()` does: use the result of `get_allocator(env)` if that is a
-valid expression, otherwise use the result of `get_allocator(get_env(snd))` if that is a valid expression, otherwise use
-a `std::allocator<>`.
+valid expression, otherwise use the result of `get_allocator(get_env(token.wrap(snd)))` if that is a valid expression,
+otherwise use a `std::allocator<void>`.
 
 Compared to `spawn()`, the dynamically allocated state is more complicated because it must contain storage for the
 result of the given sender, however it eventually completes, and synchronization facilities for resolving the race
 between the given sender's production of its result and the returned sender's consumption or abandonment of that result.
 
-Unlike `spawn()`, `spawn_future()` returns a _`future-sender`_ rather than `void`. The returned sender, `fs`, is a
-handle to the spawned work that can be used to consume or abandon the result of that work. The completion signatures of
-`fs` include `set_stopped()` and all the completion signatures of the spawned sender. When `fs` is connected and
-started, it waits for the spawned sender to complete and then completes itself with the spawned sender's result.
+Unlike `spawn()`, `spawn_future()` returns a future-sender rather than `void`. The returned sender, `fs`, is a handle to
+the spawned work that can be used to consume or abandon the result of that work. The completion signatures of `fs`
+include `set_stopped()` and all the completion signatures of the spawned sender. When `fs` is connected and started, it
+waits for the spawned sender to complete and then completes itself with the spawned sender's result.
 
 The receiver, `fr`, that is connected to the given sender responds to `get_env(fr)` with an instance of
 `@@_future-env_@@<Env>`, `fenv`. The result of `get_allocator(fenv)` is a copy of the _Allocator_ used to allocate the
