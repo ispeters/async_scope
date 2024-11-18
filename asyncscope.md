@@ -1230,50 +1230,52 @@ multi-shot and single-shot otherwise.
 ## `execution::spawn`
 
 ```cpp
-namespace { // @@_exposition-only_@@
-
-template <class Env>
-struct @@_spawn-env_@@; // @@_exposition-only_@@
-
 template <class Env>
 struct @@_spawn-receiver_@@ { // @@_exposition-only_@@
     void set_value() noexcept;
     void set_stopped() noexcept;
-
-    const @@_spawn-env_@@<Env>& get_env() const noexcept;
 };
 
-}
+struct spawn_t { @_unspecified_@ };
 
-template <sender Sender, async_scope_token Token, class Env = empty_env>
-void spawn(Sender&& snd, Token token, Env env = {})
-    requires sender_to<decltype(token.wrap(forward<Sender>(snd))),
-                       @@_spawn-receiver_@@<End>>;
+inline constexpr spawn_t spawn{};
 ```
 
-Attempts to associate the given sender with the given scope token's scope. On success, the given sender is eagerly
-started.  On failure, either the sender is discarded and no further work happens or `spawn()` throws.
+`spawn` is a CPO with the following signature:
+```cpp
+template <sender Sender, async_scope_token Token, class Env = empty_env>
+void spawn(Sender&& snd, Token token, Env env = {});
+```
+
+`spawn` attempts to associate the given sender with the given scope token's scope. On success, the given sender is
+eagerly started.  On failure, either the sender is discarded and no further work happens or `spawn()` throws.
 
 Starting the given sender without waiting for it to finish requires a dynamic allocation of the sender's
 _`operation-state`_. The following algorithm determines which _Allocator_ to use for this allocation:
 
  - If `get_allocator(env)` is valid and returns an _Allocator_ then choose that _Allocator_.
- - Otherwise, if `get_allocator(get_env(snd))` is valid and returns an _Allocator_ then choose that _Allocator_.
- - Otherwise, choose `std::allocator<>`.
+ - Otherwise, if `get_allocator(get_env(token.wrap(snd)))` is valid and returns an _Allocator_ then choose that
+   _Allocator_.
+ - Otherwise, choose `std::allocator<void>`.
 
 `spawn()` proceeds with the following steps in the following order:
 
-1. the type of the object to dynamically allocate is computed, say `op_t`; `op_t` contains
+1. an environment, `senv`, is chosen:
+   - if `get_allocator(env)` is valid then `senv` is `env`;
+   - otherwise, if `get_allocator(get_env(token.wrap(snd)))` is valid then `senv` is the expression
+     `@_JOIN-ENV_@(env, @_MAKE-ENV_@(get_allocator, alloc))`, where `alloc` is the chosen allocator;
+   - otherwise, `senv` is `env`.
+2. the type of the object to dynamically allocate is computed, say `op_t`; `op_t` contains
    - an _`operation-state`_;
    - an allocator of the chosen type; and
    - an association of type `decltype(token.try_associate())`.
-2. an `op_t` is dynamically allocated by the _Allocator_ chosen as described above
-3. the fields of the `op_t` are initialized in the following order:
+3. an `op_t` is dynamically allocated by the _Allocator_ chosen as described above
+4. the fields of the `op_t` are initialized in the following order:
    a. the _`operation-state`_ within the allocated `op_t` is initialized with the result of
-      `connect(token.wrap(forward<Sender>(sender)), @@_spawn-receiver_@@{...})`;
+      `connect(@_write-env_@(token.wrap(std::forward<Sender>(snd)), @@_spawn-receiver_@@{...}, senv))`;
    b. the allocator is initialized with a copy of the allocator used to allocate the `op_t`; and
    c. the association is initialized with the result of `token.try_associate()`.
-4. if the association in the `op_t` is engaged then the _`operation-state`_ is started; otherwise, the `op_t` is
+5. if the association in the `op_t` is engaged then the _`operation-state`_ is started; otherwise, the `op_t` is
    destroyed and deallocated.
 
 Any exceptions thrown during the execution of `spawn()` are allowed to escape; nevertheless, `spawn()` provides the
@@ -1289,10 +1291,6 @@ Upon completion of the _`operation-state`_, the _`spawn-receiver`_ performs the 
 
 Performing step 5 last ensures that all possible references to resources protected by the scope, including possibly the
 allocator, are no longer in use before dissociating from the scope.
-
-A _`spawn-receiver`_, `sr`, responds to `get_env(sr)` with an instance of a `@@_spawn-env_@@<Env>`, `senv`. The result
-of `get_allocator(senv)` is a copy of the _Allocator_ used to allocate the _`operation-state`_. For all other queries,
-`Q`, the result of `Q(senv)` is `Q(env)`.
 
 This is similar to `start_detached()` from [@P2300R7], but the scope may observe and participate in the lifetime of the
 work described by the sender. The `simple_counting_scope` and `counting_scope` described in this paper use this
