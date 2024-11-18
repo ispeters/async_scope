@@ -2159,23 +2159,16 @@ the declaration of `run_loop`:
 >     concept async_scope_token = @_see below_@;
 >
 >   // [exec.scope.expos]
->   template <class Env>
->     struct @_spawn-env_@; // @_exposition-only_@
+>   struct @_spawn-state-base_@; // exposition-only
 >
 >   template <class Env>
 >     struct @_spawn-receiver_@; // @_exposition-only_@
 >
->   template <class Env>
->     struct @_future-env_@; // @_exposition-only_@
->
->   template <@_valid-completion-signatures_@ Sig>
->     struct @_future-sender_@; // @_exposition-only_@
->
->   template <sender Sender, class Env>
->     using @_future-sender-t_@; // @_exposition-only_@
+>   template<class Alloc, async_scope_token Token, sender Sender>
+>     struct @_spawn-state_@; // @_exposition-only_@
 >
 >   template <async_scope_token Token>
->       using @_association-from_@ = decltype(declval<Token&>().try_associate()); // @_exposition-only_@
+>     using @_association-from_@ = decltype(declval<Token&>().try_associate()); // @_exposition-only_@
 >
 >   template <async_scope_token Token, sender Sender>
 >     using @_wrapped-sender-from_@ = decay_t<decltype(declval<Token&>().wrap(declval<Sender>()))>; // @_exposition-only_@
@@ -2209,9 +2202,8 @@ Add the following as a new subsection immediately after __[exec.utils.tfxcmplsig
 __Scope concepts [exec.scope.concepts]__
 
 [1]{.pnum} The `async_scope_association<Assoc>` concept defines the requirements on an object of type `Assoc` that
-represents a possible assocation with an async scope object.
-The `async_scope_token<Token>` concept defines the requirements on an object of type `Token` that can
-be used to create associations between senders and an async scope.
+represents a possible assocation with an async scope object. The `async_scope_token<Token>` concept defines the
+requirements on an object of type `Token` that can be used to create associations between senders and an async scope.
 ```cpp
 namespace std::execution {
 
@@ -2258,30 +2250,30 @@ namespace std::execution {
 
 template <async_scope_token Token, sender Sender>
 struct @_nest-data_@ {
-  using @_wrap-sender_@ = @_wrapped-sender-from_@<Token, Sender>;
-  using @_association_@ = @_association-from_@<Token>;
+    using @_wrap-sender_@ = @_wrapped-sender-from_@<Token, Sender>;
+    using @_association_@ = @_association-from_@<Token>;
 
-  @_association_@ assoc;
-  optional<@_wrap-sender_@> sndr;
+    @_association_@ assoc;
+    optional<@_wrap-sender_@> sndr;
 
-  @_nest-data_@(Token t, Sender&& s)
-    : sndr(t.wrap(std::forward<Sender>(s))) {
-    assoc = t.try_associate();
+    @_nest-data_@(Token t, Sender&& s)
+        : sndr(t.wrap(std::forward<Sender>(s))) {
+          assoc = t.try_associate();
 
-    if (!assoc) {
-      sndr.reset();
+        if (!assoc) {
+            sndr.reset();
+        }
     }
-  }
 
-  @_nest-data_@(const @_nest-data_@& other) noexcept(is_nothrow_copy_constructible_v<@_wrap-sender_@>)
-    requires copy_constructible<@_wrap-sender_@>
-    : assoc(other.assoc) {
-    if (assoc) {
-      sndr = other.sndr;
+    @_nest-data_@(const @_nest-data_@& other) noexcept(is_nothrow_copy_constructible_v<@_wrap-sender_@>)
+        requires copy_constructible<@_wrap-sender_@>
+        : assoc(other.assoc) {
+        if (assoc) {
+            sndr = other.sndr;
+        }
     }
-  }
 
-  @_nest-data_@(@_nest-data_@&& other) noexcept(is_nothrow_move_constructible_v<@_wrap-sender_@>) = default;
+    @_nest-data_@(@_nest-data_@&& other) noexcept(is_nothrow_move_constructible_v<@_wrap-sender_@>) = default;
 };
 
 template <async_scope_token Token, sender Sender>
@@ -2307,12 +2299,12 @@ follows:
 
 ```
 namespace std::execution {
-  template <>
-  struct @_impls-for_@<nest_t> : @_default-impls_@ {
-    static constexpr auto @_get-state_@ = @_see below_@;
+    template <>
+    struct @_impls-for_@<nest_t> : @_default-impls_@ {
+        static constexpr auto @_get-state_@ = @_see below_@;
 
-    static constexpr auto @_start_@ = @_see below_@;
-  };
+        static constexpr auto @_start_@ = @_see below_@;
+    };
 }
 ```
 
@@ -2320,56 +2312,56 @@ namespace std::execution {
 following lambda:
 ```cpp
 []<class Sndr, class Rcvr>(Sndr&& sndr, Rcvr& rcvr) noexcept(@_see below_@) {
-  auto& [_, data, ...child] = sndr;
+    auto& [_, data, ...child] = sndr;
 
-  static_assert(sizeof...(child) == 0);
+    static_assert(sizeof...(child) == 0);
 
-  struct op_state {
-    @_association_@ assoc;
-    union {
-      Rcvr& rcvr;
-      op_t op;
+    struct op_state {
+        @_association_@ assoc;
+        union {
+            Rcvr& rcvr;
+            op_t op;
+        };
+
+        op_state(Rcvr& rcvr) noexcept
+            : rcvr(rcvr) {}
+
+        op_state(@_association_@ assoc, @_wrap-sender_@&& sndr, Rcvr& rcvr)
+            : assoc(std::move(assoc)),
+              op(connect(std::move(sndr), std::move(rcvr))) {}
+
+        op_state(@_association_@ assoc, const @_wrap-sender_@& sndr, Rcvr& rcvr)
+            : assoc(std::move(assoc)),
+              rcvr(rcvr) {
+            if (assoc) {
+                new (&op) op_t(connect(sndr, std::move(rcvr)));
+            }
+        }
+
+        op_state(op_state&&) = delete;
+
+        ~op_state() {
+            if (assoc) {
+                op.~op_t();
+            }
+        }
+
+        void start() {
+            if (assoc) {
+                op.start();
+            }
+            else {
+                set_stopped(std::move(rcvr));
+            }
+        }
     };
 
-    op_state(Rcvr& rcvr) noexcept
-      : rcvr(rcvr) {}
-
-    op_state(@_association_@ assoc, @_wrap-sender_@&& sndr, Rcvr& rcvr)
-      : assoc(std::move(assoc)),
-        op(connect(std::move(sndr), std::move(rcvr))) {}
-
-    op_state(@_association_@ assoc, const @_wrap-sender_@& sndr, Rcvr& rcvr)
-      : assoc(std::move(assoc)),
-        rcvr(rcvr) {
-      if (assoc) {
-        new (&op) op_t(connect(sndr, std::move(rcvr)));
-      }
+    if (data.assoc) {
+        return op_state{std::forward_like<Sndr>(data.assoc), std::forward_like<Sndr>(data.sndr.value()), rcvr};
     }
-
-    op_state(op_state&&) = delete;
-
-    ~op_state() {
-      if (assoc) {
-        op.~op_t();
-      }
+    else {
+        return op_state{rcvr};
     }
-
-    void start() {
-      if (assoc) {
-        op.start();
-      }
-      else {
-        set_stopped(std::move(rcvr));
-      }
-    }
-  };
-
-  if (data.assoc) {
-    return op_state{std::forward_like<Sndr>(data.assoc), std::forward_like<Sndr>(data.sndr.value()), rcvr};
-  }
-  else {
-    return op_state{rcvr};
-  }
 }
 ```
 
@@ -2377,7 +2369,7 @@ following lambda:
 following lambda:
 ```cpp
 [](auto& state, auto&) noexcept -> void {
-  state.start();
+    state.start();
 }
 ```
 
@@ -2393,26 +2385,32 @@ Add the following as a new subsection immediately after __[exec.nest]__:
 ::: add
 __`std::execution::spawn` [exec.scope.spawn]__
 
-[1]{.pnum} `spawn` attempts to associate the given input sender with the given token's async scope and, on success, eagerly starts the input sender.
+[1]{.pnum} `spawn` attempts to associate the given input sender with the given token's async scope and, on success,
+eagerly starts the input sender.
 
-[2]{.pnum} The name `spawn` denotes a customization point object. For subexpressions `sndr`, `token`, and `env`, let `Sndr` be
-`decltype((sndr))`, let `Token` be `decltype((token))`, and let `Env` be `decltype((env))`. If `sender<Sndr>` or `async_scope_token<Token>` is false,
-the expression `spawn(sndr, token, env)` is ill-formed.
+[2]{.pnum} The name `spawn` denotes a customization point object. For subexpressions `sndr`, `token`, and `env`, let
+`Sndr` be `decltype((sndr))`, let `Token` be `decltype((token))`, and let `Env` be `decltype((env))`. If `sender<Sndr>`
+or `async_scope_token<Token>` is false, the expression `spawn(sndr, token, env)` is ill-formed.
 
-[3]{.pnum} For the expression `spawn(sndr, token, env)` let _`new-sender`_ be the expression `token.wrap(sndr)` and let `alloc` and `senv` be defined as follows:
+[3]{.pnum} For the expression `spawn(sndr, token, env)` let _`new-sender`_ be the expression `token.wrap(sndr)` and let
+`alloc` and `senv` be defined as follows:
 
-- if the expression `get_allocator(env)` is well defined, then `alloc` is the result of `get_allocator(env)` and `senv` is the expression `env`,
-- otherwise if the expression `get_allocator(get_env(@_new-sender_@))` is well-defined, then `alloc` is the result of `get_allocator(get_env(@_new-sender_@))`
-  and `senv` is the expression `@_JOIN-ENV_@(env, @_MAKE-ENV_@(get_allocator, alloc))`
+- if the expression `get_allocator(env)` is well defined, then `alloc` is the result of `get_allocator(env)` and `senv`
+  is the expression `env`,
+- otherwise if the expression `get_allocator(get_env(@_new-sender_@))` is well-defined, then `alloc` is the result of
+  `get_allocator(get_env(@_new-sender_@))` and `senv` is the expression
+  `@_JOIN-ENV_@(env, @_MAKE-ENV_@(get_allocator, alloc))`
 - otherwise `alloc` is `std::allocator<void>{}` and `senv` is the expression `env`
 
 [4]{.pnum} Let _`spawn-state-base`_ be an exposition only class defined below:
 
 ```cpp
 namespace std::execution {
+
 struct @_spawn-state-base_@ { // exposition-only
     virtual void @_complete_@() = 0; // exposition-only
 };
+
 }
 ```
 
@@ -2420,11 +2418,13 @@ struct @_spawn-state-base_@ { // exposition-only
 
 ```cpp
 namespace std::execution {
+
 struct @_spawn-receiver_@ { // exposition-only
     @_spawn-state-base_@* state; // exposition-only
     void set_value() && noexcept { state->complete(); }
     void set_stopped() && noexcept { state->complete(); }
 };
+
 }
 ```
 
@@ -2433,29 +2433,33 @@ below:
 
 ```cpp
 namespace std::execution {
+
 template<class Alloc, async_scope_token Token, sender Sender>
 struct @_spawn-state_@ : @_spawn-state-base_@ {
-    using Op = decltype(connect(declval<Sender>(), @_spawn-receiver_@{nullptr}));
+    using @_op-t_@ = decltype(connect(declval<Sender>(), @_spawn-receiver_@{nullptr}));
 
-    @_spawn-state_@(Alloc alloc, Sender sndr, Token token); // see below
+    @_spawn-state_@(Alloc alloc, Sender&& sndr, Token token); // see below
     void @_run_@(); // see below
     void @_complete_@() override; // see below
 
-    private:
-        Alloc alloc;
-        Op op;
-        @_association-from_@<Token> assoc;
+private:
+    using @_alloc-t_@ = typename allocator_traits<Alloc>::template rebind_alloc<@_spawn-state_@>;
+
+    @_alloc-t_@ alloc;
+    @_op-t_@ op;
+    @_association-from_@<Token> assoc;
 };
+
 }
 ```
 
-`@_spawn-state_@(Alloc alloc, Sender sndr, Token token);`
+`@_spawn-state_@(Alloc alloc, Sender&& sndr, Token token);`
 
 [7]{.pnum} _Effects_: Equivalent to:
 
 ```cpp
     this->alloc = alloc;
-    this->op = connect(sndr, @_spawn-receiver_@{this});
+    this->op = connect(std::move(sndr), @_spawn-receiver_@{this});
     this->assoc = token.try_associate();
 ```
 
@@ -2467,7 +2471,7 @@ struct @_spawn-state_@ : @_spawn-state-base_@ {
     if (assoc) {
         op.start()
     } else {
-        complete();
+        @_complete_@();
     }
 ```
 
@@ -2478,8 +2482,36 @@ struct @_spawn-state_@ : @_spawn-state-base_@ {
 ```cpp
     auto assoc = std::move(this->assoc);
     auto alloc = std::move(this->alloc);
-    this->~spawn-state();
-    // TODO: add something for deallocating with alloc
+
+    allocator_traits<@_alloc-t_@>::destroy(alloc, this);
+    allocator_traits<@_alloc-t_@>::deallocate(alloc, this, 1);
+```
+
+[11]{.pnum} Then the expression `spawn(sndr, token)` is expression-equivalent to `spawn(sndr, token, empty_env{})` and
+the expression `spawn(sndr, token, env)` is expression-equivalent to the following:
+```
+    auto makeSender = [&] {
+        return @_write-env_@(token.wrap(std::forward<Sender>(sndr)), senv);
+    };
+
+    using @_sender-t_@ = decltype(makeSender());
+
+    using @_state-t_@ = @_spawn-state_@<decltype(alloc), Token, @_sender-t_@>;
+    using @_alloc-t_@ = typename allocator_traits<decltype(alloc)>::template rebind_alloc<@_state-t_@>;
+    using @_traits-t_@ = allocator_traits<@_alloc-t_@>;
+
+    @_alloc-t_@ stateAlloc{alloc};
+    auto* op = @_traits-t_@::allocate(stateAlloc, 1);
+
+    try {
+        @_traits-t_@::construct(stateAlloc, op, alloc, makeSender(), token);
+    }
+    catch(...) {
+        @_traits-t_@::deallocate(stateAlloc, op, 1);
+        throw;
+    }
+
+    op->@_run_@();
 ```
 :::
 
@@ -2489,7 +2521,7 @@ spec here
 
 ## `execution::simple_counting_scope` and `execution::counting_scope`
 
-Add the following new section imediate after **TODO**:
+Add the following new section immediately after **TODO**:
 
 ::: add
 ### Scopes [exec.scopes]
@@ -2501,86 +2533,78 @@ Add the following new section imediate after **TODO**:
 ```
 class simple_counting_scope {
 public:
-  // [exec.simple.counting.token], token
-  struct token {
-    template <sender Sender>
-    Sender&& wrap(Sender&& snd) const noexcept;
-    assoc try_associate() const;
+    // [exec.simple.counting.token], token
+    struct token {
+        template <sender Sender>
+        Sender&& wrap(Sender&& snd) const noexcept;
+        assoc try_associate() const;
 
-  private:
-    simple_counting_scope* @_scope_@; // @_exposition-only_@
-  };
+    private:
+        simple_counting_scope* @_scope_@; // @_exposition-only_@
+    };
 
-  // [exec.simple.counting.assoc], assoc
-  struct assoc {
-    assoc() noexcept = default;
-    assoc(const assoc& other) noexcept;
-    assoc(assoc&& other) noexcept;
-    ~assoc();
-    assoc& operator=(assoc rhs) noexcept;
+    // [exec.simple.counting.assoc], assoc
+    struct assoc {
+        assoc() noexcept = default;
+        assoc(const assoc& other) noexcept;
+        assoc(assoc&& other) noexcept;
+        ~assoc();
+        assoc& operator=(assoc rhs) noexcept;
 
-    explicit operator bool() const noexcept;
+        explicit operator bool() const noexcept;
 
-  private:
-    simple_counting_scope* @_scope_@{}; // @_exposition-only_@
-  };
+    private:
+        simple_counting_scope* @_scope_@{}; // @_exposition-only_@
+    };
 
-  struct @_join-t_@; // @_exposition-only_@
+    struct @_join-t_@; // @_exposition-only_@
 
-  enum @_state-type_@ { // @_exposition-only_@
-    @_unused_@, // @_exposition-only_@
-    @_open_@, // @_exposition-only_@
-    @_close_@, // @_exposition-only_@
-    @_open-and-joining_@, // @_exposition-only_@
-    @_closed-and-joining_@, // @_exposition-only_@
-    @_unused-and-closed_@, // @_exposition-only_@
-    @_joined_@, // @_exposition-only_@
-  };
+    enum @_state-type_@ { // @_exposition-only_@
+        @_unused_@, // @_exposition-only_@
+        @_open_@, // @_exposition-only_@
+        @_close_@, // @_exposition-only_@
+        @_open-and-joining_@, // @_exposition-only_@
+        @_closed-and-joining_@, // @_exposition-only_@
+        @_unused-and-closed_@, // @_exposition-only_@
+        @_joined_@, // @_exposition-only_@
+    };
 
-  // [exec.simple.counting.ctor], constructor and destructor
-  simple_counting_scope() noexcept;
-  simple_counting_scope(simple_counting_scope&&) = delete;
-  ~simple_counting_scope();
+    // [exec.simple.counting.ctor], constructor and destructor
+    simple_counting_scope() noexcept;
+    simple_counting_scope(simple_counting_scope&&) = delete;
+    ~simple_counting_scope();
 
-  // [exec.simple.counting.mem], members
-  token get_token() noexcept;
-  void close() noexcept;
-  auto join() noexcept;
+    // [exec.simple.counting.mem], members
+    token get_token() noexcept;
+    void close() noexcept;
+    auto join() noexcept;
 
 private:
-  size_t @_count_@; // @_exposition-only_@
-  @_state-type_@ @_state_@; // @_exposition-only_@
+    size_t @_count_@; // @_exposition-only_@
+    @_state-type_@ @_state_@; // @_exposition-only_@
 };
 ```
 
-[1]{.pnum} A `simple_counting_scope` maintains a count of outstanding
-    operations.  Let `s` be an object of type `simple_counting_scope`,
-    `t` be an object of type `simple_counting_scope::token` obtained from `s.get_token()`,
-    let `j` be a sender obtained from `s.join()`, and let `o` be
-    an operation state obtained from connecting `j` to a receiver.
-    During its life-time `s` goes through different states which
-    govern what operations are allowed and the result of these
-    operations:
+[1]{.pnum} A `simple_counting_scope` maintains a count of outstanding operations.  Let `s` be an object of type
+`simple_counting_scope`, `t` be an object of type `simple_counting_scope::token` obtained from `s.get_token()`, let `j`
+be a sender obtained from `s.join()`, and let `o` be an operation state obtained from connecting `j` to a receiver.
+During its life-time `s` goes through different states which govern what operations are allowed and the result of these
+operations:
 
-- [1.1]{.pnum} `@_unused_@`: a newly constructed object starts in the
-    `@_unused_@` state.
-- [1.2]{.pnum} `@_open_@`: when `t.try_associate()` is called while
-    `s` is in `@_unused_@` state, `s` moves to the `@_open_@` state.
-- [1.3]{.pnum} `@_open-and-joining_@`: when the operation state `o` is
-    started while the `s` is in `@_unused_@` or `@_open_@` state, `s`
-    moves to the `@_open-and-joining_@` state.
-- [1.4]{.pnum} `@_closed_@`: when `s.close()` is called while `s` is
-    in `open` state, `s` moves to the `@_closed_@` state.
-- [1.5]{.pnum} `@_unused-and-closed_@`: when `s.close()` is called while
-    `s` is in `@_unused_@` state, `s` moves to the `@_unused-and-closed_@`
-    state.
-- [1.6]{.pnum} `@_closed-and-joining_@`: when `s.close()` is called while
-    `s` is in `@_open-and-joining_@` state or the operation state `o` is
-    started while `s` is in `@_closed_@` or `@_unused-and-closed_@` state, `s`
-    moves to the `@_closed-and-joining_@` state.
-- [1.7]{.pnum} `@_joined_@`: when the count of associated objects drops to
-    zero while `s` is in `@_open-and-joining_@` or `@_closed-and-joining_@`
-    state, `s` moves to the `@_joined_@` state.
+- [1.1]{.pnum} `@_unused_@`: a newly constructed object starts in the `@_unused_@` state.
+- [1.2]{.pnum} `@_open_@`: when `t.try_associate()` is called while `s` is in `@_unused_@` state, `s` moves to the
+  `@_open_@` state.
+- [1.3]{.pnum} `@_open-and-joining_@`: when the operation state `o` is started while the `s` is in `@_unused_@` or
+  `@_open_@` state, `s` moves to the `@_open-and-joining_@` state.
+- [1.4]{.pnum} `@_closed_@`: when `s.close()` is called while `s` is in `open` state, `s` moves to the `@_closed_@`
+  state.
+- [1.5]{.pnum} `@_unused-and-closed_@`: when `s.close()` is called while `s` is in `@_unused_@` state, `s` moves to the
+  `@_unused-and-closed_@` state.
+- [1.6]{.pnum} `@_closed-and-joining_@`: when `s.close()` is called while `s` is in `@_open-and-joining_@` state or the
+  operation state `o` is started while `s` is in `@_closed_@` or `@_unused-and-closed_@` state, `s` moves to the
+  `@_closed-and-joining_@` state.
+- [1.7]{.pnum} `@_joined_@`: when the count of associated objects drops to zero while `s` is in `@_open-and-joining_@`
+  or `@_closed-and-joining_@` state, `s` moves to the `@_joined_@` state.
 
 ##### Constructor and Destructor [exec.simple.counting.ctor]
 
@@ -2590,16 +2614,14 @@ private:
 
 `~simple_counting_scope();`
 
-[2]{.pnum} _Effects:_ If `@_state_@` is not one of `@_joined_@`, `@_unused_@`,
-    or `@_unused-and-closed_@`, invokes `terminate` ([except.terminate]{.sref}).
-    Otherwise, has no effects.
+[2]{.pnum} _Effects:_ If `@_state_@` is not one of `@_joined_@`, `@_unused_@`, or `@_unused-and-closed_@`, invokes
+`terminate` ([except.terminate]{.sref}). Otherwise, has no effects.
 
 ##### Members [exec.simple.counting.mem]
 
 `token get_token() noexcept;`
 
-[1]{.pnum} _Returns:_ An object `t` of type `simple_counting_scope::token` such that
-    `t.@_scope_@ == this` is `true`.
+[1]{.pnum} _Returns:_ An object `t` of type `simple_counting_scope::token` such that `t.@_scope_@ == this` is `true`.
 
 `void close() noexcept;`
 
@@ -2609,18 +2631,15 @@ private:
 - [2.2]{.pnum} `@_open_@` changes `@_state_@` to `@_closed_@`;
 - [2.3]{.pnum} `@_open-and-joining_@` changes `@_state_@` to `@_closed-and-joining_@`;
 
-[3]{.pnum} Any call to `t.try_associate()` for a `token` object `t`
-    referring to a `simple_counting_scope` object `s` which is
-    sequenced after a call to `s.close()` returns a disengaged
-    association ([exec.simple.counting.assoc], p1).
+[3]{.pnum} Any call to `t.try_associate()` for a `token` object `t` referring to a `simple_counting_scope` object `s`
+which is sequenced after a call to `s.close()` returns a disengaged association ([exec.simple.counting.assoc], p1).
 
 `sender auto join() noexcept;`
 
 [4]{.pnum} _Returns:_ `@_make_sender_@(@_join-t_@, this)`
 
-[5]{.pnum} The exposition-only class template `@_impls-for_@`
-    ([exec.snd.general]{.sref}) is specialized for `@_join-t_@`
-    as follows:
+[5]{.pnum} The exposition-only class template `@_impls-for_@` ([exec.snd.general]{.sref}) is specialized for
+`@_join-t_@` as follows:
 
 ```
 template <>
@@ -2647,27 +2666,26 @@ struct @_impls-for_@<@_join-t_@>: @_default-impls_@ {
     };
 
     static constexpr auto @_get-state_@ =
-      []<class Receiver>(auto&& sender, Receiver& receiver) {
-        auto[_, self] = sender;
-        return @_state_@<Receiver>(self, receiver);
-      };
+        []<class Receiver>(auto&& sender, Receiver& receiver) {
+            auto[_, self] = sender;
+            return @_state_@<Receiver>(self, receiver);
+        };
+
     static constexpr auto @_start_@ =
         [](auto& s, auto&) { @_see-below_@; };
 };
 ```
 
-[7]{.pnum} In the function object used to initialize
-`@_impls-for_@<@_join-t_@>::@_start_@` let state be `s.@_scope_@->@_state_@`.
-If state is
+[7]{.pnum} In the function object used to initialize `@_impls-for_@<@_join-t_@>::@_start_@` let state be
+`s.@_scope_@->@_state_@`. If state is
 
-- [7.1]{.pnum} `@_unused_@`, `@_unused-and-closed_@`, or `@_joined_@`,
-`s.@_complete-inline_@()` is invoked and changes the state of `*s.@_scope_@` to `@_joined_@`;
+- [7.1]{.pnum} `@_unused_@`, `@_unused-and-closed_@`, or `@_joined_@`, `s.@_complete-inline_@()` is invoked and changes
+  the state of `*s.@_scope_@` to `@_joined_@`;
 - [7.2]{.pnum} `@_open_@`, changes the state of `*s.@_scope_@` to `@_open-and-joining_@`;
 - [7.3]{.pnum} `@_closed_@`, changes the state of `*s.@_scope_@` to `@_closed-and-joining_@`;
 
-[8]{.pnum} If `s.@_complete-inline_@()` was not invoked, registers s with
-`*s.@_scope_@` to have `s.@_complete_@()` invoked when `s.@_scope_@->@_count_@` becomes
-zero.
+[8]{.pnum} If `s.@_complete-inline_@()` was not invoked, registers s with `*s.@_scope_@` to have `s.@_complete_@()`
+invoked when `s.@_scope_@->@_count_@` becomes zero.
 
 ##### Token [exec.simple.counting.token]
 
@@ -2678,43 +2696,37 @@ zero.
 
 `assoc try_associate() const;`
 
-[2]{.pnum} _Effects:_ A invocation of this member function has the
-    following atomic effect:
+[2]{.pnum} _Effects:_ A invocation of this member function has the following atomic effect:
 
-- [2.1]{.pnum} If `@_scope_@->@_state_@` is not one of `@_unused_@`,
-    `@_open_@`, or `@_open-and-joining_@` the operation has no effect;
-- [2.2]{.pnum} otherwise increment `@_scope_@->@_count_@` and
-    if `@_scope_@->@_state_@ == @_unused_@` change this value to `@_open_@`.
+- [2.1]{.pnum} If `@_scope_@->@_state_@` is not one of `@_unused_@`, `@_open_@`, or `@_open-and-joining_@` the operation
+  has no effect;
+- [2.2]{.pnum} otherwise increment `@_scope_@->@_count_@` and if `@_scope_@->@_state_@ == @_unused_@` change this value
+  to `@_open_@`.
 
-[3]{.pnum} _Returns:_ An engaged `assoc` object `a` with
-    `a.@_scope_@ == @_scope_@` if `@_scope_@->@_count_@` was
-    incremented, a disengaged `assoc` object otherwise.
+[3]{.pnum} _Returns:_ An engaged `assoc` object `a` with `a.@_scope_@ == @_scope_@` if `@_scope_@->@_count_@` was
+incremented, a disengaged `assoc` object otherwise.
 
 ##### Assoc [exec.simple.counting.assoc]
 
-[1]{.pnum} An object `a` of type `assoc` is _disengaged_ if
-    `a.@_scope_@ == nullptr` is `true` and _engaged_ otherwise.
+[1]{.pnum} An object `a` of type `assoc` is _disengaged_ if `a.@_scope_@ == nullptr` is `true` and _engaged_ otherwise.
 
 `assoc(const assoc& other) noexcept;`
 
-[2]{.pnum} _Effects_: If `other` is engaged evaluates
-    `*this = other.@_scope_@->get_token().try_associate()`.
+[2]{.pnum} _Effects_: If `other` is engaged evaluates `*this = other.@_scope_@->get_token().try_associate()`.
 
 `assoc(assoc&& other) noexcept;`
 
-[3]{.pnum} _Effects_: Initializes `@_scope_@` with
-    `exchange(other.@_scope_@, nullptr)`.
+[3]{.pnum} _Effects_: Initializes `@_scope_@` with `exchange(other.@_scope_@, nullptr)`.
 
 `~assoc();`
 
-[4]{.pnum} _Effects_: If the object is disengaged, does nothing;
-    otherwise decrements `@_scope_@->@_count_@`. If `@_scope_@->@_count_@`
-    is zero after decrementing and `@_scope_@->@_state_@` is `@_open-and-joining_@`
-    or `@_closed-and-joining_@`, changes the state of `*@_scope_@` to `@_joined_@`
-    and calls `@_complete_@()` on all objects registered with `*@_scope_@`.
+[4]{.pnum} _Effects_: If the object is disengaged, does nothing; otherwise decrements `@_scope_@->@_count_@`. If
+`@_scope_@->@_count_@` is zero after decrementing and `@_scope_@->@_state_@` is `@_open-and-joining_@` or
+`@_closed-and-joining_@`, changes the state of `*@_scope_@` to `@_joined_@` and calls `@_complete_@()` on all objects
+registered with `*@_scope_@`.
 
-[5]{.pnum} [_Note:_ Calling `@_complete_@()` on any registered object
-    may cause `*@_scope_@` to get destroyed.  _--End-Note_]
+[5]{.pnum} [_Note:_ Calling `@_complete_@()` on any registered object may cause `*@_scope_@` to get destroyed.
+_--End-Note_]
 
 `assoc& operator=(assoc rhs) noexcept;`
 
@@ -2734,88 +2746,79 @@ zero.
 ```
 class counting_scope {
 public:
-  // [exec.counting.token], token
-  struct token {
-    template <sender Sender>
-    sender auto wrap(Sender&& snd) const noexcept;
-    assoc try_associate() const;
+    // [exec.counting.token], token
+    struct token {
+        template <sender Sender>
+        sender auto wrap(Sender&& snd) const noexcept;
+        assoc try_associate() const;
 
-  private:
-    counting_scope* @_scope_@; // @_exposition-only_@
-  };
+    private:
+        counting_scope* @_scope_@; // @_exposition-only_@
+    };
 
-  // [exec.counting.assoc], assoc
-  struct assoc {
-    assoc() noexcept = default;
-    assoc(const assoc& other) noexcept;
-    assoc(assoc&& other) noexcept;
-    ~assoc();
-    assoc& operator=(assoc rhs) noexcept;
+    // [exec.counting.assoc], assoc
+    struct assoc {
+        assoc() noexcept = default;
+        assoc(const assoc& other) noexcept;
+        assoc(assoc&& other) noexcept;
+        ~assoc();
+        assoc& operator=(assoc rhs) noexcept;
 
-    explicit operator bool() const noexcept;
+        explicit operator bool() const noexcept;
 
-  private:
-    counting_scope* @_scope_@{}; // @_exposition-only_@
-  };
+    private:
+        counting_scope* @_scope_@{}; // @_exposition-only_@
+    };
 
-  struct @_join-t_@; // @_exposition-only_@
+    struct @_join-t_@; // @_exposition-only_@
 
-  enum @_state-type_@ { // @_exposition-only_@
-    @_unused_@, // @_exposition-only_@
-    @_open_@, // @_exposition-only_@
-    @_close_@, // @_exposition-only_@
-    @_open-and-joining_@, // @_exposition-only_@
-    @_closed-and-joining_@, // @_exposition-only_@
-    @_unused-and-closed_@, // @_exposition-only_@
-    @_joined_@, // @_exposition-only_@
-  };
+    enum @_state-type_@ { // @_exposition-only_@
+        @_unused_@, // @_exposition-only_@
+        @_open_@, // @_exposition-only_@
+        @_close_@, // @_exposition-only_@
+        @_open-and-joining_@, // @_exposition-only_@
+        @_closed-and-joining_@, // @_exposition-only_@
+        @_unused-and-closed_@, // @_exposition-only_@
+        @_joined_@, // @_exposition-only_@
+    };
 
-  // [exec.counting.ctor], constructor and destructor
-  counting_scope() noexcept;
-  counting_scope(counting_scope&&) = delete;
-  ~counting_scope();
+    // [exec.counting.ctor], constructor and destructor
+    counting_scope() noexcept;
+    counting_scope(counting_scope&&) = delete;
+    ~counting_scope();
 
-  // [exec.counting.mem], members
-  token get_token() noexcept;
-  void close() noexcept;
-  auto join() noexcept;
-  void request_stop() noexcept;
+    // [exec.counting.mem], members
+    token get_token() noexcept;
+    void close() noexcept;
+    auto join() noexcept;
+    void request_stop() noexcept;
 
 private:
-  size_t @_count_@; // @_exposition-only_@
-  @_state-type_@ @_state_@; // @_exposition-only_@
-  inplace_stop_source @_s_source_@ // @_exposition-only_@
+    size_t @_count_@; // @_exposition-only_@
+    @_state-type_@ @_state_@; // @_exposition-only_@
+    inplace_stop_source @_s_source_@ // @_exposition-only_@
 };
 ```
 
-[1]{.pnum} A `counting_scope` maintains a count of outstanding
-    operations.  Let `s` be an object of type `counting_scope`,
-    `t` be an object of type `counting_scope::token` obtained from `s.get_token()`,
-    let `j` be a sender obtained from `s.join()`, and let `o` be
-    an operation state obtained from connecting `j` to a receiver.
-    During its life-time `s` goes through different states which
-    govern what operations are allowed and the result of these
-    operations:
+[1]{.pnum} A `counting_scope` maintains a count of outstanding operations.  Let `s` be an object of type
+`counting_scope`, `t` be an object of type `counting_scope::token` obtained from `s.get_token()`, let `j` be a sender
+obtained from `s.join()`, and let `o` be an operation state obtained from connecting `j` to a receiver.  During its
+life-time `s` goes through different states which govern what operations are allowed and the result of these operations:
 
-- [1.1]{.pnum} `@_unused_@`: a newly constructed object starts in the
-    `@_unused_@` state.
-- [1.2]{.pnum} `@_open_@`: when `t.try_associate()` is called while
-    `s` is in `@_unused_@` state, `s` moves to the `@_open_@` state.
-- [1.3]{.pnum} `@_open-and-joining_@`: when the operation state `o` is
-    started while the `s` is in `@_unused_@` or `@_open_@` state, `s`
-    moves to the `@_open-and-joining_@` state.
-- [1.4]{.pnum} `@_closed_@`: when `s.close()` is called while `s` is
-    in `open` state, `s` moves to the `@_closed_@` state.
-- [1.5]{.pnum} `@_unused-and-closed_@`: when `s.close()` is called while
-    `s` is in `@_unused_@` state, `s` moves to the `@_unused-and-closed_@`
-    state.
-- [1.6]{.pnum} `@_closed-and-joining_@`: when `s.close()` is called while
-    `s` is in `@_open-and-joining_@` state or the operation state `o` is
-    started while `s` is in `@_closed_@` or `@_unused-and-closed_@` state, `s`
-    moves to the `@_closed-and-joining_@` state.
-- [1.7]{.pnum} `@_joined_@`: when the count of associated objects drops to
-    zero while `s` is in `@_open-and-joining_@` or `@_closed-and-joining_@`
-    state, `s` moves to the `@_joined_@` state.
+- [1.1]{.pnum} `@_unused_@`: a newly constructed object starts in the `@_unused_@` state.
+- [1.2]{.pnum} `@_open_@`: when `t.try_associate()` is called while `s` is in `@_unused_@` state, `s` moves to the
+  `@_open_@` state.
+- [1.3]{.pnum} `@_open-and-joining_@`: when the operation state `o` is started while the `s` is in `@_unused_@` or
+  `@_open_@` state, `s` moves to the `@_open-and-joining_@` state.
+- [1.4]{.pnum} `@_closed_@`: when `s.close()` is called while `s` is in `open` state, `s` moves to the `@_closed_@`
+  state.
+- [1.5]{.pnum} `@_unused-and-closed_@`: when `s.close()` is called while `s` is in `@_unused_@` state, `s` moves to the
+  `@_unused-and-closed_@` state.
+- [1.6]{.pnum} `@_closed-and-joining_@`: when `s.close()` is called while `s` is in `@_open-and-joining_@` state or the
+  operation state `o` is started while `s` is in `@_closed_@` or `@_unused-and-closed_@` state, `s` moves to the
+  `@_closed-and-joining_@` state.
+- [1.7]{.pnum} `@_joined_@`: when the count of associated objects drops to zero while `s` is in `@_open-and-joining_@`
+  or `@_closed-and-joining_@` state, `s` moves to the `@_joined_@` state.
 
 ##### Constructor and Destructor [exec.counting.ctor]
 
@@ -2825,16 +2828,14 @@ private:
 
 `~counting_scope();`
 
-[2]{.pnum} _Effects:_ If `@_state_@` is not one of `@_joined_@`, `@_unused_@`,
-    or `@_unused-and-closed_@`, invokes `terminate` ([except.terminate]{.sref}).
-    Otherwise, has no effects.
+[2]{.pnum} _Effects:_ If `@_state_@` is not one of `@_joined_@`, `@_unused_@`, or `@_unused-and-closed_@`, invokes
+`terminate` ([except.terminate]{.sref}). Otherwise, has no effects.
 
 ##### Members [exec.counting.mem]
 
 `token get_token() noexcept;`
 
-[1]{.pnum} _Returns:_ An object `t` of type `counting_scope::token` such that
-    `t.@_scope_@ == this` is `true`.
+[1]{.pnum} _Returns:_ An object `t` of type `counting_scope::token` such that `t.@_scope_@ == this` is `true`.
 
 `void close() noexcept;`
 
@@ -2844,18 +2845,15 @@ private:
 - [2.2]{.pnum} `@_open_@` changes `@_state_@` to `@_closed_@`;
 - [2.3]{.pnum} `@_open-and-joining_@` changes `@_state_@` to `@_closed-and-joining_@`;
 
-[3]{.pnum} Any call to `t.try_associate()` for a `token` object `t`
-    referring to a `counting_scope` object `s` which is
-    sequenced after a call to `s.close()` returns a disengaged
-    association ([exec.counting.assoc], p1).
+[3]{.pnum} Any call to `t.try_associate()` for a `token` object `t` referring to a `counting_scope` object `s` which is
+sequenced after a call to `s.close()` returns a disengaged association ([exec.counting.assoc], p1).
 
 `sender auto join() noexcept;`
 
 [4]{.pnum} _Returns:_ `@_make_sender_@(@_join-t_@, this)`
 
-[5]{.pnum} The exposition-only class template `@_impls-for_@`
-    ([exec.snd.general]{.sref}) is specialized for `@_join-t_@`
-    as follows:
+[5]{.pnum} The exposition-only class template `@_impls-for_@` ([exec.snd.general]{.sref}) is specialized for
+`@_join-t_@` as follows:
 
 ```
 template <>
@@ -2882,27 +2880,26 @@ struct @_impls-for_@<@_join-t_@>: @_default-impls_@ {
     };
 
     static constexpr auto @_get-state_@ =
-      []<class Receiver>(auto&& sender, Receiver& receiver) {
-        auto[_, self] = sender;
-        return @_state_@<Receiver>(self, receiver);
-      };
+        []<class Receiver>(auto&& sender, Receiver& receiver) {
+            auto[_, self] = sender;
+            return @_state_@<Receiver>(self, receiver);
+        };
+
     static constexpr auto @_start_@ =
         [](auto& s, auto&) { @_see-below_@; };
 };
 ```
 
-[7]{.pnum} In the function object used to initialize
-`@_impls-for_@<@_join-t_@>::@_start_@` let state be `s.@_scope_@->@_state_@`.
-If state is
+[7]{.pnum} In the function object used to initialize `@_impls-for_@<@_join-t_@>::@_start_@` let state be
+`s.@_scope_@->@_state_@`. If state is
 
-- [7.1]{.pnum} `@_unused_@`, `@_unused-and-closed_@`, or `@_joined_@`,
-`s.@_complete-inline_@()` is invoked and changes the state of `*s.@_scope_@` to `@_joined_@`;
+- [7.1]{.pnum} `@_unused_@`, `@_unused-and-closed_@`, or `@_joined_@`, `s.@_complete-inline_@()` is invoked and changes
+  the state of `*s.@_scope_@` to `@_joined_@`;
 - [7.2]{.pnum} `@_open_@`, changes the state of `*s.@_scope_@` to `@_open-and-joining_@`;
 - [7.3]{.pnum} `@_closed_@`, changes the state of `*s.@_scope_@` to `@_closed-and-joining_@`;
 
-[8]{.pnum} If `s.@_complete-inline_@()` was not invoked, registers s with
-`*s.@_scope_@` to have `s.@_complete_@()` invoked when `s.@_scope_@->@_count_@` becomes
-zero.
+[8]{.pnum} If `s.@_complete-inline_@()` was not invoked, registers s with `*s.@_scope_@` to have `s.@_complete_@()`
+invoked when `s.@_scope_@->@_count_@` becomes zero.
 
 `void request_stop() noexcept`
 
@@ -2914,50 +2911,44 @@ zero.
 `sender auto wrap(Sender&& snd) const noexcept;`
 
 [1]{.pnum} _Returns:_ Sender `osnd` from an exposition-only sender algorithm
-_`stop_when(sender auto&& snd, stoppable_token auto stoken)`_ that maps its input sender, _`snd`_, such that, when `osnd` is
-connected to a receiver `r`, the resulting _`operation-state`_ behaves the same as connecting the original sender, _`snd`_,
-to `r`, except that the operation will receive a stop request when either the token returned from `get_stop_token(r)`
-receives a stop request or when _`stoken`_ receives a stop request.
+_`stop_when(sender auto&& snd, stoppable_token auto stoken)`_ that maps its input sender, _`snd`_, such that, when
+`osnd` is connected to a receiver `r`, the resulting _`operation-state`_ behaves the same as connecting the original
+sender, _`snd`_, to `r`, except that the operation will receive a stop request when either the token returned from
+`get_stop_token(r)` receives a stop request or when _`stoken`_ receives a stop request.
 
 `assoc try_associate() const;`
 
-[2]{.pnum} _Effects:_ A invocation of this member function has the
-    following atomic effect:
+[2]{.pnum} _Effects:_ A invocation of this member function has the following atomic effect:
 
-- [2.1]{.pnum} If `@_scope_@->@_state_@` is not one of `@_unused_@`,
-    `@_open_@`, or `@_open-and-joining_@` the operation has no effect;
-- [2.2]{.pnum} otherwise increment `@_scope_@->@_count_@` and
-    if `@_scope_@->@_state_@ == @_unused_@` change this value to `@_open_@`.
+- [2.1]{.pnum} If `@_scope_@->@_state_@` is not one of `@_unused_@`, `@_open_@`, or `@_open-and-joining_@` the operation
+  has no effect;
+- [2.2]{.pnum} otherwise increment `@_scope_@->@_count_@` and if `@_scope_@->@_state_@ == @_unused_@` change this value
+  to `@_open_@`.
 
-[3]{.pnum} _Returns:_ An engaged `assoc` object `a` with
-    `a.@_scope_@ == @_scope_@` if `@_scope_@->@_count_@` was
-    incremented, a disengaged `assoc` object otherwise.
+[3]{.pnum} _Returns:_ An engaged `assoc` object `a` with `a.@_scope_@ == @_scope_@` if `@_scope_@->@_count_@` was
+incremented, a disengaged `assoc` object otherwise.
 
 ##### Assoc [exec.counting.assoc]
 
-[1]{.pnum} An object `a` of type `assoc` is _disengaged_ if
-    `a.@_scope_@ == nullptr` is `true` and _engaged_ otherwise.
+[1]{.pnum} An object `a` of type `assoc` is _disengaged_ if `a.@_scope_@ == nullptr` is `true` and _engaged_ otherwise.
 
 `assoc(const assoc& other) noexcept;`
 
-[2]{.pnum} _Effects_: If `other` is engaged evaluates
-    `*this = other.@_scope_@->get_token().try_associate()`.
+[2]{.pnum} _Effects_: If `other` is engaged evaluates `*this = other.@_scope_@->get_token().try_associate()`.
 
 `assoc(assoc&& other) noexcept;`
 
-[3]{.pnum} _Effects_: Initializes `@_scope_@` with
-    `exchange(other.@_scope_@, nullptr)`.
+[3]{.pnum} _Effects_: Initializes `@_scope_@` with `exchange(other.@_scope_@, nullptr)`.
 
 `~assoc();`
 
-[4]{.pnum} _Effects_: If the object is disengaged, does nothing;
-    otherwise decrements `@_scope_@->@_count_@`. If `@_scope_@->@_count_@`
-    is zero after decrementing and `@_scope_@->@_state_@` is `@_open-and-joining_@`
-    or `@_closed-and-joining_@`, changes the state of `*@_scope_@` to `@_joined_@`
-    and calls `@_complete_@()` on all objects registered with `*@_scope_@`.
+[4]{.pnum} _Effects_: If the object is disengaged, does nothing; otherwise decrements `@_scope_@->@_count_@`. If
+`@_scope_@->@_count_@` is zero after decrementing and `@_scope_@->@_state_@` is `@_open-and-joining_@` or
+`@_closed-and-joining_@`, changes the state of `*@_scope_@` to `@_joined_@` and calls `@_complete_@()` on all objects
+registered with `*@_scope_@`.
 
-[5]{.pnum} [_Note:_ Calling `@_complete_@()` on any registered object
-    may cause `*@_scope_@` to get destroyed.  _--End-Note_]
+[5]{.pnum} [_Note:_ Calling `@_complete_@()` on any registered object may cause `*@_scope_@` to get destroyed.
+_--End-Note_]
 
 `assoc& operator=(assoc rhs) noexcept;`
 
