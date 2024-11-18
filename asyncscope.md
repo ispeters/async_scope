@@ -1405,36 +1405,17 @@ return when_all(scope.join(), std::move(snd));
 
 ```cpp
 struct simple_counting_scope {
-    simple_counting_scope() noexcept;
-    ~simple_counting_scope();
-
-    // simple_counting_scope is immovable and uncopyable
-    simple_counting_scope(const simple_counting_scope&) = delete;
-    simple_counting_scope(simple_counting_scope&&) = delete;
-    simple_counting_scope& operator=(const simple_counting_scope&) = delete;
-    simple_counting_scope& operator=(simple_counting_scope&&) = delete;
-
-    struct token;
-
     struct assoc {
         assoc() noexcept = default;
-
         assoc(const assoc&) noexcept;
-
         assoc(assoc&&) noexcept;
-
         ~assoc();
-
         assoc& operator=(assoc) noexcept;
 
         explicit operator bool() const noexcept;
 
     private:
-        friend struct token;
-
-        explicit assoc(simple_counting_scope*) noexcept; // @@_exposition-only_@@
-
-        simple_counting_scope* scope_{}; // @@_exposition-only_@@
+        simple_counting_scope* @_scope_@{}; // @@_exposition-only_@@
     };
 
     struct token {
@@ -1444,20 +1425,20 @@ struct simple_counting_scope {
         assoc try_associate() const;
 
     private:
-        friend simple_counting_scope;
-
-        explicit token(simple_counting_scope* s) noexcept; // @@_exposition-only_@@
-
-        simple_counting_scope* scope_; // @@_exposition-only_@@
+        simple_counting_scope* @_scope_@; // @@_exposition-only_@@
     };
+
+    simple_counting_scope() noexcept;
+    ~simple_counting_scope();
+
+    // simple_counting_scope is immovable and uncopyable
+    simple_counting_scope(simple_counting_scope&&) = delete;
 
     token get_token() noexcept;
 
     void close() noexcept;
 
-    struct @@_join-sender_@@; // @@_exposition-only_@@
-
-    @@_join-sender_@@ join() noexcept;
+    sender auto join() noexcept;
 };
 ```
 
@@ -1540,16 +1521,16 @@ joined state; otherwise, the destructor invokes `std::terminate()`. Permitting d
 unused or unused-and-closed state ensures that instances of `simple_counting_scope` can be used safely as data-members
 while preserving structured functionality.
 
-Connecting and starting a _`join-sender`_ returned from `join()` moves the scope to either the open-and-joining or
-closed-and-joining state. Merely calling `join()` or connecting the _`join-sender`_ does not change the scope's
-state---the _`operation-state`_ must be started to effect the state change. A started _`join-sender`_ completes when the
-scope's count of outstanding operations reaches zero, at which point the scope transitions to the joined state.
+Connecting and starting a join-sender returned from `join()` moves the scope to either the open-and-joining or
+closed-and-joining state. Merely calling `join()` or connecting the join-sender does not change the scope's state---the
+_`operation-state`_ must be started to effect the state change. A started join-sender completes when the scope's count
+of outstanding operations reaches zero, at which point the scope transitions to the joined state.
 
 Calling `close()` on a `simple_counting_scope` moves the scope to the closed, unused-and-closed, or closed-and-joining
 state, and causes all future calls to `try_associate()` to return disengaged associations.
 
 Associating work with a `simple_counting_scope` can be done through `simple_counting_scope`'s token.
-`simple_counting_scope`'s token provides 2 methods: `wrap(Sender&& s)`, and `try_associate()`.
+`simple_counting_scope`'s token provides two methods: `wrap(Sender&& s)`, and `try_associate()`.
 
 - `wrap(Sender&& s)` takes in a sender and returns it unmodified.
 - `try_associate()` attempts to create a new association with the `simple_counting_scope` and will return an engaged
@@ -1565,7 +1546,7 @@ When a token's `try_associate()` returns an engaged association, the destructor 
 the association by decrementing the scope's count of oustanding operations.
 
 - When a scope is in the open-and-joining or closed-and-joining state and an association's destructor undoes the final
-  scope association, the scope moves to the joined state and the outstanding _`join-sender`_ completes.
+  scope association, the scope moves to the joined state and the outstanding join-sender completes.
 
 The state transitions of a `simple_counting_scope` mean that it can be used to protect asynchronous work from
 use-after-free errors. Given a resource, `res`, and a `simple_counting_scope`, `scope`, obeying the following policy is
@@ -1603,7 +1584,7 @@ Checks that the `simple_counting_scope` is in the joined, unused, or unused-and-
 simple_counting_scope::token get_token() noexcept;
 ```
 
-Returns a `simple_counting_scope::token` referring to the current scope, as if by invoking `token{this}`.
+Returns a `simple_counting_scope::token` with _`scope`_ set to `this`.
 
 ### `simple_counting_scope::close`
 
@@ -1617,51 +1598,40 @@ calls to `try_associate()` return disengaged associations.
 ### `simple_counting_scope::join`
 
 ```cpp
-struct @@_join-sender_@@; // @@_exposition-only_@@
-
-@@_join-sender_@@ join() noexcept;
+sender auto join() noexcept;
 ```
 
-Returns a _`join-sender`_. When the _`join-sender`_ is connected to a receiver, `r`, it produces an
-_`operation-state`_, `o`. When `o` is started, the scope moves to either the open-and-joining or closed-and-joining
-state. `o` completes with `set_value()` when the scope moves to the joined state, which happens when the scope's count
-of outstanding senders drops to zero. `o` may complete synchronously if it happens to observe that the count of
-outstanding senders is already zero when started; otherwise, `o` completes on the execution context associated with the
-scheduler in its receiver's environment by asking its receiver, `r`, for a scheduler, `sch`, with
-`get_scheduler(get_env(r))` and then starting the sender returned from `schedule(sch)`. This requirement to complete on
-the receiver's scheduler restricts which receivers a _`join-sender`_ may be connected to in exchange for determinism;
-the alternative would have the _`join-sender`_ completing on the execution context of whichever nested operation happens
-to be the last one to complete.
+Returns a join-sender. When the join-sender is connected to a receiver, `r`, it produces an _`operation-state`_, `o`.
+When `o` is started, the scope moves to either the open-and-joining or closed-and-joining state. `o` completes with
+`set_value()` when the scope moves to the joined state, which happens when the scope's count of outstanding operations
+drops to zero. `o` may complete synchronously if it happens to observe that the count of outstanding operations is
+already zero when started; otherwise, `o` completes on the execution context associated with the scheduler in its
+receiver's environment by asking its receiver, `r`, for a scheduler, `sch`, with `get_scheduler(get_env(r))` and then
+starting the sender returned from `schedule(sch)`. This requirement to complete on the receiver's scheduler restricts
+which receivers a join-sender may be connected to in exchange for determinism; the alternative would have the
+join-sender completing on the execution context of whichever nested operation happens to be the last one to complete.
 
 ### `simple_counting_scope::assoc::assoc`
 
 ```cpp
 assoc() noexcept = default;
-
-explicit assoc(simple_counting_scope*) noexcept; // @@_exposition-only_@@
-
 assoc(const assoc&) noexcept;
-
 assoc(assoc&&) noexcept;
 ```
 
-The default `assoc` constructor produces a disengaged association.
+The default `assoc` constructor produces a disengaged association by setting _`scope`_ to `nullptr`.
 
-The private, exposition-only constructor accepting a `simple_counting_scope*` either:
+The copy constructor behaves as if it is implemented as follows:
+```cpp
+assoc(const assoc& other)
+  : assoc(other.@_scope_@ ? other.@_scope_@->try_associate() : assoc()) {}
+```
 
-- constructs a disengaged association if the given pointer is `nullptr`; or
-- constructs an engaged association associated with the given scope.
-
-The copy constructor either:
-
-- infallibly copies a disengaged association; or
-- attempts to create a new association as if by invoking `get_token().try_associate()` on the source association's
-  scope.
-
-The move constructor either:
-
-- infallibly produces a disengaged association from a disengaged assocation; or
-- infallibly transfers the association from an engaged assocation to the new object, leaving the source disengaged.
+The move constructor behaves as if it is implemented as follows:
+```cpp
+assoc(assoc&& other) noexcept
+  : @_scope_@(exchange(other.@_scope_@)) {}
+```
 
 ### `simple_counting_scope::assoc::~assoc`
 
@@ -1673,7 +1643,7 @@ The `assoc` destructor either:
 
 - does nothing if the association is disengaged; or
 - decrements the associated scope's count of outstanding operations and, when the scope is in the open-and-joining or
-  closed-and-joing state, moves the scope to the joined state and signals the outstanding _`join-sender`_ to complete.
+  closed-and-joing state, moves the scope to the joined state and signals the outstanding join-sender to complete.
 
 ### `simple_counting_scope::assoc::operator=`
 
@@ -1685,12 +1655,10 @@ The assignment operator behaves as if it is implemented as follows:
 
 ```cpp
 assoc& operator=(assoc rhs) noexcept
-  swap(scope_, rhs.scope_);
+  swap(@_scope_@, rhs.@_scope_@);
   return *this;
 }
 ```
-
-where `scope_` is a private member of type `simple_counting_scope*` that points to the association's associated scope.
 
 ### `simple_counting_scope::assoc::operator bool`
 
@@ -1698,7 +1666,7 @@ where `scope_` is a private member of type `simple_counting_scope*` that points 
 explicit operator bool() const noexcept;
 ```
 
-Returns `true` when the association is engaged and `false` when it is disengaged.
+Returns `true` when _`scope`_ is not `nullptr` and`false` when _`scope`_ is `nullptr`.
 
 ### `simple_counting_scope::token::wrap`
 
