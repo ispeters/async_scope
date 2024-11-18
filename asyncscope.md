@@ -2159,13 +2159,22 @@ the declaration of `run_loop`:
 >     concept async_scope_token = @_see below_@;
 >
 >   // [exec.scope.expos]
->   struct @_spawn-state-base_@; // exposition-only
+>   struct @_spawn-state-base_@; // @_exposition-only_@
 >
 >   template <class Env>
 >     struct @_spawn-receiver_@; // @_exposition-only_@
 >
->   template<class Alloc, async_scope_token Token, sender Sender>
+>   template <class Alloc, async_scope_token Token, sender Sender>
 >     struct @_spawn-state_@; // @_exposition-only_@
+>
+>   template <class Sigs>
+>     struct @_spawn-future-state-base_@; // @_exposition-only_@
+>
+>   template <class Sigs>
+>     struct @_spawn-future-receiver_@; // @_exposition-only_@
+>
+>   template <class Alloc, async_scope_token Token, sender Sender>
+>     struct @_spawn-future-state_@; // @_exposition-only_@
 >
 >   template <async_scope_token Token>
 >     using @_association-from_@ = decltype(declval<Token&>().try_associate()); // @_exposition-only_@
@@ -2434,7 +2443,7 @@ below:
 ```cpp
 namespace std::execution {
 
-template<class Alloc, async_scope_token Token, sender Sender>
+template <class Alloc, async_scope_token Token, sender Sender>
 struct @_spawn-state_@ : @_spawn-state-base_@ {
     using @_op-t_@ = decltype(connect(declval<Sender>(), @_spawn-receiver_@{nullptr}));
 
@@ -2517,7 +2526,251 @@ the expression `spawn(sndr, token, env)` is expression-equivalent to the followi
 
 ## `execution::spawn_future`
 
-spec here
+Add the following as a new subsection immediately after __[exec.scope.spawn]__:
+
+::: add
+__`std::execution::spawn_future` [exec.scope.spawn.future]__
+
+[1]{.pnum} `spawn_future` attempts to associate the given input sender with the given token's async scope and, on
+success, eagerly starts the input sender; the return value is a sender that, when connected and started, completes with
+either the result of the eagerly-started input sender or with `set_stopped` if the input sender was not started.
+
+[2]{.pnum} The name `spawn_future` denotes a customization poitn object. For subexpressions `sndr`, `token`, and `env`,
+let `Sndr` be `decltype((sndr))`, let `Token` be `decltype((token))`, and let `Env` be `decltype((env))`. If
+`sender<Sndr>` or `async_scope_token<Token>` is false, the expression `spawn_future(sndr, token, env)` is ill-formed.
+
+[3]{.pnum} For the expression `spawn_future(sndr, token, env)` let `stok` be a stop token that will receive stop
+requests as follows:
+
+- if `get_stop_token(env)` is well defined then `stok` receives stop requests sent from the returned future and any stop
+  requests sent to the stop token returned from `get_stop_token(env)`;
+- otherwise `stok` only receives stop requests sent from the returned future.
+
+[4]{.pnum} For the expression `spawn_future(sndr, token, env)` let _`new-sender`_ be the expression `token.wrap(sndr)`
+and let `alloc` and `senv` be defined as follows:
+
+- if the expression `get_allocator(env)` is well defined, then `alloc` is th result of `get_allocator(env)` and `senv`
+  is the expression `@_JOIN-ENV_@(env, @_MAKE-ENV_@(get_stop_token, stok))`;
+- otherwise if the expression `get_allocator(get_env(@_new-sender_@))` is well-defined, then `alloc` is the result of
+  `get_allocator(get_env(@_new-sender_@))` and `senv` is the expression
+  `@_JOIN-ENV_@(env, @_MAKE-ENV_@(get_allocator, alloc), @_MAKE-ENV_@(get_stop_token, stok))`;
+- otherwise `alloc` is `std::allocator<void>` and `senv` is the expression
+  `@_JOIN-ENV_@(env, @_MAKE-ENV_@(get_stop_token, stok))`.
+
+[5]{.pnum} Let _`spawn-future-state-base`_ be an exposition-only class template defined below:
+
+```cpp
+namespace std::execution {
+
+template <class Sigs>
+struct @_spawn-future-state-base_@ { // @_exposition-only_@
+    variant</* see below */> result; // @_exposition-only_@
+    virtual void @_complete_@() = 0; // @_exposition-only_@
+};
+
+}
+```
+
+[6]{.pnum} The class template _`spawn-future-state-base`_ can be instantiated with a type parameter, `Sigs`, that is an
+instance of _`completion-signatures`_. For an instantiation of _`spawn-future-state-base`_, the result member has the
+type `variant<T...>` where the parameter pack contains the following:
+
+- `monostate` as the first element;
+- for each completion signature in `Sigs` with a completion tag `cpo_t` and parameter types `P...` an element of type
+  `tuple<cpo_t, P...>`; and
+- `tuple<set_error_t, exception_ptr>` if any of the preceding instantiations of `tuple` have possibly-throwing
+  constructors.
+
+[7]{.pnum} Let _`spawn-future-receiver`_ be an exposition-only class template defined below:
+
+```cpp
+namespace std::execution {
+
+template <class Sigs>
+struct @_spawn-future-receiver_@ { // @_exposition-only_@
+    @_spawn-future-state-base_@<Sigs>* state; // @_exposition-only_@
+
+    template <class... T>
+    void set_value(T&&... t) && noexcept {
+        try {
+            state->result.emplace(set_value, std::forward<T>(t)...);
+        }
+        catch (...) {
+            state->result.emplace(set_error, std::current_exception());
+        }
+        state->@_complete_@();
+    }
+
+    template <class E>
+    void set_error(E&& e) && noexcept {
+        try {
+            state->result.emplace(set_error, std::forward<E>(e));
+        }
+        catch (...) {
+            state->result.emplace(set_error, current_exception());
+        }
+        state->@_complete_@();
+    }
+
+    void set_stopped() && noexcept {
+        state->result.emplace(set_stopped);
+        state->@_complete_@();
+    }
+};
+
+}
+```
+
+[8]{.pnum} Let _`spawn-future-state`_ be an exposition-only class template defined below:
+
+```cpp
+namespace std::execution {
+
+template <class Alloc, async_scope_token Token, sender Sender>
+struct @_spawn-future-state_@ : @_spawn-state-base_@<@_completion-signatures-of_@<Sender>> {
+    using @_sigs-t_@ = @_completion-signatures-of_@<Sender>;
+    using @_receiver-t_@ = @_spawn-future-receiver_@<Sigs>;
+    using @_op-t_@ = decltype(connect(declval<Sender>(), @_receiver-t_@{nullptr}));
+
+    @_spawn-future-state_@(Alloc alloc, Sender&& sndr, Token token); // see below
+    void @_run_@(); // see below
+    void @_complete_@() override; // see below
+    void @_consume_@(receiver auto& rcvr) noexcept; // see below
+    void @_abandon_@() noexcept; // see below
+
+private:
+    using @_alloc-t_@ = typename allocator_traits<Alloc>::template rebind_alloc<@_spawn-future-state_@>;
+
+    @_alloc-t_@ alloc;
+    @_op-t_@ op;
+    @_association-from_@<Token> assoc;
+
+    void @_destroy_@() noexcept; // see below
+};
+
+}
+```
+
+`@_spawn-future-state_@(Alloc alloc, Sender&& sndr, Token token);`
+
+[9]{.pnum} _Effects_: Equivalent to:
+```cpp
+    this->alloc = alloc;
+    this->op = connect(std::move(sndr), @_spawn-future-receiver_@<@_sigs-t_@>{this});
+    this->assoc = token.try_associate();
+```
+
+`void @_run_@();`
+
+[10]{.pnum} _Effects_: Equivalent to:
+```cpp
+    if (assoc) {
+        op.start();
+    } else {
+        this->result.emplace(set_stopped);
+        @_complete_@();
+    }
+```
+
+`void @_complete_@();`
+
+[11]{.pnum} _Effects_:
+
+- If the invocation of _`complete`_ happens-before an invocation of _`consume`_ or _`abandon`_ then no effect;
+- otherwise, if an invocation of _`consume`_ happened-before this invocation of _`complete`_ then
+  - there is a receiver, `rcvr`, registered and that receiver is completed as if by reading the current value of
+    `this->result` into a `cpo` and its `args` and then invoking `cpo(std:move(rcvr), std::move(args)...)`; and
+  - then `this->@_destroy_@()` is invoked.
+- otherwise, an invocation of _`abandon`_ happened-before this invocation of _`complete`_ and `this->@_destroy_@()`
+  is invoked.
+
+`void @_consume_@(receiver auto& rcvr) noexcept;`
+
+[12]{.pnum} _Effects_:
+
+- If the invocation of _`consume`_ happens-before an invocation of _`complete`_ then `rcvr` is registered to be
+  completed when _`complete`_ is invoked;
+- otherwise, `rcvr` is completed as if by reading the current value of `this->result` into a `cpo` and its `args` and
+  then invoking `cpo(std::move(rcvr), args...)`; then `this->@_destroy_@()` is invoked.
+
+`void @_abandon_@() noexcept;`
+
+[13]{.pnum} _Effects_:
+
+- If the invocation of _`abandon`_ happens-before an invocation of _`complete`_ then a stop request is sent to the
+  spawned operation;
+- otherwise `this->@_destroy_@()` is invoked.
+
+`void @_destroy_@() noexcept;`
+
+[14]{.pnum} _Effects_: Equivalent to:
+```cpp
+    auto assoc = std::move(this->assoc);
+    auto alloc = std::move(this->alloc);
+
+    allocator_traits<@_alloc-t_@>::destroy(alloc, this);
+    allocator_traits<@_alloc-t_@>::deallocate(alloc, this, 1);
+```
+
+[15]{.pnum} The exposition-only class template _`impls-for`_ ([exec.snd.general]) is specialized for `spawn_future_t` as
+follows:
+```cpp
+namespace std::execution {
+
+template <>
+struct @_impls-for_@<spawn_future_t> : @_default-impls_@ {
+    static constexpr auto @_start_@ = @_see below_@;
+};
+
+}
+```
+
+[16]{.pnum} The member `@_impls-fors_@<spawn_future_t>::@_start_@` is initialized with a callable object equivalent to the following lambda:
+```cpp
+[](auto& state, auto& rcvr) noexcept -> void {
+    state.release()->@_consume_@(rcvr);
+}
+```
+
+[17]{.pnum} Then the expression `spawn_future(sndr, token)` is expression-equivalent to
+`spawn_future(sndr, token, empty_env{})` and the expression `spawn_future(sndr, token, env)` is expression-equivalent to
+the following:
+```cpp
+    auto makeSender = [&] {
+        return @_write-env_@(token.wrap(std::forward<Sender>(sndr)), senv);
+    };
+
+    using @_sender-t_@ = decltype(makeSender());
+
+    using @_state-t_@ = @_spawn-future-state_@<decltype(alloc), Token, @_sender-t_@>;
+    using @_alloc-t_@ = typename allocator_traits<decltype(alloc)>::template rebind_alloc<@_state-t_@>;
+    using @_traits-t_@ = allocator_traits<@_alloc-t_@>;
+
+    @_alloc-t_@ stateAlloc{alloc};
+    auto* op = @_traits-t_@::allocate(stateAlloc, 1);
+
+    try {
+        @_traits-t_@::construct(stateAlloc, op, alloc, makeSender(), token);
+    }
+    catch(...) {
+        @_traits-t_@::deallocate(stateAlloc, op, 1);
+        throw;
+    }
+
+    op->@_run_@();
+
+    struct deleter {
+        void operator()(@_state-t_@ p) noexcept {
+             if (p) {
+                 p->@_abandon_@();
+             }
+        }
+    };
+
+    return @_make-sender_@(spawn_future, unique_ptr<@_state-t_@, deleter>{op});
+```
+
+:::
 
 ## `execution::simple_counting_scope` and `execution::counting_scope`
 
