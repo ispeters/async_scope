@@ -1134,75 +1134,82 @@ before invoking `token.try_associate()`. Other algorithms written in terms of `a
 ## `execution::nest`
 
 ```cpp
-template <sender Sender, async_scope_token Token>
-auto nest(Sender&& snd, Token token)
-    noexcept(is_nothrow_constructible_v<@@_nest-sender_@@<Sender, Token>, Sender, Token>)
-    -> @@_nest-sender_@@<Sender, Token>;
+struct nest_t { @_unspecified_@ };
+
+inline constexpr nest_t nest{};
 ```
 
-When successful, `nest()` creates an association with the given token's scope and returns an "associated" sender that
-behaves the same as its input sender, with the following additional effects:
+`nest` is a CPO with the following signature:
+```cpp
+sender auto nest(sender auto&&, async_scope_token auto) noexcept(...);
+```
 
-- the association ends when the returned sender is destroyed or, if it is connected, when the resulting operation state
-  is destroyed; and
+When successful, `nest()` creates an association with the given token's scope and returns an "associated" nest-sender
+that behaves the same as its input sender, with the following additional effects:
+
+- the association ends when the nest-sender is destroyed or, if it is connected, when the resulting operation state is
+  destroyed; and
 - whatever effects are added by the token's `wrap()` method.
 
-When unsuccessful, `nest()` will either return an "unassociated" sender or it will allow any thrown exceptions to escape.
+When unsuccessful, `nest()` will either return an "unassociated" nest-sender or it will allow any thrown exceptions to
+escape.
 
-When `nest()` returns an associated sender:
+When `nest()` returns an associated nest-sender:
 
- - connecting and starting the associated sender connects and starts the given sender; and
- - the associated sender has exactly the same completions as the input sender.
+ - connecting and starting the associated nest-sender connects and starts the given sender; and
+ - the associated nest-sender has exactly the same completions as the input sender.
 
-When `nest()` returns an unassociated sender:
+When `nest()` returns an unassociated nest-sender:
 
  - the input sender is discarded and will never be connected or started; and
- - the unassociated sender will only complete with `set_stopped()`.
+ - the unassociated nest-sender will only complete with `set_stopped()`.
 
-`nest()` simply constructs and returns a _`nest-sender`_. Given an `async_scope_token`, `token`, and a sender, `snd`,
-the _`nest-sender`_ constructor performs the following operations in the following order:
+Given an `async_scope_token`, `token`, and a sender, `snd`, `nest(snd, token)` is expression-equivalent to
+`@_make-sender_@(nest, @_nest-data_@{snd, token})`, where _`nest-data`_ is an exposition-only class whose constructor
+performs the following operations in the following order:
 
 1. store the result of `token.wrap(snd)` in a member variable
 2. store the result of `token.try_associate()` in a member variable
    a. if the resulting association is disengaged then destroy the previously stored result of `token.wrap(snd)`; the
-      _`nest-sender`_ under construction is an unassociated sender.
-   b. otherwise, the _`nest-sender`_ under construction is an associated sender.
+      nest-sender under construction is unassociated.
+   b. otherwise, the nest-sender under construction is associated.
 
 Any exceptions thrown during the evaluation of the constructor are allowed to escape; nevertheless, `nest()` provides
 the Strong Exception Guarantee.
 
-An associated _`nest-sender`_ has many properties of an RAII handle:
+An associated nest-sender has many properties of an RAII handle:
 
 - constructing an instance acquires a "resource" (the association with the scope)
 - destructing an instance releases the same resource
 - moving an instance into another transfers ownership of the resource from the source to the destination
 - etc.
 
-Copying a _`nest-sender`_ is possible if the sender it is wrapping is copyable but the copying process is a bit unusual
+Copying a nest-sender is possible if the sender it is wrapping is copyable but the copying process is a bit unusual
 because of the `async_scope_association` it contains. If the sender, `snd`, provided to `nest()` is copyable then the
-resulting _`nest-sender`_ is also copyable, with the following rules:
+resulting nest-sender is also copyable, with the following rules:
 
-- copying an unassociated _`nest-sender`_ invariably produces a new unassociated _`nest-sender`_; and
-- copying an associated _`nest-sender`_ proceeds as follows:
-  1. copy the association from the source into the destination _`nest-sender`_
+- copying an unassociated nest-sender invariably produces a new unassociated nest-sender; and
+- copying an associated nest-sender requires copying the _`nest-data`_ it contains and the _`nest-data`_
+  copy-constructor proceeds as follows:
+  1. copy the association from the source into the destination _`nest-data`_
      - if the copied association is engaged then copy the wrapped sender from the source into the destination
-       _`nest-sender`_; the destination is associated
-     - otherwise, the destination is unassociated
+       _`nest-data`_; the destination nest-sender is associated
+     - otherwise, the destination nest-sender is unassociated
 
-When _`nest-sender`_ has a copy constructor, it provides the Strong Exception Guarantee.
+When a nest-sender has a copy constructor, it provides the Strong Exception Guarantee.
 
-When connecting an unassociated _`nest-sender`_, the resulting _`operation-state`_ completes immediately with
+When connecting an unassociated nest-sender, the resulting _`operation-state`_ completes immediately with
 `set_stopped()` when started.
 
-When connecting an associated _`nest-sender`_, there are four possible outcomes:
+When connecting an associated nest-sender, there are four possible outcomes:
 
-1. the _`nest-sender`_ is rvalue connected, which infallibly moves the sender's association from the sender to the
+1. the nest-sender is rvalue connected, which infallibly moves the sender's association from the sender to the
    _`operation-state`_
-2. the _`nest-sender`_ is lvalue connected, in which case the sender's association must be copied into the
+2. the nest-sender is lvalue connected, in which case the sender's association must be copied into the
    _`operation-state`_, which may:
    a. succeed by creating a new engaged association for the _`operation-state`_;
    b. fail by creating a new disengaged association for the _`operation-state`_, in which case the new
-      _`operation-state`_ behaves as if it were constructed from an unassociated _`nest-sender`_; or
+      _`operation-state`_ behaves as if it were constructed from an unassociated nest-sender; or
    c. fail by throwing an exception, in which case the exception escapes from the call to connect.
 
 An _`operation-state`_ with its own association must invoke the association's destructor as the last step of the
@@ -1211,7 +1218,7 @@ _`operation-state`_'s destructor.
 Note: the timing of when an associated _`operation-state`_ ends its association with the scope is chosen to avoid
 exposing user code to dangling references. Scopes are expected to serve as mechanisms for signaling when it is safe to
 destroy shared resources being protected by the scope. Ending any given association with a scope may lead to that scope
-signaling that the protected resources can be destroyed so a _`nest-sender`_'s _`operation-state`_ must not permit that
+signaling that the protected resources can be destroyed so a nest-sender's _`operation-state`_ must not permit that
 signal to be sent until the _`operation-state`_ is definitely finished accessing the shared resources, which is at the
 end of the _`operation-state`_'s destructor.
 
