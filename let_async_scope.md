@@ -369,7 +369,7 @@ Please note: this wording is incomplete, and needs review.
         auto& args = state.args.emplace<decayed-tuple<scope-token-type, Args...>>(
                 create-scope-token(), std::forward<Args>(args)...);
         try {
-            auto sndr2 = state.scope.nest(apply(std::move(state.fn), args));
+            auto sndr2 = nest(apply(std::move(state.fn), args), state.scope);
             auto join_sender = state.scope.join();
             auto result_sender = when_all_with_variant(std::move(sndr2), std::move(join_sender)) |
                                  then([](auto& result, auto&) { return result; });
