@@ -1,6 +1,6 @@
-# P3296R2 `let_async_scope`
+# D3296R3 `let_async_scope`
 
-Date: 14th October 2024 
+Date: 19th November 2024 
 
 Author: Anthony Williams <anthony@justsoftwaresolutions.co.uk>
 
@@ -102,19 +102,17 @@ Then the `sync_wait` will throw either an exception of type `foo` or
 an exception of type `bar`, but it is not specified which.
 
 In order to allow the error propagation, all senders associated with
-the scope must have a compatible error signature. If the function
-passed to `let_async_scope` is declared `noexcept`, there is no
-default error signature: all senders must also complete without
-errors. Otherwise, the default error signature is
-`set_error_t(std::exception_ptr)`, and all raised errors are wrapped
-with `AS-EXCEPT-PTR` (See [exec.general/8). An explicit error
-signature can be specified as part of the call to `let_async_scope`,
-in which case errors are *not* converted.
+the scope must have a compatible error signature. The default error
+signature is `set_error_t(std::exception_ptr)`, and all raised errors
+are wrapped with `AS-EXCEPT-PTR` (See [exec.general/8). An explicit
+error signature can be specified by calling
+`let_async_scope_with_error`, in which case errors are *not* converted
+unless `std::exception_ptr` is the only permitted error type.
 
 "Noexcept" error signature scopes:
 
 ```c++
-    auto scope_sender = just(make_scoped_data()) | let_async_scope([](auto scope_token,
+    auto scope_sender = just(make_scoped_data()) | let_async_scope_with_error<>([](auto scope_token,
                                                                            auto& scoped_data) noexcept {
         spawn(just_error(foo{}),scope_token); // error, sender may fail in "noexcept" scope
     });
@@ -137,7 +135,7 @@ in which case errors are *not* converted.
 
 ```c++
     auto scope_sender = just(make_scoped_data()) |
-      let_async_scope<completion_signatures<set_error_t(foo),set_error_t(bar)>>(
+                                  let_async_scope_with_error<foo,bar>(
         [](auto scope_token, auto& scoped_data) noexcept {
         spawn(just_error(foo{}),scope_token); // OK
         spawn(just_error(bar{}),scope_token); // OK
@@ -194,7 +192,13 @@ raised, one of them is chosen to be used as the completion of the
 sender returned from `let_async_scope`; all other errors are
 discarded.
 
+If the error list specified for `let_async_scope_with_error` does not
+specify `std::exception_ptr`, then the function supplied must be
+declared `noexcept`, otherwise the program is ill-formed.
 
+If the possible error completions of senders passed to `spawn` with a
+token from `let_async_scope_with_error` are not compatible with the
+error signatures then the program is ill-formed.
 
 ## Wording
 
@@ -218,27 +222,18 @@ Please note: this wording is incomplete, and needs review.
 3. The expression `let_async_scope(sndr, f)` is expression-equivalent to:
 
    ```c++
-   let_async_scope<completion_signatures<>>(sndr, f);
+   let_async_scope_with_error<std::exception_ptr>(sndr, f);
    ```
    
-   if `nothrow_invocable<decltype(f)>` is `true`, otherwise
-
-   ```c++
-   let_async_scope<completion_signatures<set_error_t(std::exception_ptr)>>(sndr, f);
-   ```
-
-4. The expression `let_async_scope<Errors>(sndr, f)` is expression-equivalent to:
+4. The expression `let_async_scope_with_error<Errors...>(sndr, f)` is expression-equivalent to:
 
    ```c++
     transform_sender(
       get-domain-early(sndr),
-      make-sender(let_async_scope<Errors>, f, sndr));
+      make-sender(let_async_scope_with_error<Errors...>, f, sndr));
    ```
    
-   Where `Errors` must be `completion_signatures<S...>`, where each
-   `S` is of the form `set_error_t(X)` for some `X`.
-   
-   
+   Where `Errors` is the list of possible error completion types.
 
 5. The exposition-only class template `impls-for` ([exec.snd.general]) is specialized for `let_async_scope` as follows:
 
@@ -247,8 +242,8 @@ Please note: this wording is incomplete, and needs review.
       template<class Errors, class State, class Rcvr, class... Args>
       void let-async-scope-bind(State& state, Rcvr& rcvr, Args&&... args); // exposition only
 
-      template<typename Errors>
-      struct impls-for<decayed-typeof<let_async_scope<Errors>>> : default-impls {
+      template<typename ... Errors>
+      struct impls-for<decayed-typeof<let_async_scope_with_error<Errors...>>> : default-impls {
         static constexpr auto get-state = see below;
         static constexpr auto complete = see below;
       };
@@ -274,7 +269,7 @@ Please note: this wording is incomplete, and needs review.
         }
        ```
 
-    2. `impls-for<decayed-typeof<let_async_scope<Errors>>>::get-state` is is initialized with a callable object equivalent to the following:
+    2. `impls-for<decayed-typeof<let_async_scope_with_error<Errors...>>>::get-state` is is initialized with a callable object equivalent to the following:
 
        ```c++
         []<class Sndr, class Rcvr>(Sndr&& sndr, Rcvr& rcvr) requires see below {
@@ -315,7 +310,7 @@ Please note: this wording is incomplete, and needs review.
                 that outlives that sender]]
                 
           1. `scope-token-type` is the type of the `async-scope-token`
-             returned from `scope-type::get_token`.
+             associated with this invocation of `let_async_scope_with_error`.
           
           2. Let `Sigs` be a pack of the arguments to the
              `completion_signatures` specialization named by
@@ -341,11 +336,17 @@ Please note: this wording is incomplete, and needs review.
              
           5. `error-variant-type` is a `variant<E...>`, where the
              types `E...` are the corresponding `E` types from the
-             `Errors` parameter of the `let_async_scope` invocation
-             which has the form
-             `completion_signatures<set_error_t(E)...>`.
+             `Errors...` parameter of the `let_async_scope_with_error<Errors...>` invocation.
              
-          6. Invoking `spawn(snd, token, env)` where `token` is the `async-scope-token` returned from `scope-type::get_token` is equivalent to
+          6. `scope-token-type` shall be a unique type, such that
+             invoking `spawn(snd, token, env)` where `token` is an
+             instance of `scope-token-type` invokes a distinct
+             overload of `spawn`. Such an invocation is ill-formed if
+             the completion signatures of `snd` include error
+             completions that are not compatible with the `Errors...`
+             list of the `let_async_scope_with_error<Errors...>`
+             invocation. If the error list is compatible, then such an
+             invocation of `spawn` is equivalent to
           
    ```c++
           spawn(snd | upon_error(
@@ -355,19 +356,18 @@ Please note: this wording is incomplete, and needs review.
                       state.errors.emplace(TRANSFORM-ERROR(error));
                     }
                     state.scope.request_stop();
-                  }), token, env);
+                  }), state.scope.get_token(), env);
    ```
 
-    if `snd` has any error completions, where `TRANSFORM-ERROR` is
-    `AS-EXCEPT-PTR(error)` if `Errors` is
-    `completion_signatures<set_error_t(std::exception_ptr)>`, and
+    Where `TRANSFORM-ERROR` is `AS-EXCEPT-PTR(error)` if `Errors...`
+    is `std::exception_ptr`, and
     `std::forward<decltype(error)>(error)` otherwise.
 
      3. The exposition-only function template `let-async-scope-bind` is equal to:
 
         ```c++
         auto& args = state.args.emplace<decayed-tuple<scope-token-type, Args...>>(
-                state.scope.get_token(), std::forward<Args>(args)...);
+                create-scope-token(), std::forward<Args>(args)...);
         try {
             auto sndr2 = state.scope.nest(apply(std::move(state.fn), args));
             auto join_sender = state.scope.join();
@@ -386,8 +386,12 @@ Please note: this wording is incomplete, and needs review.
             start(op2);
         }
         ```
+        
+        where `create-scope-token()` creates an instance of the
+        `scope-token-type` associated with the `state` for this
+        invocation of `let_async_scope_with_error`.
 
-     4. `impls-for<decayed-typeof<let_async_scope>>::complete` is is initialized with a callable object equivalent to the following:
+     4. `impls-for<decayed-typeof<let_async_scope_with_error<Errors...>>>::complete` is is initialized with a callable object equivalent to the following:
 
         ```c++
         []<class Tag, class... Args>
@@ -402,13 +406,13 @@ Please note: this wording is incomplete, and needs review.
 
 6. Let `sndr` and `env` be subexpressions, and let `Sndr` be
    `decltype((sndr))`. If `sender-for<Sndr,
-   decayed-typeof<let_async_scope>>` is `false`, then the expression
-   `let_async_scope.transform_env(sndr, env)` is
+   decayed-typeof<let_async_scope_with_error<Errors...>>>` is `false`, then the expression
+   `let_async_scope_with_error<Errors...>.transform_env(sndr, env)` is
    ill-formed. Otherwise, it is equal to `JOIN-ENV(let-env(sndr),
    FWD-ENV(env))`.
 
 7. Let the subexpression `out_sndr` denote the result of the
-   invocation `let_async_scope(sndr, f)` or an object copied or moved
+   invocation `let_async_scope_with_error<Errors...>(sndr, f)` or an object copied or moved
    from such, and let the subexpression `rcvr` denote a receiver such
    that the expression `connect(out_sndr, rcvr)` is well-formed. The
    expression `connect(out_sndr, rcvr)` has undefined behavior unless
@@ -422,6 +426,24 @@ Please note: this wording is incomplete, and needs review.
       returned by `f`, and
 
     - propagates the other completion operations sent by `sndr`.
+
+## Revision History
+
+### R1
+
+- Improved examples, added links
+
+### R2
+
+- Propagate environment to spawned senders associated with the scope.
+- Errors lead to stop requests being sent to all senders associated with the scope.
+- An Error is stored in the scope and the scope sender completes with an error if there is one
+- Allowed errors can be specified
+
+### R3
+
+- Fix specification of allowed errors
+- Make it clear that a new overload of `spawn` is expected.
 
 ## Acknowledgements
 
