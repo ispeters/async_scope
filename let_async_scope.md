@@ -348,20 +348,20 @@ Please note: this wording is incomplete, and needs review.
              invocation. If the error list is compatible, then such an
              invocation of `spawn` is equivalent to
           
-   ```c++
-          spawn(snd | upon_error(
-                  [&state](auto&& error){
-                    {
-                      lock_guard guard(state.error_mutex);
-                      state.errors.emplace(TRANSFORM-ERROR(error));
-                    }
-                    state.scope.request_stop();
-                  }), state.scope.get_token(), env);
-   ```
+             ```c++
+             spawn(snd | upon_error(
+                     [&state](auto&& error){
+                       {
+                         lock_guard guard(state.error_mutex);
+                         state.errors.emplace(TRANSFORM-ERROR(error));
+                       }
+                       state.scope.request_stop();
+                               }), state.scope.get_token(), env);
+             ```
 
-    Where `TRANSFORM-ERROR` is `AS-EXCEPT-PTR(error)` if `Errors...`
-    is `std::exception_ptr`, and
-    `std::forward<decltype(error)>(error)` otherwise.
+             Where `TRANSFORM-ERROR` is `AS-EXCEPT-PTR(error)` if
+             `Errors...`  is `std::exception_ptr`, and
+             `std::forward<decltype(error)>(error)` otherwise.
 
      3. The exposition-only function template `let-async-scope-bind` is equal to:
 
