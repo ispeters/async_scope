@@ -325,7 +325,7 @@ Please note: this wording is incomplete, and needs review.
 
           3. Let `as-sndr2` be an alias template such that
              `as-sndr2<Tag(Args...)>` denotes the type
-             `call-result-t<Fn, scope-token-type, decay_t<Args>&...>`. Then
+             `call-result-t<Fn, scope-token-type, remove_cvref_t<Args>&...>`. Then
              `ops2-variant-type` denotes the type `variant<monostate,
              connect_result_t<as-sndr2<LetSigs>, receiver2<Rcvr,
              Env>>...>`.
