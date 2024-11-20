@@ -975,7 +975,7 @@ struct @_spawn-future-receiver_@ { // @_exposition-only_@
 
 template <class Assoc>
 concept async_scope_association =
-    moveable<Assoc> &&
+    movable<Assoc> &&
     default_initializable<Assoc> &&
     requires(const Assoc& assoc) {
         { static_cast<bool>(assoc) } noexcept;
@@ -1089,7 +1089,7 @@ class counting_scope {
 ```cpp
 template <class Assoc>
 concept async_scope_association =
-    moveable<Assoc> &&
+    movable<Assoc> &&
     default_initializable<Assoc> &&
     requires(const Assoc& assoc) {
         { static_cast<bool>(assoc) } noexcept;
@@ -2253,7 +2253,7 @@ namespace std::execution {
 
 template <class Assoc>
 concept async_scope_association =
-    moveable<Assoc> &&
+    movable<Assoc> &&
     default_initializable<Assoc> &&
     requires(const Assoc& assoc) {
         { static_cast<bool>(assoc) } noexcept;
