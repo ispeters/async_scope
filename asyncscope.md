@@ -975,9 +975,11 @@ struct @_spawn-future-receiver_@ { // @_exposition-only_@
 
 template <class Assoc>
 concept async_scope_association =
-    semiregular<Assoc> &&
+    moveable<Assoc> &&
+    default_initializable<Assoc> &&
     requires(const Assoc& assoc) {
         { static_cast<bool>(assoc) } noexcept;
+        { assoc.try_copy() } -> same_as<Assoc>;
     };
 
 template <class Token>
@@ -1085,17 +1087,21 @@ class counting_scope {
 ```cpp
 template <class Assoc>
 concept async_scope_association =
-    semiregular<Assoc> &&
+    moveable<Assoc> &&
+    default_initializable<Assoc> &&
     requires(const Assoc& assoc) {
         { static_cast<bool>(assoc) } noexcept;
+        { assoc.try_copy() } -> same_as<Assoc>;
     };
 ```
 
 An async scope association is an RAII handle type that represents a possible association between a sender and an async
 scope. If the scope association contextually converts to `true` then the object is "engaged" and represents an
 association; otherwise, the object is "disengaged" and represents the lack of an association. Async scope associations
-are copyable but, when copying an engaged association, the resulting copy may be disengaged because the underlying
-async scope may decline to create a new association.
+are movable and conditionally copyable; `try_copy()` will either:
+
+- infallibly return a copy of a disengaged association; or
+- try to create a new association with the underlying scope as if by `scope.try_associate()`.
 
 ## `execution::async_scope_token`
 
@@ -2242,9 +2248,11 @@ namespace std::execution {
 
 template <class Assoc>
 concept async_scope_association =
-    semiregular<Assoc> &&
+    moveable<Assoc> &&
+    default_initializable<Assoc> &&
     requires(const Assoc& assoc) {
         { static_cast<bool>(assoc) } noexcept;
+        { assoc.try_copy() } -> same_as<Assoc>;
     };
 
 template <class Token>
@@ -2256,8 +2264,7 @@ concept async_scope_token =
 
 }
 ```
-[2]{.pnum} `async_scope_association<Assoc>` is modeled only if `Assoc`'s copy and move operations are not potentially
-throwing.
+[2]{.pnum} `async_scope_association<Assoc>` is modeled only if `Assoc`'s move operations are not potentially throwing.
 
 [3]{.pnum} `async_scope_token<Token>` is modeled only if `Token`'s copy and move operations are not potentially
 throwing.
