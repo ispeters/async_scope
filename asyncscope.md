@@ -1006,12 +1006,13 @@ inline constexpr spawn_future_t spawn_future{};
 class simple_counting_scope {
     struct assoc {
         assoc() noexcept = default;
-        assoc(const assoc&) noexcept;
         assoc(assoc&&) noexcept;
         ~assoc();
         assoc& operator=(assoc) noexcept;
 
         explicit operator bool() const noexcept;
+
+        assoc try_copy() const noexcept;
 
     private:
         simple_counting_scope* @_scope_@{}; // @@_exposition-only_@@
@@ -1043,12 +1044,13 @@ class simple_counting_scope {
 class counting_scope {
     struct assoc {
         assoc() noexcept = default;
-        assoc(const assoc&) noexcept;
         assoc(assoc&&) noexcept;
         ~assoc();
         assoc& operator=(assoc) noexcept;
 
         explicit operator bool() const noexcept;
+
+        assoc try_copy() const noexcept;
 
     private:
         counting_scope* @_scope_@{}; // @@_exposition-only_@@
@@ -1437,12 +1439,13 @@ return when_all(scope.join(), std::move(snd));
 class simple_counting_scope {
     struct assoc {
         assoc() noexcept = default;
-        assoc(const assoc&) noexcept;
         assoc(assoc&&) noexcept;
         ~assoc();
         assoc& operator=(assoc) noexcept;
 
         explicit operator bool() const noexcept;
+
+        assoc try_copy() const noexcept;
 
     private:
         simple_counting_scope* @_scope_@{}; // @@_exposition-only_@@
@@ -1645,17 +1648,10 @@ join-sender completing on the execution context of whichever nested operation ha
 
 ```cpp
 assoc() noexcept = default;
-assoc(const assoc&) noexcept;
 assoc(assoc&&) noexcept;
 ```
 
 The default `assoc` constructor produces a disengaged association by setting _`scope`_ to `nullptr`.
-
-The copy constructor behaves as if it is implemented as follows:
-```cpp
-assoc(const assoc& other)
-  : assoc(other.@_scope_@ ? other.@_scope_@->try_associate() : assoc()) {}
-```
 
 The move constructor behaves as if it is implemented as follows:
 ```cpp
@@ -1698,6 +1694,14 @@ explicit operator bool() const noexcept;
 
 Returns `true` when _`scope`_ is not `nullptr` and`false` when _`scope`_ is `nullptr`.
 
+### `simple_counting_scope::assoc::try_copy`
+
+```cpp
+assoc try_copy() const noexcept;
+```
+
+Returns `@_scope_@ ? @_scope_@->get_token().try_associate() : nullptr`.
+
 ### `simple_counting_scope::token::wrap`
 
 ```cpp
@@ -1728,12 +1732,13 @@ open, or open-and-joining state; otherwise the scope's state is left unchanged a
 class counting_scope {
     struct assoc {
         assoc() noexcept = default;
-        assoc(const assoc&) noexcept;
         assoc(assoc&&) noexcept;
         ~assoc();
         assoc& operator=(assoc) noexcept;
 
         explicit operator bool() const noexcept;
+
+        assoc try_copy() const noexcept;
 
     private:
         counting_scope* @_scope_@{}; // @_exposition-only_@
@@ -2830,12 +2835,13 @@ public:
     // [exec.simple.counting.assoc], assoc
     struct assoc {
         assoc() noexcept = default;
-        assoc(const assoc& other) noexcept;
         assoc(assoc&& other) noexcept;
         ~assoc();
         assoc& operator=(assoc rhs) noexcept;
 
         explicit operator bool() const noexcept;
+
+        assoc try_copy() const noexcept;
 
     private:
         simple_counting_scope* @_scope_@{}; // @_exposition-only_@
@@ -3022,6 +3028,10 @@ _--End-Note_]
 
 [8]{.pnum} _Returns_: `@_scope_@ != nullptr;`
 
+`assoc try_copy() const noexcept;`
+
+[9]{.pnum} _Returns_: `@_scope_@ ? @_scope_@->get_token().try_associate() : nullptr`.
+
 
 __Counting Scope [exec.counting.scope]__
 
@@ -3043,12 +3053,13 @@ public:
     // [exec.counting.assoc], assoc
     struct assoc {
         assoc() noexcept = default;
-        assoc(const assoc& other) noexcept;
         assoc(assoc&& other) noexcept;
         ~assoc();
         assoc& operator=(assoc rhs) noexcept;
 
         explicit operator bool() const noexcept;
+
+        assoc try_copy() const noexcept;
 
     private:
         counting_scope* @_scope_@{}; // @_exposition-only_@
@@ -3243,6 +3254,10 @@ _--End-Note_]
 `explicit operator bool() const noexcept;`
 
 [8]{.pnum} _Returns_: `@_scope_@ != nullptr;`
+
+`assoc try_copy() const noexcept;`
+
+[9]{.pnum} _Returns_: `@_scope_@ ? @_scope_@->get_token().try_associate() : nullptr`.
 
 :::
 
