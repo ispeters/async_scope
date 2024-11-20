@@ -2896,6 +2896,8 @@ operations:
 - [1.7]{.pnum} `@_joined_@`: when the count of associated objects drops to zero while `s` is in `@_open-and-joining_@`
   or `@_closed-and-joining_@` state, `s` moves to the `@_joined_@` state.
 
+[2]{.pnum} Calls to member functions `get_token`, `close`, and `join` do not introduce data races.
+
 __Constructor and Destructor [exec.simple.counting.ctor]__
 
 `simple_counting_scope() noexcept;`
@@ -2922,7 +2924,7 @@ __Members [exec.simple.counting.mem]__
 - [2.3]{.pnum} `@_open-and-joining_@` changes `@_state_@` to `@_closed-and-joining_@`;
 
 [3]{.pnum} Any call to `t.try_associate()` for a `token` object `t` referring to a `simple_counting_scope` object `s`
-which is sequenced after a call to `s.close()` returns a disengaged association ([exec.simple.counting.assoc], p1).
+which happens after a call to `s.close()` returns a disengaged association ([exec.simple.counting.assoc], p1).
 
 `sender auto join() noexcept;`
 
@@ -3115,6 +3117,8 @@ life-time `s` goes through different states which govern what operations are all
 - [1.7]{.pnum} `@_joined_@`: when the count of associated objects drops to zero while `s` is in `@_open-and-joining_@`
   or `@_closed-and-joining_@` state, `s` moves to the `@_joined_@` state.
 
+[2]{.pnum} Calls to member functions `get_token`, `close`, `join`, and `request_stop()` do not introduce data races.
+
 __Constructor and Destructor [exec.counting.ctor]__
 
 `counting_scope() noexcept;`
@@ -3140,8 +3144,8 @@ __Members [exec.counting.mem]__
 - [2.2]{.pnum} `@_open_@` changes `@_state_@` to `@_closed_@`;
 - [2.3]{.pnum} `@_open-and-joining_@` changes `@_state_@` to `@_closed-and-joining_@`;
 
-[3]{.pnum} Any call to `t.try_associate()` for a `token` object `t` referring to a `counting_scope` object `s` which is
-sequenced after a call to `s.close()` returns a disengaged association ([exec.counting.assoc], p1).
+[3]{.pnum} Any call to `t.try_associate()` for a `token` object `t` referring to a `counting_scope` object `s` which
+happens after a call to `s.close()` returns a disengaged association ([exec.counting.assoc], p1).
 
 `sender auto join() noexcept;`
 
