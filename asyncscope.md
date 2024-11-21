@@ -1613,7 +1613,7 @@ void close() noexcept;
 ```
 
 Moves the scope to the closed, unused-and-closed, or closed-and-joining state. After a call to `close()`, all future
-calls to `try_associate()` return disengaged associations.
+calls to `try_associate()` return `false`.
 
 ### `simple_counting_scope::join`
 
@@ -1631,64 +1631,6 @@ starting the sender returned from `schedule(sch)`. This requirement to complete 
 which receivers a join-sender may be connected to in exchange for determinism; the alternative would have the
 join-sender completing on the execution context of whichever nested operation happens to be the last one to complete.
 
-### `simple_counting_scope::assoc::assoc`
-
-```cpp
-assoc() noexcept = default;
-assoc(assoc&&) noexcept;
-```
-
-The default `assoc` constructor produces a disengaged association by setting _`scope`_ to `nullptr`.
-
-The move constructor behaves as if it is implemented as follows:
-```cpp
-assoc(assoc&& other) noexcept
-  : @_scope_@(exchange(other.@_scope_@)) {}
-```
-
-### `simple_counting_scope::assoc::~assoc`
-
-```cpp
-~assoc();
-```
-
-The `assoc` destructor either:
-
-- does nothing if the association is disengaged; or
-- decrements the associated scope's count of outstanding operations and, when the scope is in the open-and-joining or
-  closed-and-joing state, moves the scope to the joined state and signals the outstanding join-sender to complete.
-
-### `simple_counting_scope::assoc::operator=`
-
-```cpp
-assoc& operator=(assoc) noexcept;
-```
-
-The assignment operator behaves as if it is implemented as follows:
-
-```cpp
-assoc& operator=(assoc rhs) noexcept
-  swap(@_scope_@, rhs.@_scope_@);
-  return *this;
-}
-```
-
-### `simple_counting_scope::assoc::operator bool`
-
-```cpp
-explicit operator bool() const noexcept;
-```
-
-Returns `true` when _`scope`_ is not `nullptr` and`false` when _`scope`_ is `nullptr`.
-
-### `simple_counting_scope::assoc::try_copy`
-
-```cpp
-assoc try_copy() const noexcept;
-```
-
-Returns `@_scope_@ ? @_scope_@->get_token().try_associate() : nullptr`.
-
 ### `simple_counting_scope::token::wrap`
 
 ```cpp
@@ -1701,7 +1643,7 @@ Returns the argument unmodified.
 ### `simple_counting_scope::token::try_associate`
 
 ```cpp
-assoc try_associate() const;
+bool try_associate() const;
 ```
 
 The following atomic state change is attempted on the token's scope:
@@ -1709,9 +1651,17 @@ The following atomic state change is attempted on the token's scope:
 - increment the scope's count of outstanding operations; and
 - move the scope to the open state if it was in the unused state.
 
-The atomic state change succeeds and the method returns an engaged `assoc` if the scope is observed to be in the unused,
-open, or open-and-joining state; otherwise the scope's state is left unchanged and the method returns a disengaged
-`assoc`.
+The atomic state change succeeds and the method returns `true` if the scope is observed to be in the unused, open, or
+open-and-joining state; otherwise the scope's state is left unchanged and the method returns `false`.
+
+### `simple_counting_scope::token::disassociate`
+
+```cpp
+void disassociate() const;
+```
+
+Decrements the associated scope's count of outstanding operations and, when the scope is in the open-and-joining or
+closed-and-joing state, moves the scope to the joined state and signals the outstanding join-sender to complete.
 
 ## `execution::counting_scope`
 
