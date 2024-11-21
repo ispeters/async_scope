@@ -3134,6 +3134,9 @@ _--End-Note_]
 Acknowledgements
 ================
 
+Thanks to Daisy Hollman, Nico Josuttis, Zach Laine, Jonathan Müller, and David Sankel for fruitful discussions about
+regularity.
+
 Thanks to Lewis Baker, Robert Leahy, Dmitry Prokoptsev, Anthony Williams, and everyone else who contributed to
 discussions leading to this paper.
 
