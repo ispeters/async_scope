@@ -2012,15 +2012,9 @@ _scheme_ than good _names_:
 
 ## `async_scope_token`
 
-This is a concept that is satisfied by types that support nesting senders within themselves. It is primarily useful for
-constraining the arguments to `spawn()` and `spawn_future()` to give useful error messages for invalid invocations.
-
-Since concepts don't support existential quantifiers and thus can't express "type `T` is an `async_scope_token` if there
-exists a sender, `s`, for which `t.nest(s)` is valid", the `async_scope_token` concept must be parameterized on both the
-type of the token and the type of some particular sender and thus describes whether *this* token type is an
-`async_scope_token` in combination with *this* sender type. Given this limitation, perhaps the name should convey
-something about the fact that it is checking the relationship between two types rather than checking something about the
-scope's type alone. Nothing satisfying comes to mind.
+This is a concept that is satisfied by types that support associating senders with scopes. It is primarily useful for
+constraining the arguments to scope-related algorithms like the proposed `nest()`, `spawn()`, and `spawn_future()` to
+give useful error messages for invalid invocations.
 
 alternatives: `task_pool_ref`, `task_pool_token`, `task_group_ref`, `sender_group_ref`, `task_group_token`,
 `sender_group_token`, don't name it and leave it as _`exposition-only`_
