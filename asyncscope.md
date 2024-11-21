@@ -2503,7 +2503,7 @@ __`std::execution::spawn_future` [exec.scope.spawn.future]__
 success, eagerly starts the input sender; the return value is a sender that, when connected and started, completes with
 either the result of the eagerly-started input sender or with `set_stopped` if the input sender was not started.
 
-[2]{.pnum} The name `spawn_future` denotes a customization poitn object. For subexpressions `sndr`, `token`, and `env`,
+[2]{.pnum} The name `spawn_future` denotes a customization point object. For subexpressions `sndr`, `token`, and `env`,
 let `Sndr` be `decltype((sndr))`, let `Token` be `decltype((token))`, and let `Env` be `decltype((env))`. If
 `sender<Sndr>` or `async_scope_token<Token>` is false, the expression `spawn_future(sndr, token, env)` is ill-formed.
 
@@ -2540,12 +2540,12 @@ struct @_spawn-future-state-base_@ { // @_exposition-only_@
 ```
 
 [6]{.pnum} The class template _`spawn-future-state-base`_ can be instantiated with a type parameter, `Sigs`, that is an
-instance of _`completion-signatures`_. For an instantiation of _`spawn-future-state-base`_, the result member has the
+instantiation of `completion_signatures`. For an instantiation of _`spawn-future-state-base`_, the result member has the
 type `variant<T...>` where the parameter pack contains the following:
 
 - `monostate` as the first element;
 - for each completion signature in `Sigs` with a completion tag `cpo_t` and parameter types `P...` an element of type
-  `tuple<cpo_t, P...>`; and
+  `tuple<cpo_t, remove_cvref_t<P>...>`; and
 - `tuple<set_error_t, exception_ptr>` if any of the preceding instantiations of `tuple` have possibly-throwing
   constructors.
 
@@ -2561,10 +2561,10 @@ struct @_spawn-future-receiver_@ { // @_exposition-only_@
     template <class... T>
     void set_value(T&&... t) && noexcept {
         try {
-            state->result.emplace(set_value, std::forward<T>(t)...);
+            state->result.emplace<tuple<set_value_t, remove_cvref_t<T>...>>(set_value, std::forward<T>(t)...);
         }
         catch (...) {
-            state->result.emplace(set_error, std::current_exception());
+            state->result.emplace<tuple<set_error_t, exception_ptr>>(set_error, std::current_exception());
         }
         state->@_complete_@();
     }
@@ -2572,16 +2572,16 @@ struct @_spawn-future-receiver_@ { // @_exposition-only_@
     template <class E>
     void set_error(E&& e) && noexcept {
         try {
-            state->result.emplace(set_error, std::forward<E>(e));
+            state->result.emplace<tuple<set_error_t, remove_cvref_t<E>>>(set_error, std::forward<E>(e));
         }
         catch (...) {
-            state->result.emplace(set_error, current_exception());
+            state->result.emplace<tuple<set_error_t, exception_ptr>>(set_error, current_exception());
         }
         state->@_complete_@();
     }
 
     void set_stopped() && noexcept {
-        state->result.emplace(set_stopped);
+        state->result.emplace<tuple<set_stopped_t>>(set_stopped);
         state->@_complete_@();
     }
 };
@@ -2595,9 +2595,9 @@ struct @_spawn-future-receiver_@ { // @_exposition-only_@
 namespace std::execution {
 
 template <class Alloc, async_scope_token Token, sender Sender>
-struct @_spawn-future-state_@ : @_spawn-state-base_@<@_completion-signatures-of_@<Sender>> {
-    using @_sigs-t_@ = @_completion-signatures-of_@<Sender>;
-    using @_receiver-t_@ = @_spawn-future-receiver_@<Sigs>;
+struct @_spawn-future-state_@ : @_spawn-future-state-base_@<completion_signatures_of_t<Sender, empty_env>> {
+    using @_sigs-t_@ = completion_signatures_of_t<Sender, empty_env>;
+    using @_receiver-t_@ = @_spawn-future-receiver_@<@_sigs-t_@>;
     using @_op-t_@ = decltype(connect(declval<Sender>(), @_receiver-t_@{nullptr}));
 
     @_spawn-future-state_@(Alloc alloc, Sender&& sndr, Token token); // see below
@@ -2635,7 +2635,7 @@ private:
     if (token.try_associate()) {
         op.start();
     } else {
-        this->result.emplace(set_stopped);
+        this->result.emplace<tuple<set_stopped_t>>(set_stopped);
         @_complete_@();
     }
 ```
@@ -2646,8 +2646,12 @@ private:
 
 - If the invocation of _`complete`_ happens-before an invocation of _`consume`_ or _`abandon`_ then no effect;
 - otherwise, if an invocation of _`consume`_ happened-before this invocation of _`complete`_ then
-  - there is a receiver, `rcvr`, registered and that receiver is completed as if by reading the current value of
-    `this->result` into a `cpo` and its `args` and then invoking `cpo(std:move(rcvr), std::move(args)...)`; and
+  - there is a receiver, `rcvr`, registered and that receiver is completed as if by:
+    ```cpp
+    std::move(this->result).visit([](auto cpo, auto&&... vals) {
+       cpo(std::move(rcvr), std::move(vals)...);
+    });
+    ```
   - then `this->@_destroy_@()` is invoked.
 - otherwise, an invocation of _`abandon`_ happened-before this invocation of _`complete`_ and `this->@_destroy_@()`
   is invoked.
@@ -2658,8 +2662,13 @@ private:
 
 - If the invocation of _`consume`_ happens-before an invocation of _`complete`_ then `rcvr` is registered to be
   completed when _`complete`_ is invoked;
-- otherwise, `rcvr` is completed as if by reading the current value of `this->result` into a `cpo` and its `args` and
-  then invoking `cpo(std::move(rcvr), args...)`; then `this->@_destroy_@()` is invoked.
+- otherwise, `rcvr` is completed as if by:
+  ```cpp
+  std::move(this->result).visit([](auto cpo, auto&&... vals) {
+     cpo(std::move(rcvr), std::move(vals)...);
+  });
+  ```
+  and then `this->@_destroy_@()` is invoked.
 
 `void @_abandon_@() noexcept;`
 
