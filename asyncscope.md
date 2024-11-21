@@ -1712,8 +1712,12 @@ class counting_scope {
             return @@_stop_when_@@(std::forward<S>(snd), scope_->source_.get_token());
         }
 
-        async_scope_association auto try_associate() const {
+        bool try_associate() const {
             return scope_->scope_.get_token().try_associate();
+        }
+
+        void disassociate() const {
+            scope_->scope_.get_token().disassociate();
         }
 
     private:
@@ -1821,9 +1825,18 @@ _and_ the stop source in the token's `counting_scope`.
 bool try_associate() const;
 ```
 
-Returns `true` if the token's scope is open, and `false` if it's closed. `try_associate()`
-behaves as if its `counting_scope` owns a `simple_counting_scope`, `scope`, and the result is equivalent to the result
-of invoking `scope.get_token().try_associate()`.
+Returns `true` if the token's scope is open, and `false` if it's closed. `try_associate()` behaves as if its
+`counting_scope` owns a `simple_counting_scope`, `scope`, and the result is equivalent to the result of invoking
+`scope.get_token().try_associate()`.
+
+### `counting_scope::token::disassociate`
+
+```cpp
+void disassociate() const;
+```
+
+`disassociate()` behaves as if its `counting_scope` owns a `simple_counting_scope`, `scope`, and the result is
+equivalent to the result of invoking `scope.get_token().disassociate()`.
 
 ## When to use `counting_scope` vs [@P3296R2]'s `let_async_scope`
 
