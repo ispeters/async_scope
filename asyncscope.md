@@ -1712,12 +1712,8 @@ class counting_scope {
             return @@_stop_when_@@(std::forward<S>(snd), scope_->source_.get_token());
         }
 
-        bool try_associate() const {
+        async_scope_association auto try_associate() const {
             return scope_->scope_.get_token().try_associate();
-        }
-
-        void disassociate() const {
-            scope_->scope_.get_token().disassociate();
         }
 
     private:
@@ -1825,18 +1821,9 @@ _and_ the stop source in the token's `counting_scope`.
 bool try_associate() const;
 ```
 
-Returns `true` if the token's scope is open, and `false` if it's closed. `try_associate()` behaves as if its
-`counting_scope` owns a `simple_counting_scope`, `scope`, and the result is equivalent to the result of invoking
-`scope.get_token().try_associate()`.
-
-### `counting_scope::token::disassociate`
-
-```cpp
-void disassociate() const;
-```
-
-`disassociate()` behaves as if its `counting_scope` owns a `simple_counting_scope`, `scope`, and the result is
-equivalent to the result of invoking `scope.get_token().disassociate()`.
+Returns `true` if the token's scope is open, and `false` if it's closed. `try_associate()`
+behaves as if its `counting_scope` owns a `simple_counting_scope`, `scope`, and the result is equivalent to the result
+of invoking `scope.get_token().try_associate()`.
 
 ## When to use `counting_scope` vs [@P3296R2]'s `let_async_scope`
 
@@ -2174,6 +2161,9 @@ Add the following as a new subsection immediately after __[exec.utils.tfxcmplsig
 ::: add
 __Scope concepts [exec.scope.concepts]__
 
+[1]{.pnum} The `async_scope_token<Token>` concept defines the
+requirements on an object of type `Token` that can be used to create associations between senders and an async scope.
+
 ```cpp
 namespace std::execution {
 
@@ -2186,9 +2176,8 @@ concept async_scope_token =
     };
 }
 ```
-[2]{.pnum} `async_scope_association<Assoc>` is modeled only if `Assoc`'s move operations are not potentially throwing.
 
-[3]{.pnum} `async_scope_token<Token>` is modeled only if `Token`'s copy and move operations are not potentially
+[2]{.pnum} `async_scope_token<Token>` is modeled only if `Token`'s copy and move operations are not potentially
 throwing.
 
 [4]{.pnum} For a subexpression `snd`, let `Sndr` be `decltype((snd))` and let `sender<Sndr>` be true;
