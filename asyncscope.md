@@ -1113,10 +1113,13 @@ no-throw copyable and movable, and it is undefined behaviour to invoke any metho
 scope.
 
 The `try_associate()` method on a token attempts to create a new association with the scope; `try_associate()` returns
-an engaged association when the association is successful, and it may either return a disengaged association or throw an
-exception to indicate failure. Returning a disengaged association will generally lead to algorithms that operate on
-tokens behaving as if provided a sender that completes immediately with `set_stopped()`, leading to rejected work being
-discarded as a "no-op". Throwing an exception will generally lead to that exception escaping from the calling algorithm.
+`true` when the association is successful, and it may either return `false` or throw an exception to indicate failure.
+Returning `false` will generally lead to algorithms that operate on tokens behaving as if provided a sender that
+completes immediately with `set_stopped()`, leading to rejected work being discarded as a "no-op". Throwing an exception
+will generally lead to that exception escaping from the calling algorithm.
+
+The `disassociate()` method removes a previously-established assocation with the scope. `disassociate()` must be called
+exactly once for every call to `try_associate()` that returns `true`; it is undefined behaviour to do otherwise.
 
 Tokens also have a `wrap()` method that takes and returns a sender. The `wrap()` method gives the token an opportunity
 to modify the input sender's behaviour in a scope-specific way. The proposed `counting_scope` uses this opportunity to
