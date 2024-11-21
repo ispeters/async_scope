@@ -31,8 +31,8 @@ Changes
 
 ## R8
 
-- Replace `async_scope_association` with `async_scope_token.disassociate()` to address concerns raised during LEWG
-  meeting in Wroclaw as captured in the polls below. The primary concern was the non-regularity of
+- Replace `~async_scope_association()` with `async_scope_token.disassociate()` to address concerns raised during the
+  LEWG meeting in Wrocław as captured in the polls below. The primary concern was the non-regularity of
   `async_scope_association`'s unusual copy constructor; requiring Standard Library implementers to remember to invoke
   `scopeToken.disassociate()` rather than relying on a non-regular RAII handle to do it automatically has more
   consensus.
@@ -1129,6 +1129,10 @@ associated within the scope.
 In order to provide the Strong Exception Guarantee, the algorithms proposed in this paper invoke `token.wrap(snd)`
 before invoking `token.try_associate()`. Other algorithms written in terms of `async_scope_token` should do the same.
 
+_Note_: Wrapping the sender before creating an association means that, when `try_associate()` returns `false`, the work
+to wrap the sender must be discarded. We could, instead, try to create the association first and only wrap the sender
+when successful; this would be more efficient but would limit us to providing the Basic Exception Guarantee.
+
 ## `execution::nest`
 
 ```cpp
@@ -1189,10 +1193,9 @@ resulting nest-sender is also copyable, with the following rules:
 - copying an unassociated nest-sender invariably produces a new unassociated nest-sender; and
 - copying an associated nest-sender requires copying the _`nest-data`_ it contains and the _`nest-data`_
   copy-constructor proceeds as follows:
-  1. copy the association from the source into the destination _`nest-data`_
-     - if the copied association is engaged then copy the wrapped sender from the source into the destination
-       _`nest-data`_; the destination nest-sender is associated
-     - otherwise, the destination nest-sender is unassociated
+  1. copy the token from the source _`nest-data`_ to the destination; and
+  2. if `token.try_associate()` returns `true`, copy the sender from the source _`nest-data`_ to the destination
+     - if the sender is copied in step 2 then the new nest-sender is associated; otherwise, it's unassociated
 
 _Note_: copying an associated nest-sender may produce an unassociated nest-sender however this observable difference is
 not a salient property of the nest-sender. A nest-sender is similar to a stateful `std::function<T()>` for some `T`; it
@@ -1207,14 +1210,14 @@ When connecting an associated nest-sender, there are four possible outcomes:
 
 1. the nest-sender is rvalue connected, which infallibly moves the sender's association from the sender to the
    _`operation-state`_
-2. the nest-sender is lvalue connected, in which case the sender's association must be copied into the
-   _`operation-state`_, which may:
-   a. succeed by creating a new engaged association for the _`operation-state`_;
-   b. fail by creating a new disengaged association for the _`operation-state`_, in which case the new
-      _`operation-state`_ behaves as if it were constructed from an unassociated nest-sender; or
+2. the nest-sender is lvalue connected, in which case the new _`operation-state`_ needs its own association with the
+   nest-sender's scope, which requires calling `try_associate()` again and it may:
+   a. succeed by returning `true`;
+   b. fail by returning `false`, in which case the _`operation-state`_ behaves as if it were constructed from an
+      unassociated nest-sender; or
    c. fail by throwing an exception, in which case the exception escapes from the call to connect.
 
-An _`operation-state`_ with its own association must invoke the association's destructor as the last step of the
+An _`operation-state`_ with its own association must invoke `token.disassociate()` as the last step of the
 _`operation-state`_'s destructor.
 
 Note: the timing of when an associated _`operation-state`_ ends its association with the scope is chosen to avoid
