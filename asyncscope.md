@@ -2174,28 +2174,16 @@ Add the following as a new subsection immediately after __[exec.utils.tfxcmplsig
 ::: add
 __Scope concepts [exec.scope.concepts]__
 
-[1]{.pnum} The `async_scope_association<Assoc>` concept defines the requirements on an object of type `Assoc` that
-represents a possible assocation with an async scope object. The `async_scope_token<Token>` concept defines the
-requirements on an object of type `Token` that can be used to create associations between senders and an async scope.
 ```cpp
 namespace std::execution {
-
-template <class Assoc>
-concept async_scope_association =
-    movable<Assoc> &&
-    default_initializable<Assoc> &&
-    requires(const Assoc& assoc) {
-        { static_cast<bool>(assoc) } noexcept;
-        { assoc.try_copy() } -> same_as<Assoc>;
-    };
 
 template <class Token>
 concept async_scope_token =
     copyable<Token> &&
     requires(Token token) {
-        { token.try_associate() } -> async_scope_association;
+        { token.try_associate() } -> same_as<bool>;
+        { token.disassociate() } -> same_as<void>;
     };
-
 }
 ```
 [2]{.pnum} `async_scope_association<Assoc>` is modeled only if `Assoc`'s move operations are not potentially throwing.
