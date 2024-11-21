@@ -1558,12 +1558,12 @@ three methods: `wrap(sender auto&& s`), `try_associate()`, and `disassociate()`.
 - `try_associate()` attempts to create a new association with the `simple_counting_scope` and will return `true` when
   successful, or `false`. The requirements for `try_associate()`'s success are outlined below:
   1. While a scope is in the unused, open, or open-and-joining state, calls to `token.try_associate()` succeeds by
-     incrementing the scope's count of oustanding operations before returning an engaged association.
+     incrementing the scope's count of oustanding operations before returning `true`.
   2. While a scope is in the closed, unused-and-closed, closed-and-joining, or joined state, calls to
      `token.try_associate()` will return `false` and _will not_ increment the scope's count of outstanding operations.
 
 When a token's `try_associate()` returns `true`, the caller is responsible for undoing the association by invoking
-`disassociate()`, which will decrementing the scope's count of oustanding operations.
+`disassociate()`, which will decrement the scope's count of oustanding operations.
 
 - When a scope is in the open-and-joining or closed-and-joining state and a call to `disassociate()` undoes the final
   scope association, the scope moves to the joined state and the outstanding join-sender completes.
@@ -1818,10 +1818,10 @@ _and_ the stop source in the token's `counting_scope`.
 ### `counting_scope::token::try_associate`
 
 ```cpp
-assoc try_associate() const;
+bool try_associate() const;
 ```
 
-Returns an `assoc` that is engaged if the token's scope is open, and disengaged if it's closed. `try_associate()`
+Returns `true` if the token's scope is open, and `false` if it's closed. `try_associate()`
 behaves as if its `counting_scope` owns a `simple_counting_scope`, `scope`, and the result is equivalent to the result
 of invoking `scope.get_token().try_associate()`.
 
