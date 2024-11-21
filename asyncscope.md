@@ -2274,26 +2274,33 @@ following lambda:
 []<class Sndr, class Rcvr>(Sndr&& sndr, Rcvr& rcvr) noexcept(@_see below_@) {
     auto& [_, data, ...child] = sndr;
 
+    using scope_token = decltype(data.token);
+    using op_t = decltype(connect(std::forward_like<Sndr>(data.sndr.value()), rcvr));
+
     static_assert(sizeof...(child) == 0);
 
     struct op_state {
-        @_association_@ assoc;
+        bool associated(false);
+        scope_token token;
         union {
-            Rcvr& rcvr;
+            Rcvr* rcvr;
             op_t op;
         };
 
-        op_state(Rcvr& rcvr) noexcept
-            : rcvr(rcvr) {}
+        op_state(scope_token token, Rcvr& rcvr) noexcept
+            : token(std::move(token)),
+              rcvr(&rcvr) {}
 
-        op_state(@_association_@ assoc, @_wrap-sender_@&& sndr, Rcvr& rcvr)
-            : assoc(std::move(assoc)),
+        op_state(scope_token token, @_wrap-sender_@&& sndr, Rcvr& rcvr)
+            : associated(true),
+              token(std::move(token)),
               op(connect(std::move(sndr), std::move(rcvr))) {}
 
-        op_state(@_association_@ assoc, const @_wrap-sender_@& sndr, Rcvr& rcvr)
-            : assoc(std::move(assoc)),
-              rcvr(rcvr) {
-            if (assoc) {
+        op_state(scope_token token, const @_wrap-sender_@& sndr, Rcvr& rcvr)
+            : associated(token.try_associate()),
+              token(std::move(token)),
+              rcvr(&rcvr) {
+            if (associated) {
                 new (&op) op_t(connect(sndr, std::move(rcvr)));
             }
         }
@@ -2301,13 +2308,13 @@ following lambda:
         op_state(op_state&&) = delete;
 
         ~op_state() {
-            if (assoc) {
+            if (associated) {
                 op.~op_t();
             }
         }
 
         void start() {
-            if (assoc) {
+            if (associated) {
                 op.start();
             }
             else {
@@ -2316,11 +2323,11 @@ following lambda:
         }
     };
 
-    if (data.assoc) {
-        return op_state{std::forward_like<Sndr>(data.assoc), std::forward_like<Sndr>(data.sndr.value()), rcvr};
+    if (associated) {
+        return op_state{std::forward_like<Sndr>(data.token), std::forward_like<Sndr>(data.sndr.value()), rcvr};
     }
     else {
-        return op_state{rcvr};
+        return op_state{data.token, rcvr};
     }
 }
 ```
