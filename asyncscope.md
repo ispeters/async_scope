@@ -2061,9 +2061,8 @@ alternatives: `async_scope`, `task_pool`, `task_group`, `sender_group`
 
 ### `counting_scope::join()`
 
-This method returns a sender that, when started, prevents new senders from being nested within the scope and then waits
-for the scope's count of outstanding senders to drop to zero before completing. It is somewhat analogous to
-`std::thread::join()` but does not block.
+This method returns a sender that, when started, waits for the scope's count of outstanding senders to drop to zero
+before completing. It is somewhat analogous to `std::thread::join()` but does not block.
 
 `join()` must be invoked, and the returned sender must be connected, started, and completed, before the scope may be
 destroyed so it may be useful to convey some of this importance in the name, although `std::thread` has similar
