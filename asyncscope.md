@@ -3011,7 +3011,7 @@ life-time `s` goes through different states which govern what operations are all
 - [1.7]{.pnum} `@_joined_@`: when the count of associated objects drops to zero while `s` is in `@_open-and-joining_@`
   or `@_closed-and-joining_@` state, `s` moves to the `@_joined_@` state.
 
-[2]{.pnum} Calls to member functions `get_token`, `close`, `join`, and `request_stop()` do not introduce data races.
+[2]{.pnum} Calls to member functions `get_token`, `close`, `join`, and `request_stop` do not introduce data races.
 
 __Constructor and Destructor [exec.counting.ctor]__
 
