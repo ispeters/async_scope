@@ -1549,25 +1549,23 @@ _`operation-state`_ must be started to effect the state change. A started join-s
 of outstanding operations reaches zero, at which point the scope transitions to the joined state.
 
 Calling `close()` on a `simple_counting_scope` moves the scope to the closed, unused-and-closed, or closed-and-joining
-state, and causes all future calls to `try_associate()` to return disengaged associations.
+state, and causes all future calls to `try_associate()` to return `false`.
 
-Associating work with a `simple_counting_scope` can be done through `simple_counting_scope`'s token.
-`simple_counting_scope`'s token provides two methods: `wrap(Sender&& s)`, and `try_associate()`.
+Associating work with a `simple_counting_scope` can be done through `simple_counting_scope`'s token, which provides
+three methods: `wrap(sender auto&& s`), `try_associate()`, and `disassociate()`.
 
-- `wrap(Sender&& s)` takes in a sender and returns it unmodified.
-- `try_associate()` attempts to create a new association with the `simple_counting_scope` and will return an engaged
-  association when successful, or a disengaged association otherwise. The requirements for `try_associate()`'s success
-  are outlined below:
+- `wrap(sender auto&& s)` takes in a sender and returns it unmodified.
+- `try_associate()` attempts to create a new association with the `simple_counting_scope` and will return `true` when
+  successful, or `false`. The requirements for `try_associate()`'s success are outlined below:
   1. While a scope is in the unused, open, or open-and-joining state, calls to `token.try_associate()` succeeds by
      incrementing the scope's count of oustanding operations before returning an engaged association.
   2. While a scope is in the closed, unused-and-closed, closed-and-joining, or joined state, calls to
-     `token.try_associate()` will return a disengaged assocation and _will not_ increment the scope's count of
-     outstanding operations.
+     `token.try_associate()` will return `false` and _will not_ increment the scope's count of outstanding operations.
 
-When a token's `try_associate()` returns an engaged association, the destructor of the resulting association will undo
-the association by decrementing the scope's count of oustanding operations.
+When a token's `try_associate()` returns `true`, the caller is responsible for undoing the association by invoking
+`disassociate()`, which will decrementing the scope's count of oustanding operations.
 
-- When a scope is in the open-and-joining or closed-and-joining state and an association's destructor undoes the final
+- When a scope is in the open-and-joining or closed-and-joining state and a call to `disassociate()` undoes the final
   scope association, the scope moves to the joined state and the outstanding join-sender completes.
 
 The state transitions of a `simple_counting_scope` mean that it can be used to protect asynchronous work from
