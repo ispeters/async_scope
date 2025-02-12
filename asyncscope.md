@@ -31,7 +31,6 @@ Changes
 
 ## R9
 
-
 - Update the language used in simple_counting_scope::join and counting_scope::join to explicitly specify the behavior of
   completion as captured in the polls below:
 
