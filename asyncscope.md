@@ -2375,7 +2375,7 @@ following lambda:
                 op.start();
             }
             else {
-                set_stopped(std::move(rcvr));
+                set_stopped(std::move(*rcvr));
             }
         }
     };
@@ -2574,7 +2574,7 @@ let `Sndr` be `decltype((sndr))`, let `Token` be `decltype((token))`, and let `E
 `sender<Sndr>` or `async_scope_token<Token>` is `false`, the expression `spawn_future(sndr, token, env)` is ill-formed.
 
 [3]{.pnum} For the expression `spawn_future(sndr, token, env)` let `stok` be a stop token that will receive stop
-requests sent from the returned future and any stop requests sent to the stop token returned from `get_stop_token(env)`
+requests sent from the returned future and any stop requests sent to the stop token returned from `get_stop_token(env)`.
 
 [4]{.pnum} Let _`spawn-future-state-base`_ be an exposition-only class template defined below:
 
