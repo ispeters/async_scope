@@ -2610,16 +2610,20 @@ namespace std::execution {
 
 template <class Sigs>
 struct @_spawn-future-receiver_@ { // @_exposition-only_@
+    using receiver_concept = receiver_t;
+
     @_spawn-future-state-base_@<Sigs>* state; // @_exposition-only_@
 
     template <class... T>
     void set_value(T&&... t) && noexcept {
-        try {
-            state->result.emplace<@_decayed-tuple_@<set_value_t, T...>>(set_value, std::forward<T>(t)...);
-        }
-        catch (...) {
-            if constexpr () { // TODO: how to express to not throw if things are non throwable
-                state->result.emplace<tuple<set_error_t, exception_ptr>>(set_error, std::current_exception());
+        if constexpr (is_nothrow_constructible_v<@_decayed-tuple_@<set_value_t, T...>, set_value_t, T...>) {
+            state->result.emplace<@_decayed-tuple_@<set_value_t, T...>>(set_value_t{}, std::forward<T>(t)...);
+        } else {
+            try {
+                state->result.emplace<@_decayed-tuple_@<set_value_t, T...>>(set_value_t{}, std::forward<T>(t)...);
+            }
+            catch (...) {
+                state->result.emplace<@_decayed-tuple_@<set_error_t, exception_ptr>>(set_error_t{}, std::current_exception());
             }
         }
         state->@_complete_@();
@@ -2627,22 +2631,22 @@ struct @_spawn-future-receiver_@ { // @_exposition-only_@
 
     template <class E>
     void set_error(E&& e) && noexcept {
-        try {
-            state->result.emplace<@_decayed-tuple_@<set_error_t, E>>(set_error, std::forward<E>(e));
-        }
-        catch (...) {
-            state->result.emplace<tuple<set_error_t, exception_ptr>>(set_error, current_exception());
+        if constexpr (is_nothrow_constructible_v<@_decayed-tuple_@<set_error_t, E>, set_error_t, E>) {
+            state->result.emplace<@_decayed-tuple_@<set_error_t, E>>(set_error_t{}, std::forward<E>(e));
+        } else {
+            try {
+                state->result.emplace<@_decayed-tuple_@<set_error_t, E>>(set_error_t{}, std::forward<E>(e));
+            }
+            catch (...) {
+                state->result.emplace<@_decayed-tuple_@<set_error_t, exception_ptr>>(set_error_t{}, current_exception());
+            }
         }
         state->@_complete_@();
     }
 
     void set_stopped() && noexcept {
-        state->result.emplace<tuple<set_stopped_t>>(set_stopped);
+        state->result.emplace<@_decayed-tuple_@<set_stopped_t>>(set_stopped_t{});
         state->@_complete_@();
-    }
-
-    decltype(auto) get_env() const noexcept {
-        return @_see below_@;
     }
 };
 
@@ -2707,7 +2711,7 @@ private:
     if (associated = token.try_associate()) {
         op.start();
     } else {
-        this->result.emplace<tuple<set_stopped_t>>(set_stopped);
+        this->result.emplace<@_decayed-tuple_@<set_stopped_t>>(set_stopped_t{});
         @_complete_@();
     }
 ```
