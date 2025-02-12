@@ -2600,7 +2600,7 @@ type `variant<T...>` where the parameter pack contains the following:
 - `monostate` as the first element;
 - for each completion signature in `Sigs` with a completion tag `cpo_t` and parameter types `P...` an element of type
   `@_decayed-tuple_@<cpo_t, P...>`; and
-- `tuple<set_error_t, exception_ptr>` if any of the preceding instantiations of `tuple` have possibly-throwing
+- `@_decayed-tuple_@<set_error_t, exception_ptr>` if any of the preceding instantiations of `tuple` have possibly-throwing
   constructors.
 
 [6]{.pnum} Let _`spawn-future-receiver`_ be an exposition-only class template defined below:
@@ -2724,8 +2724,15 @@ private:
 - otherwise, if an invocation of _`consume`_ happened-before this invocation of _`complete`_ then
   - there is a receiver, `rcvr`, registered and that receiver is completed as if by:
     ```cpp
-    std::move(this->result).visit([](auto cpo, auto&&... vals) {
-       cpo(std::move(rcvr), std::move(vals)...);
+    std::move(this->result).visit([](auto&& tuplish) noexcept {
+       if constexpr (same_as<remove_reference_t<decltype(tuplish)>, monostate>) {
+           // this is impossible
+           std::terminate();
+       } else {
+           std::apply([](auto cpo, auto&&... vals) {
+               cpo(std::move(rcvr), std::move(vals)...);
+           }, std::move(tuplish));
+       }
     });
     ```
   - then `this->@_destroy_@()` is invoked in the _op-t_ destructor.
@@ -2740,8 +2747,15 @@ private:
   completed when _`complete`_ is invoked;
 - otherwise, `rcvr` is completed as if by:
   ```cpp
-  std::move(this->result).visit([](auto cpo, auto&&... vals) {
-     cpo(std::move(rcvr), std::move(vals)...);
+  std::move(this->result).visit([](auto&& tuplish) noexcept {
+     if constexpr (same_as<remove_reference_t<decltype(tuplish)>, monostate>) {
+         // this is impossible
+         std::terminate();
+     } else {
+         std::apply([](auto cpo, auto&&... vals) {
+             cpo(std::move(rcvr), std::move(vals)...);
+         }, std::move(tuplish));
+     }
   });
   ```
   and then `this->@_destroy_@()` is invoked in the _op-t_ destructor.
