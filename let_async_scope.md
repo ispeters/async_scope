@@ -1,6 +1,6 @@
-# P3296R3 `let_async_scope`
+# D3296R4 `let_async_scope`
 
-Date: 19th November 2024 
+Date: 12th February 2025
 
 Author: Anthony Williams <anthony@justsoftwaresolutions.co.uk>
 
@@ -293,26 +293,18 @@ Please note: this wording is incomplete, and needs review.
         }
        ```
 
-          1. `scope-type` is a type that satisfies the `asynchronous-scope` concept.
-             1. Instances of `scope-type` maintains a count of the
-                number of active senders passed to `nest` on that
-                scope object or an `async-scope-token` obtained from
-                that scope object.
-             2. The count of active senders is decremented by one when
-                a sender passed to `nest` completes.
-             3. The sender returned from calling `join()` on an
-                instance of the scope type will complete when the
-                number of senders reaches zero.
-             4. Once the count of active senders has been decremented
-                to zero, it is undefined behaviour to attempt to nest
-                a sender into the scope. [[Note: this requires storing
-                a scope token passed to a nested sender in storage
-                that outlives that sender]]
+          1. `scope-type` is a type that behaves like a `counting_scope`, except that it is never _closed_.
                 
-          1. `scope-token-type` is the type of the `async-scope-token`
-             associated with this invocation of `let_async_scope_with_error`.
+          2. `scope-token-type` is the type of the `async-scope-token`
+             associated with this invocation of
+             `let_async_scope_with_error`. It is a type that satisfies
+             the `async_scope_token` concept, and wraps an instance of
+             the `scope-type::token` associated with the internal
+             `scope-type`, such that calls to the `wrap`,
+             `try_associate` and `disassociate` member functions are
+             forwarded to the wrapped `scope-type::token` instance.
           
-          2. Let `Sigs` be a pack of the arguments to the
+          3. Let `Sigs` be a pack of the arguments to the
              `completion_signatures` specialization named by
              `completion_signatures_of_t<child-type<Sndr>,
              env_of_t<Rcvr>>`. Let `LetSigs` be a pack of those types
@@ -323,30 +315,31 @@ Please note: this wording is incomplete, and needs review.
              denotes the type `variant<monostate,
              as-tuple<LetSigs>...>`.
 
-          3. Let `as-sndr2` be an alias template such that
+          4. Let `as-sndr2` be an alias template such that
              `as-sndr2<Tag(Args...)>` denotes the type
              `call-result-t<Fn, scope-token-type, remove_cvref_t<Args>&...>`. Then
              `ops2-variant-type` denotes the type `variant<monostate,
              connect_result_t<as-sndr2<LetSigs>, receiver2<Rcvr,
              Env>>...>`.
 
-          4. The _requires-clause_ constraining the above lambda is
+          5. The _requires-clause_ constraining the above lambda is
              satisfied if and only if the types `args-variant-type`
              and `ops2-variant-type` are well-formed.
              
-          5. `error-variant-type` is a `variant<E...>`, where the
+          6. `error-variant-type` is a `variant<E...>`, where the
              types `E...` are the corresponding `E` types from the
              `Errors...` parameter of the `let_async_scope_with_error<Errors...>` invocation.
              
-          6. `scope-token-type` shall be a unique type, such that
-             invoking `spawn(snd, token, env)` where `token` is an
-             instance of `scope-token-type` invokes a distinct
-             overload of `spawn`. Such an invocation is ill-formed if
-             the completion signatures of `snd` include error
-             completions that are not compatible with the `Errors...`
-             list of the `let_async_scope_with_error<Errors...>`
-             invocation. If the error list is compatible, then such an
-             invocation of `spawn` is equivalent to
+          7. `scope-token-type` shall be a unique type, such that
+             invoking `spawn(snd, token, env)` or `spawn(snd, token)`
+             where `token` is an instance of `scope-token-type`
+             invokes a distinct overload of `spawn`. Such an
+             invocation is ill-formed if the completion signatures of
+             `snd` include error completions that are not compatible
+             with the `Errors...`  list of the
+             `let_async_scope_with_error<Errors...>` invocation. If
+             the error list is compatible, then such an invocation of
+             `spawn(snd,token,env)` is equivalent to
           
              ```c++
              spawn(snd | upon_error(
@@ -359,8 +352,22 @@ Please note: this wording is incomplete, and needs review.
                                }), state.scope.get_token(), env);
              ```
 
+             and an invocation of `spawn(snd,token)` is equivalent to
+
+         ```c++
+             spawn(snd | upon_error(
+                     [&state](auto&& error){
+                       {
+                         lock_guard guard(state.error_mutex);
+                         state.errors.emplace(TRANSFORM-ERROR(error));
+                       }
+                       state.scope.request_stop();
+                               }), state.scope.get_token(), state.env);
+             ```
+
              Where `TRANSFORM-ERROR` is `AS-EXCEPT-PTR(error)` if
-             `Errors...`  is `std::exception_ptr`, and
+             `Errors...`  is a list consisting of the single element
+             `std::exception_ptr`, and
              `std::forward<decltype(error)>(error)` otherwise.
 
      3. The exposition-only function template `let-async-scope-bind` is equal to:
@@ -444,6 +451,11 @@ Please note: this wording is incomplete, and needs review.
 
 - Fix specification of allowed errors
 - Make it clear that a new overload of `spawn` is expected.
+
+### R4
+
+- Fix specification of the async scope type
+- Two overloads of `spawn`: with/without explicit environment
 
 ## Acknowledgements
 
