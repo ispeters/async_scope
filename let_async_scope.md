@@ -202,8 +202,6 @@ error signatures then the program is ill-formed.
 
 ## Wording
 
-Please note: this wording is incomplete, and needs review.
-
 ### `execution::let_async_scope`
 
 1. `let_async_scope` transforms a sender’s value completions into a
@@ -279,13 +277,12 @@ Please note: this wording is incomplete, and needs review.
             using ops2-variant-type = see below;
             using scope-type = see below;
 
-            struct state-type {
+            struct state-type { // exposition only
               Fn fn;
               Env env;
               scope-type scope;
               args-variant-type args;
               ops2-variant-type ops2;
-              mutex error_mutex;
               optional<error-variant-type> error;
             };
             return state-type{std::move(fn), std::move(env), {}, {}};
@@ -345,7 +342,7 @@ Please note: this wording is incomplete, and needs review.
              spawn(snd | upon_error(
                      [&state](auto&& error){
                        {
-                         lock_guard guard(state.error_mutex);
+                         internal-synchronization-lock guard(state);
                          state.errors.emplace(TRANSFORM-ERROR(error));
                        }
                        state.scope.request_stop();
@@ -354,11 +351,11 @@ Please note: this wording is incomplete, and needs review.
 
              and an invocation of `spawn(snd,token)` is equivalent to
 
-         ```c++
+             ```c++
              spawn(snd | upon_error(
                      [&state](auto&& error){
                        {
-                         lock_guard guard(state.error_mutex);
+                         internal-synchronization-lock guard(state);
                          state.errors.emplace(TRANSFORM-ERROR(error));
                        }
                        state.scope.request_stop();
@@ -368,7 +365,17 @@ Please note: this wording is incomplete, and needs review.
              Where `TRANSFORM-ERROR` is `AS-EXCEPT-PTR(error)` if
              `Errors...`  is a list consisting of the single element
              `std::exception_ptr`, and
-             `std::forward<decltype(error)>(error)` otherwise.
+             `std::forward<decltype(error)>(error)` otherwise,
+             
+             and `internal-synchronization-lock guard(state);` is an
+             exposition only placeholder for appropriate
+             synchronization to ensure that the emplacement to
+             `state.errors` is correctly synchronized and does not
+             race. [Note: This could be achieved by storing a `mutex`
+             in the `state` and using `lock_guard`, but other
+             implementation strategies may be more optimal. --- end
+             note]
+
 
      3. The exposition-only function template `let-async-scope-bind` is equal to:
 
@@ -456,6 +463,7 @@ Please note: this wording is incomplete, and needs review.
 
 - Fix specification of the async scope type
 - Two overloads of `spawn`: with/without explicit environment
+- Remove explicit mutex from the state
 
 ## Acknowledgements
 
