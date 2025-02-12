@@ -1434,7 +1434,7 @@ for the spawned sender to complete and then completes itself with the spawned se
 3. An environment, `senv`, is chosen as follows:
    - if `alloc` is `get_allocator(env)` then `senv` is `@_JOIN-ENV_@(prop(get_stop_token, stok), env)`;
    - otherwise, if `alloc` is `get_allocator(get_env(token.wrap(snd)))` then `senv` is
-     `@_JOIN-ENV_@(prop(get_allocator, alloc), prop(get_stop_token, stok), env)`;
+     `@_JOIN-ENV_@(@_JOIN-ENV_@(prop(get_allocator, alloc), prop(get_stop_token, stok)), env)`;
    - otherwise, `senv` is `@_JOIN-ENV_@(prop(get_stop_token, stok), env)`.
 4. Storage for the spawned sender's state is dynamically allocated using `alloc`; the address of this storage is known
    as `op`.
@@ -2660,7 +2660,7 @@ and let `alloc` and `senv` be defined as follows:
   is the expression `@_JOIN-ENV_@(prop(get_stop_token, stok), env)`;
 - otherwise if the expression `get_allocator(get_env(@_new-sender_@))` is well-defined, then `alloc` is the result of
   `get_allocator(get_env(@_new-sender_@))` and `senv` is the expression
-  `@_JOIN-ENV_@(prop(get_allocator, alloc), prop(get_stop_token, stok), env)`;
+  `@_JOIN-ENV_@(@_JOIN-ENV_@(prop(get_allocator, alloc), prop(get_stop_token, stok)), env)`;
 - otherwise `alloc` is `std::allocator<void>` and `senv` is the expression
   `@_JOIN-ENV_@(prop(get_stop_token, stok), env)`.
 
