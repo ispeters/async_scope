@@ -2474,7 +2474,8 @@ private:
     @_alloc-t_@ alloc;
     @_op-t_@ op;
     Token token;
-    bool associated(false);
+
+    void @_destroy_@() noexcept; // see below
 };
 
 }
@@ -2495,10 +2496,10 @@ private:
 [9]{.pnum} _Effects_: Equivalent to:
 
 ```cpp
-    if (associated = token.try_associate()) {
+    if (token.try_associate()) {
         op.start()
     } else {
-        @_complete_@();
+        @_destroy_@();
     }
 ```
 
@@ -2508,19 +2509,24 @@ private:
 
 ```cpp
     auto token = std::move(this->token);
-    auto associated = this->associated;
-    {
-        auto alloc = std::move(this->alloc);
 
-        allocator_traits<@_alloc-t_@>::destroy(alloc, this);
-        allocator_traits<@_alloc-t_@>::deallocate(alloc, this, 1);
-    }
-    if (associated) {
-        token.disassociate();
-    }
+    @_destroy_@();
+
+    token.disassociate();
 ```
 
-[11]{.pnum} Then the expression `spawn(sndr, token)` is expression-equivalent to `spawn(sndr, token, empty_env{})` and
+`void @_destroy_@() noexcept;`
+
+[11]{.pnum} _Effects_: Equivalent to:
+
+```cpp
+    auto alloc = std::move(this->alloc);
+
+    allocator_traits<@_alloc-t_@>::destroy(alloc, this);
+    allocator_traits<@_alloc-t_@>::deallocate(alloc, this, 1);
+```
+
+[12]{.pnum} Then the expression `spawn(sndr, token)` is expression-equivalent to `spawn(sndr, token, empty_env{})` and
 the expression `spawn(sndr, token, env)` is expression-equivalent to the following:
 ```
     auto makeSender = [&] {
