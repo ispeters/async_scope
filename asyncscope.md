@@ -2344,19 +2344,19 @@ following lambda:
             op_t op;
         };
 
-        op_state(scope_token token, Rcvr& _rcvr) noexcept
+        op_state(scope_token token, Rcvr& r) noexcept
             : token(std::move(token)),
-              rcvr(&_rcvr) {}
+              rcvr(&r) {}
 
-        op_state(scope_token token, @_wrap-sender_@&& sndr, Rcvr& _rcvr)
+        op_state(scope_token token, @_wrap-sender_@&& sndr, Rcvr& r)
             : associated(true),
               token(std::move(token)),
-              op(connect(std::move(sndr), std::move(_rcvr))) {}
+              op(connect(std::move(sndr), std::move(r))) {}
 
-        op_state(scope_token token, const @_wrap-sender_@& sndr, Rcvr& _rcvr)
+        op_state(scope_token token, const @_wrap-sender_@& sndr, Rcvr& r)
             : associated(token.try_associate()),
               token(std::move(token)),
-              rcvr(&_rcvr) {
+              rcvr(&r) {
             if (associated) {
                 new (&op) op_t(connect(sndr, std::move(rcvr)));
             }
