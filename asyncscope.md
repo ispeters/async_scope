@@ -1427,10 +1427,8 @@ for the spawned sender to complete and then completes itself with the spawned se
 `spawn_future(snd, token, env)` proceeds with the following steps in the following order:
 
 1. An allocator, `alloc`, is chosen as described above.
-2. A stop token, `stok`, is chosen as follows:
-   - if `get_stop_token(env)` is a well-defined then `stok` is a stop token that receives stop requests sent by the
-     returned future _and_ any stop requests received by the stop token returned from `get_stop_token(env)`;
-   - otherwise, `stok` is a stop token that receives stop requests sent by the returned future.
+2. A stop token, `stok`, is created such that it receives stop requests sent by the returned future _and_ any stop
+   requests received by the stop token returned from `get_stop_token(env)`;
 3. An environment, `senv`, is chosen as follows:
    - if `alloc` is `get_allocator(env)` then `senv` is `@_JOIN-ENV_@(prop(get_stop_token, stok), env)`;
    - otherwise, if `alloc` is `get_allocator(get_env(token.wrap(snd)))` then `senv` is
