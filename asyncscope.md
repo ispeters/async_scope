@@ -1432,10 +1432,10 @@ for the spawned sender to complete and then completes itself with the spawned se
      returned future _and_ any stop requests received by the stop token returned from `get_stop_token(env)`;
    - otherwise, `stok` is a stop token that receives stop requests sent by the returned future.
 3. An environment, `senv`, is chosen as follows:
-   - if `alloc` is `get_allocator(env)` then `senv` is `@_JOIN-ENV_@(env, prop(get_stop_token, stok))`;
+   - if `alloc` is `get_allocator(env)` then `senv` is `@_JOIN-ENV_@(prop(get_stop_token, stok), env)`;
    - otherwise, if `alloc` is `get_allocator(get_env(token.wrap(snd)))` then `senv` is
-     `@_JOIN-ENV_@(env, prop(get_allocator, alloc), prop(get_stop_token, stok))`;
-   - otherwise, `senv` is `@_JOIN-ENV_@(env, prop(get_stop_token, stok))`.
+     `@_JOIN-ENV_@(prop(get_allocator, alloc), prop(get_stop_token, stok), env)`;
+   - otherwise, `senv` is `@_JOIN-ENV_@(prop(get_stop_token, stok), env)`.
 4. Storage for the spawned sender's state is dynamically allocated using `alloc`; the address of this storage is known
    as `op`.
 5. The state for the spawned sender is constructed in the allocated storage
@@ -2656,13 +2656,13 @@ struct @_spawn-future-receiver_@ { // @_exposition-only_@
 [7]{.pnum} For the expression `spawn_future(sndr, token, env)` let _`new-sender`_ be the expression `token.wrap(sndr)`
 and let `alloc` and `senv` be defined as follows:
 
-- if the expression `get_allocator(env)` is well defined, then `alloc` is th result of `get_allocator(env)` and `senv`
-  is the expression `@_JOIN-ENV_@(env, prop(get_stop_token, stok))`;
+- if the expression `get_allocator(env)` is well defined, then `alloc` is the result of `get_allocator(env)` and `senv`
+  is the expression `@_JOIN-ENV_@(prop(get_stop_token, stok), env)`;
 - otherwise if the expression `get_allocator(get_env(@_new-sender_@))` is well-defined, then `alloc` is the result of
   `get_allocator(get_env(@_new-sender_@))` and `senv` is the expression
-  `@_JOIN-ENV_@(env, prop(get_allocator, alloc), prop(get_stop_token, stok))`;
+  `@_JOIN-ENV_@(prop(get_allocator, alloc), prop(get_stop_token, stok), env)`;
 - otherwise `alloc` is `std::allocator<void>` and `senv` is the expression
-  `@_JOIN-ENV_@(env, prop(get_stop_token, stok))`.
+  `@_JOIN-ENV_@(prop(get_stop_token, stok), env)`.
 
 [8]{.pnum} Let _`spawn-future-state`_ be an exposition-only class template defined below:
 
