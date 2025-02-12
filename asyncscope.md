@@ -1687,7 +1687,7 @@ sender auto join() noexcept;
 Returns a join-sender. When the join-sender is connected to a receiver, `r`, it produces an _`operation-state`_, `o`.
 When `o` is started, the scope moves to either the open-and-joining or closed-and-joining state. `o` completes with
 `set_value()` when the scope moves to the joined state, which happens when the scope's count of outstanding operations
-drops to zero. `o` shall complete synchronously inline if it happens to observe that the count of outstanding operations is
+drops to zero. `o` will complete synchronously inline if it happens to observe that the count of outstanding operations is
 already zero when started; otherwise, `o` completes on the execution context associated with the scheduler in its
 receiver's environment by asking its receiver, `r`, for a scheduler, `sch`, with `get_scheduler(get_env(r))` and then
 starting the sender returned from `schedule(sch)`. This requirement to complete on the receiver's scheduler restricts
