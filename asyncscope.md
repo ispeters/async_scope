@@ -2434,14 +2434,11 @@ struct @_spawn-state-base_@ { // exposition-only
 namespace std::execution {
 
 struct @_spawn-receiver_@ { // exposition-only
+    using receiver_concept = receiver_t;
+
     @_spawn-state-base_@* state; // exposition-only
     void set_value() && noexcept { state->@_complete_@(); }
     void set_stopped() && noexcept { state->@_complete_@(); }
-
-    decltype(auto) get_env() const noexcept {
-        // TODO: How to express this
-        return @_see below_@
-    }
 };
 
 }
