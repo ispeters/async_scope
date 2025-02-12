@@ -2237,8 +2237,8 @@ method are not potentially throwing.
 
 [3]{.pnum} For a subexpression `snd`, let `Sndr` be `decltype((snd))` and let `sender<Sndr>` be true;
 `async_scope_token<Token>` is modeled only if, for an object, `token`, of type `Token`, the expression
-`token.wrap(snd)` is a valid expression and returns an object that satisfies `sender`, and does not add new
- completion signatures.
+`token.wrap(snd)` is a valid expression and returns an object that satisfies `sender`, and does not add or remove
+ completion signatures to those advertised by `snd`.
 
 :::
 
