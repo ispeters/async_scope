@@ -2596,7 +2596,7 @@ type `variant<T...>` where the parameter pack contains the following:
 
 - `monostate` as the first element;
 - for each completion signature in `Sigs` with a completion tag `cpo_t` and parameter types `P...` an element of type
-  `@_decayed-tuple_@<cpo_t, Ps...>`; and
+  `@_decayed-tuple_@<cpo_t, P...>`; and
 - `tuple<set_error_t, exception_ptr>` if any of the preceding instantiations of `tuple` have possibly-throwing
   constructors.
 
