@@ -2612,7 +2612,7 @@ struct @_spawn-future-receiver_@ { // @_exposition-only_@
     template <class... T>
     void set_value(T&&... t) && noexcept {
         try {
-            state->result.emplace<@_decayed_tuple_@<set_value_t, T...>>(set_value, std::forward<T>(t)...);
+            state->result.emplace<@_decayed-tuple_@<set_value_t, T...>>(set_value, std::forward<T>(t)...);
         }
         catch (...) {
             if constexpr () { // TODO: how to express to not throw if things are non throwable
@@ -2625,7 +2625,7 @@ struct @_spawn-future-receiver_@ { // @_exposition-only_@
     template <class E>
     void set_error(E&& e) && noexcept {
         try {
-            state->result.emplace<@_decayed_tuple_@<set_error_t, E>>(set_error, std::forward<E>(e));
+            state->result.emplace<@_decayed-tuple_@<set_error_t, E>>(set_error, std::forward<E>(e));
         }
         catch (...) {
             state->result.emplace<tuple<set_error_t, exception_ptr>>(set_error, current_exception());
