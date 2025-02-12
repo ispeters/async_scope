@@ -2719,23 +2719,22 @@ private:
 [11]{.pnum} _Effects_:
 
 - If the invocation of _`complete`_ happens-before an invocation of _`consume`_ or _`abandon`_ then no effect;
-- otherwise, if an invocation of _`consume`_ happened-before this invocation of _`complete`_ then
-  - there is a receiver, `rcvr`, registered and that receiver is completed as if by:
-    ```cpp
-    std::move(this->result).visit([](auto&& tuplish) noexcept {
-       if constexpr (same_as<remove_reference_t<decltype(tuplish)>, monostate>) {
-           // this is impossible
-           std::terminate();
-       } else {
-           std::apply([](auto cpo, auto&&... vals) {
-               cpo(std::move(rcvr), std::move(vals)...);
-           }, std::move(tuplish));
-       }
-    });
-    ```
-  - then `this->@_destroy_@()` is invoked in the _op-t_ destructor.
+- otherwise, if an invocation of _`consume`_ happened-before this invocation of _`complete`_ then there is a receiver,
+  `rcvr`, registered and that receiver is completed as if by:
+  ```cpp
+  std::move(this->result).visit([](auto&& tuplish) noexcept {
+     if constexpr (same_as<remove_reference_t<decltype(tuplish)>, monostate>) {
+         // this is impossible
+         std::terminate();
+     } else {
+         std::apply([](auto cpo, auto&&... vals) {
+             cpo(std::move(rcvr), std::move(vals)...);
+         }, std::move(tuplish));
+     }
+  });
+  ```
 - otherwise, an invocation of _`abandon`_ happened-before this invocation of _`complete`_ and `this->@_destroy_@()`
-  is invoked in the _op-t_ destructor.
+  is invoked.
 
 `void @_consume_@(receiver auto& rcvr) noexcept;`
 
@@ -2756,7 +2755,6 @@ private:
      }
   });
   ```
-  and then `this->@_destroy_@()` is invoked in the _op-t_ destructor.
 
 `void @_abandon_@() noexcept;`
 
@@ -2764,7 +2762,7 @@ private:
 
 - If the invocation of _`abandon`_ happens-before an invocation of _`complete`_ then a stop request is sent to the
   spawned operation;
-- otherwise `this->@_destroy_@()` is invoked in the _op-t_ destructor.
+- otherwise `this->@_destroy_@()` is invoked.
 
 `void @_destroy_@() noexcept;`
 
@@ -2799,7 +2797,7 @@ struct @_impls-for_@<spawn_future_t> : @_default-impls_@ {
 [16]{.pnum} The member `@_impls-fors_@<spawn_future_t>::@_start_@` is initialized with a callable object equivalent to the following lambda:
 ```cpp
 [](auto& state, auto& rcvr) noexcept -> void {
-    state.release()->@_consume_@(rcvr);
+    state->@_consume_@(rcvr);
 }
 ```
 
