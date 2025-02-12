@@ -2575,10 +2575,7 @@ let `Sndr` be `decltype((sndr))`, let `Token` be `decltype((token))`, and let `E
 `sender<Sndr>` or `async_scope_token<Token>` is `false`, the expression `spawn_future(sndr, token, env)` is ill-formed.
 
 [3]{.pnum} For the expression `spawn_future(sndr, token, env)` let `stok` be a stop token that will receive stop
-requests as follows:
-
-- `stok` receives stop requests sent from the returned future and any stop requests sent to the stop token returned from `get_stop_token(env)`;
-- otherwise `stok` only receives stop requests sent from the returned future.
+requests sent from the returned future and any stop requests sent to the stop token returned from `get_stop_token(env)`
 
 [4]{.pnum} Let _`spawn-future-state-base`_ be an exposition-only class template defined below:
 
@@ -2620,7 +2617,7 @@ struct @_spawn-future-receiver_@ { // @_exposition-only_@
         }
         catch (...) {
             if constexpr () { // TODO: how to express to not throw if things are non throwable
-                state->result.emplace<decayed_tuple<set_error_t, exception_ptr>>(set_error, std::current_exception());
+                state->result.emplace<tuple<set_error_t, exception_ptr>>(set_error, std::current_exception());
             }
         }
         state->@_complete_@();
@@ -2755,7 +2752,7 @@ private:
 
 [14]{.pnum} _Effects_: Equivalent to:
 ```cpp
-    auto token = this->token;
+    auto token = std::move(this->token);
     auto associated = this->associated;
     {
         auto alloc = std::move(this->alloc);
@@ -2763,7 +2760,7 @@ private:
         allocator_traits<@_alloc-t_@>::destroy(alloc, this);
         allocator_traits<@_alloc-t_@>::deallocate(alloc, this, 1);
     }
-    if (assiocated) {
+    if (associated) {
         token.disassociate();
     }
 ```
