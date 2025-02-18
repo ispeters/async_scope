@@ -31,10 +31,13 @@ Changes
 
 ## R9
 
-- Update the language used in simple_counting_scope::join and counting_scope::join to explicitly specify the behavior of
-  completion as captured in the polls below:
+- Apply feedback received from LWG during the Hagenberg meeting.
+- Update the language used in `simple_counting_scope::join` and `counting_scope::join` to explicitly specify the
+  behavior of completion as captured in the following polls taken by LEWG:
 
-  POLL: We would like to explicitly specify the behaviour of the completion of join (by possibly doing: if conditions are met either complete synchronously inside start or completing asynchronously by explicitly creating a  scheduler, join operation should never be completed by scheduling).
+  POLL: We would like to explicitly specify the behaviour of the completion of join (by possibly doing: if conditions
+  are met either complete synchronously inside start or completing asynchronously by explicitly creating a  scheduler,
+  join operation should never be completed by scheduling).
 
   +---+---+---+---+---+
   |SF |F  |N  |A  |SA |
@@ -1685,8 +1688,8 @@ sender auto join() noexcept;
 Returns a join-sender. When the join-sender is connected to a receiver, `r`, it produces an _`operation-state`_, `o`.
 When `o` is started, the scope moves to either the open-and-joining or closed-and-joining state. `o` completes with
 `set_value()` when the scope moves to the joined state, which happens when the scope's count of outstanding operations
-drops to zero. `o` will complete synchronously inline if it happens to observe that the count of outstanding operations is
-already zero when started; otherwise, `o` completes on the execution context associated with the scheduler in its
+drops to zero. `o` will complete synchronously inline if it happens to observe that the count of outstanding operations
+is already zero when started; otherwise, `o` completes on the execution context associated with the scheduler in its
 receiver's environment by asking its receiver, `r`, for a scheduler, `sch`, with `get_scheduler(get_env(r))` and then
 starting the sender returned from `schedule(sch)`. This requirement to complete on the receiver's scheduler restricts
 which receivers a join-sender may be connected to in exchange for determinism; the alternative would have the
@@ -2259,7 +2262,7 @@ struct @_nest-data_@ {
         : token(other.token) {
         if (other.sndr.has_value() && token.try_associate()) {
             try {
-                sndr.emplace(*other);
+                sndr.emplace(*other.sndr);
             }
             catch (...) {
                 token.disassociate();
@@ -2278,8 +2281,8 @@ struct @_nest-data_@ {
     }
 
     @_nest-data_@(@_nest-data_@&& other) noexcept(is_nothrow_move_constructible_v<@_wrap-sender_@>)
-        : sndr(std::move(other.sndr)),
-          token(other.token) {
+        : sndr(std::move(other).sndr),
+          token(std::move(other).token) {
         other.sndr.reset();
     }
 
@@ -2512,7 +2515,9 @@ struct @_spawn-future-state_@ : @_spawn-future-state-base_@<completion_signature
 
     @_spawn-future-state_@(Alloc alloc, Sender&& sndr, Token token) // @_exposition only_@
         : @_alloc_@(std::move(alloc)),
-          @_
+          @_op_@(connect(std::move(sndr), @_spawn-future-receiver_@<@_sigt-t_@>{this})),
+          @_token_@(std::move(token)) {}
+
     void @_run_@(); // @_exposition only_@
     void @_complete_@() override; // @_exposition only_@
     void @_consume_@(receiver auto& rcvr) noexcept; // @_exposition only_@
@@ -2532,22 +2537,13 @@ private:
 }
 ```
 
-`@_spawn-future-state_@(Alloc alloc, Sender&& sndr, Token token);`
+`void @_run_@();`
 
 [9]{.pnum} _Effects_: Equivalent to:
 ```cpp
-    this->alloc = alloc;
-    this->op = connect(std::move(sndr), @_spawn-future-receiver_@<@_sigs-t_@>{this});
-    this->token = token;
-```
-
-`void @_run_@();`
-
-[10]{.pnum} _Effects_: Equivalent to:
-```cpp
-    if (associated = token.try_associate()) {
+    if (associated = token.try_associate())
         op.start();
-    } else {
+    else {
         this->result.emplace<@_decayed-tuple_@<set_stopped_t>>(set_stopped_t{});
         @_complete_@();
     }
@@ -2555,17 +2551,17 @@ private:
 
 `void @_complete_@();`
 
-[11]{.pnum} _Effects_:
+[10]{.pnum} _Effects_:
 
-- No effects if the invocation of _`complete`_ happens-before an invocation of _`consume`_ or _`abandon`_ then;
+- No effects if the invocation of _`complete`_ happens-before an invocation of _`consume`_ or _`abandon`_;
 - otherwise, if an invocation of _`consume`_ happened-before this invocation of _`complete`_ then there is a receiver,
-  `rcvr`, registered and that receiver is completed as if by `@_consume_@(rcvr)`.
+  `rcvr`, registered and that receiver is completed as if by `@_consume_@(rcvr)`;
 - otherwise, an invocation of _`abandon`_ happened-before this invocation of _`complete`_ and `@_destroy_@()`
   is invoked.
 
 `void @_consume_@(receiver auto& rcvr) noexcept;`
 
-[12]{.pnum} _Effects_:
+[11]{.pnum} _Effects_:
 
 - If the invocation of _`consume`_ happens-before an invocation of _`complete`_ then `rcvr` is registered to be
   completed when _`complete`_ is invoked;
@@ -2582,7 +2578,7 @@ private:
 
 `void @_abandon_@() noexcept;`
 
-[13]{.pnum} _Effects_:
+[12]{.pnum} _Effects_:
 
 - If the invocation of _`abandon`_ happens-before an invocation of _`complete`_ then a stop request is sent to the
   spawned operation;
@@ -2590,22 +2586,23 @@ private:
 
 `void @_destroy_@() noexcept;`
 
-[14]{.pnum} _Effects_: Equivalent to:
+[13]{.pnum} _Effects_: Equivalent to:
 ```cpp
     auto token = std::move(this->token);
     auto associated = this->associated;
+
     {
         auto alloc = std::move(this->alloc);
 
         allocator_traits<@_alloc-t_@>::destroy(alloc, this);
         allocator_traits<@_alloc-t_@>::deallocate(alloc, this, 1);
     }
-    if (associated) {
+
+    if (associated)
         token.disassociate();
-    }
 ```
 
-[15]{.pnum} The exposition-only class template _`impls-for`_ ([exec.snd.general]) is specialized for `spawn_future_t` as
+[14]{.pnum} The exposition-only class template _`impls-for`_ ([exec.snd.general]) is specialized for `spawn_future_t` as
 follows:
 ```cpp
 namespace std::execution {
@@ -2618,14 +2615,15 @@ struct @_impls-for_@<spawn_future_t> : @_default-impls_@ {
 }
 ```
 
-[16]{.pnum} The member `@_impls-fors_@<spawn_future_t>::@_start_@` is initialized with a callable object equivalent to the following lambda:
+[15]{.pnum} The member `@_impls-fors_@<spawn_future_t>::@_start_@` is initialized with a callable object equivalent to
+the following lambda:
 ```cpp
 [](auto& state, auto& rcvr) noexcept -> void {
     state->@_consume_@(rcvr);
 }
 ```
 
-[17]{.pnum} Then the expression `spawn_future(sndr, token)` is expression-equivalent to
+[16]{.pnum} Then the expression `spawn_future(sndr, token)` is expression-equivalent to
 `spawn_future(sndr, token, empty_env{})` and the expression `spawn_future(sndr, token, env)` is expression-equivalent to
 the following:
 ```cpp
@@ -2661,9 +2659,8 @@ the following:
 
     struct deleter {
         void operator()(@_state-t_@ p) noexcept {
-             if (p) {
+             if (p)
                  p->@_abandon_@();
-             }
         }
     };
 
@@ -2766,11 +2763,10 @@ private:
 [9]{.pnum} _Effects_: Equivalent to:
 
 ```cpp
-    if (token.try_associate()) {
-        op.start()
-    } else {
+    if (token.try_associate())
+        op.start();
+    else
         @_destroy_@();
-    }
 ```
 
 `void @_complete_@() override;`
