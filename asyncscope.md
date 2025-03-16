@@ -1238,7 +1238,7 @@ When `nest()` returns an unassociated nest-sender:
  - the unassociated nest-sender will only complete with `set_stopped()`.
 
 Given an `async_scope_token`, `token`, and a sender, `snd`, `nest(snd, token)` is expression-equivalent to
-`@_make-sender_@(nest, @_nest-data_@{snd, token})`, where _`nest-data`_ is an exposition-only class whose constructor
+`@_make-sender_@(nest, @_nest-data_@(snd, token))`, where _`nest-data`_ is an exposition-only class whose constructor
 performs the following operations in the following order:
 
 1. store the result of `token.wrap(snd)` in a member variable
@@ -2312,7 +2312,7 @@ template <async_scope_token Token, sender Sender>
 [4]{.pnum} Otherwise, the expression `nest(sndr, token)` is expression-equivalent to:
 
 ```
-transform_sender(@_get-domain-early_@(sndr), @_make-sender_@(nest, @_nest-data_@{token, sndr}))
+transform_sender(@_get-domain-early_@(sndr), @_make-sender_@(nest, @_nest-data_@(token, sndr)))
 ```
 
 except that `sndr` is evaluated only once.
