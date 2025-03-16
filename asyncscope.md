@@ -29,6 +29,11 @@ toc: true
 Changes
 =======
 
+## R10
+
+- Replace 'method' with 'member function'
+
+
 ## R9
 
 - Apply feedback received from LWG during the Hagenberg meeting.
@@ -256,7 +261,7 @@ concept async_scope_token =
     };
 ```
 
-with `execution::nest()` forwarding to the `nest()` method on the provided token and `spawn()` and `spawn_future()`
+with `execution::nest()` forwarding to the `nest()` member function on the provided token and `spawn()` and `spawn_future()`
 being expressed in terms of `nest()`, to this:
 
 ```cpp
@@ -852,7 +857,7 @@ with `io_uring` support.
 This example is based on real code in rsys, but it reduces the real code to slideware and ports it from Unifex to the
 proposed `std::execution` equivalents. The central abstraction in rsys is a `Call`, but each integration of rsys has
 different needs so the set of features supported by a `Call` varies with the build configuration. We support this
-configurability by exposing the equivalent of the following method on the `Call` class:
+configurability by exposing the equivalent of the following member function on the `Call` class:
 ```cpp
 template <typename Feature>
 Handle<Feature> Call::get();
@@ -1175,19 +1180,19 @@ concept async_scope_token =
 ```
 
 An async scope token is a non-owning handle to an async scope that behaves like a reference-to-async-scope; tokens are
-no-throw copyable and movable, and it is undefined behaviour to invoke any methods on a token that has outlived its
+no-throw copyable and movable, and it is undefined behaviour to invoke any member function on a token that has outlived its
 scope.
 
-The `try_associate()` method on a token attempts to create a new association with the scope; `try_associate()` returns
+The `try_associate()` member function on a token attempts to create a new association with the scope; `try_associate()` returns
 `true` when the association is successful, and it may either return `false` or throw an exception to indicate failure.
 Returning `false` will generally lead to algorithms that operate on tokens behaving as if provided a sender that
 completes immediately with `set_stopped()`, leading to rejected work being discarded as a "no-op". Throwing an exception
 will generally lead to that exception escaping from the calling algorithm.
 
-The `disassociate()` method removes a previously-established assocation with the scope. `disassociate()` must be called
+The `disassociate()` member function removes a previously-established assocation with the scope. `disassociate()` must be called
 exactly once for every call to `try_associate()` that returns `true`; it is undefined behaviour to do otherwise.
 
-Tokens also have a `wrap()` method that takes and returns a sender. The `wrap()` method gives the token an opportunity
+Tokens also have a `wrap()` member function that takes and returns a sender. The `wrap()` member function gives the token an opportunity
 to modify the input sender's behaviour in a scope-specific way. The proposed `counting_scope` uses this opportunity to
 associate the input sender with a stop token that the scope can use to request stop on all outstanding operations
 associated within the scope.
@@ -1217,7 +1222,7 @@ that behaves the same as its input sender, with the following additional effects
 
 - the association ends when the nest-sender is destroyed or, if it is connected, when the resulting operation state is
   destroyed; and
-- whatever effects are added by the token's `wrap()` method.
+- whatever effects are added by the token's `wrap()` member function.
 
 When unsuccessful, `nest()` will either return an "unassociated" nest-sender or it will allow any thrown exceptions to
 escape.
@@ -1616,7 +1621,7 @@ Calling `close()` on a `simple_counting_scope` moves the scope to the closed, un
 state, and causes all future calls to `try_associate()` to return `false`.
 
 Associating work with a `simple_counting_scope` can be done through `simple_counting_scope`'s token, which provides
-three methods: `wrap(sender auto&& s`), `try_associate()`, and `disassociate()`.
+three member functions: `wrap(sender auto&& s`), `try_associate()`, and `disassociate()`.
 
 - `wrap(sender auto&& s)` takes in a sender and returns it unmodified.
 - `try_associate()` attempts to create a new association with the `simple_counting_scope` and will return `true` when
@@ -1715,8 +1720,8 @@ The following atomic state change is attempted on the token's scope:
 - increment the scope's count of outstanding operations; and
 - move the scope to the open state if it was in the unused state.
 
-The atomic state change succeeds and the method returns `true` if the scope is observed to be in the unused, open, or
-open-and-joining state; otherwise the scope's state is left unchanged and the method returns `false`.
+The atomic state change succeeds and the member function returns `true` if the scope is observed to be in the unused, open, or
+open-and-joining state; otherwise the scope's state is left unchanged and the member function returns `false`.
 
 ### `simple_counting_scope::token::disassociate`
 
@@ -1759,7 +1764,7 @@ class counting_scope {
 };
 ```
 
-A `counting_scope` behaves like a `simple_counting_scope` augmented with a stop source; the `wrap` method on a
+A `counting_scope` behaves like a `simple_counting_scope` augmented with a stop source; the `wrap` member function on a
 `counting_scope`'s `token` returns a sender that, when connected and started, produces an _`operation-state`_ that
 receives stop requests from both its receiver and from the `counting_scope`. This extension of `simple_counting_scope`
 allows a `counting_scope` to request stop on all of its outstanding operations by requesting stop on its stop source.
@@ -2121,7 +2126,7 @@ alternatives: `async_scope`, `task_pool`, `task_group`, `sender_group`
 
 ### `counting_scope::join()`
 
-This method returns a sender that, when started, waits for the scope's count of outstanding senders to drop to zero
+This member function returns a sender that, when started, waits for the scope's count of outstanding senders to drop to zero
 before completing. It is somewhat analogous to `std::thread::join()` but does not block.
 
 `join()` must be invoked, and the returned sender must be connected, started, and completed, before the scope may be
@@ -2842,7 +2847,7 @@ Add the following as the first subsection of __[exec.scope]__:
 ::: add
 __Scope concepts [exec.scope.concepts]__
 
-[1]{.pnum} The `async_scope_token<Token>` concept defines the requirements on a type `Token` that can be used to create
+[1]{.pnum} The concept is called "async_scope_token", which defines the requirements on a type `Token` that can be used to create
 associations between senders and an async scope.
 
 [2]{.pnum} Let _`test-sender`_ and _`test-env`_ be unspecified types such that
@@ -2864,7 +2869,7 @@ concept async_scope_token =
 ```
 
 [3]{.pnum} `async_scope_token<Token>` is modeled only if `Token`'s copy operations, move operations, and `disassociate`
-method do not exit with an exception.
+member function does not exit with an exception.
 
 [4]{.pnum} Let `token` be an expression, and let `Token` be `decltype((token))`. `Token` models `async_scope_token` only
 if, for all expressions `sndr` whose type models `sender`, `token.wrap(sndr)` is a valid expression whose type models
