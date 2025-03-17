@@ -215,7 +215,7 @@ error signatures then the program is ill-formed.
 
     - `MAKE-ENV(get_domain, get_domain(get_env(sndr)))`
 
-    - `empty_env{}`
+    - `env<>{}`
 
 3. The expression `let_async_scope(sndr, f)` is expression-equivalent to:
 
@@ -304,28 +304,27 @@ error signatures then the program is ill-formed.
           3. Let `Sigs` be a pack of the arguments to the
              `completion_signatures` specialization named by
              `completion_signatures_of_t<child-type<Sndr>,
-             env_of_t<Rcvr>>`. Let `LetSigs` be a pack of those types
-             in `Sigs` with a return type of
-             `decayed-typeof<set_value>`. Let `as-tuple` be an alias
-             template such that `as-tuple<Tag(Args...)>` denotes the
-             type `decayed-tuple<Args...>`. Then `args-variant-type`
+             decltype(FWD-ENV(get_env(declval<Rcvr&>())))>`. Let
+             `LetSigs` be a pack of those types in `Sigs` with a return
+             type of `decayed-typeof<set_value>`. Let `as-tuple` be an
+             alias template such that `as-tuple<Tag(Args...)>` denotes
+             the type `decayed-tuple<Args...>`. Then `args-variant-type`
              denotes the type `variant<monostate,
-             as-tuple<LetSigs>...>`.
+             as-tuple<LetSigs>...>` with duplicate types removed.
 
           4. Let `as-sndr2` be an alias template such that
              `as-sndr2<Tag(Args...)>` denotes the type
-             `call-result-t<Fn, scope-token-type, remove_cvref_t<Args>&...>`. Then
+             `call-result-t<Fn, scope-token-type, decay_t<Args>&...>`. Then
              `ops2-variant-type` denotes the type `variant<monostate,
              connect_result_t<as-sndr2<LetSigs>, receiver2<Rcvr,
-             Env>>...>`.
+             Env>>...>` with duplicate types removed.
 
           5. The _requires-clause_ constraining the above lambda is
              satisfied if and only if the types `args-variant-type`
              and `ops2-variant-type` are well-formed.
              
-          6. `error-variant-type` is a `variant<E...>`, where the
-             types `E...` are the corresponding `E` types from the
-             `Errors...` parameter of the `let_async_scope_with_error<Errors...>` invocation.
+          6. `error-variant-type` is a `variant<Errors...>`, with
+             duplicate types removed.
              
           7. `scope-token-type` shall be a unique type, such that
              invoking `spawn(snd, token, env)` or `spawn(snd, token)`
