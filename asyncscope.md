@@ -261,8 +261,8 @@ concept async_scope_token =
     };
 ```
 
-with `execution::nest()` forwarding to the `nest()` member function on the provided token and `spawn()` and `spawn_future()`
-being expressed in terms of `nest()`, to this:
+with `execution::nest()` forwarding to the `nest()` member function on the provided token and `spawn()` and
+`spawn_future()` being expressed in terms of `nest()`, to this:
 
 ```cpp
 template <class Assoc>
@@ -1180,22 +1180,23 @@ concept async_scope_token =
 ```
 
 An async scope token is a non-owning handle to an async scope that behaves like a reference-to-async-scope; tokens are
-no-throw copyable and movable, and it is undefined behaviour to invoke any member function on a token that has outlived its
-scope.
+no-throw copyable and movable, and it is undefined behaviour to invoke any member function on a token that has outlived
+its scope.
 
-The `try_associate()` member function on a token attempts to create a new association with the scope; `try_associate()` returns
-`true` when the association is successful, and it may either return `false` or throw an exception to indicate failure.
-Returning `false` will generally lead to algorithms that operate on tokens behaving as if provided a sender that
-completes immediately with `set_stopped()`, leading to rejected work being discarded as a "no-op". Throwing an exception
-will generally lead to that exception escaping from the calling algorithm.
+The `try_associate()` member function on a token attempts to create a new association with the scope; `try_associate()`
+returns `true` when the association is successful, and it may either return `false` or throw an exception to indicate
+failure.  Returning `false` will generally lead to algorithms that operate on tokens behaving as if provided a sender
+that completes immediately with `set_stopped()`, leading to rejected work being discarded as a "no-op". Throwing an
+exception will generally lead to that exception escaping from the calling algorithm.
 
-The `disassociate()` member function removes a previously-established assocation with the scope. `disassociate()` must be called
-exactly once for every call to `try_associate()` that returns `true`; it is undefined behaviour to do otherwise.
+The `disassociate()` member function removes a previously-established assocation with the scope. `disassociate()` must
+be called exactly once for every call to `try_associate()` that returns `true`; it is undefined behaviour to do
+otherwise.
 
-Tokens also have a `wrap()` member function that takes and returns a sender. The `wrap()` member function gives the token an opportunity
-to modify the input sender's behaviour in a scope-specific way. The proposed `counting_scope` uses this opportunity to
-associate the input sender with a stop token that the scope can use to request stop on all outstanding operations
-associated within the scope.
+Tokens also have a `wrap()` member function that takes and returns a sender. The `wrap()` member function gives the
+token an opportunity to modify the input sender's behaviour in a scope-specific way. The proposed `counting_scope` uses
+this opportunity to associate the input sender with a stop token that the scope can use to request stop on all
+outstanding operations associated within the scope.
 
 In order to provide the Strong Exception Guarantee, the algorithms proposed in this paper invoke `token.wrap(snd)`
 before invoking `token.try_associate()`. Other algorithms written in terms of `async_scope_token` should do the same.
@@ -1720,8 +1721,8 @@ The following atomic state change is attempted on the token's scope:
 - increment the scope's count of outstanding operations; and
 - move the scope to the open state if it was in the unused state.
 
-The atomic state change succeeds and the member function returns `true` if the scope is observed to be in the unused, open, or
-open-and-joining state; otherwise the scope's state is left unchanged and the member function returns `false`.
+The atomic state change succeeds and the member function returns `true` if the scope is observed to be in the unused,
+open, or open-and-joining state; otherwise the scope's state is left unchanged and the member function returns `false`.
 
 ### `simple_counting_scope::token::disassociate`
 
@@ -2126,8 +2127,8 @@ alternatives: `async_scope`, `task_pool`, `task_group`, `sender_group`
 
 ### `counting_scope::join()`
 
-This member function returns a sender that, when started, waits for the scope's count of outstanding senders to drop to zero
-before completing. It is somewhat analogous to `std::thread::join()` but does not block.
+This member function returns a sender that, when started, waits for the scope's count of outstanding senders to drop to
+zero before completing. It is somewhat analogous to `std::thread::join()` but does not block.
 
 `join()` must be invoked, and the returned sender must be connected, started, and completed, before the scope may be
 destroyed so it may be useful to convey some of this importance in the name, although `std::thread` has similar
@@ -2440,8 +2441,8 @@ type `variant<T...>` where the parameter pack contains the following:
 - `monostate` as the first element;
 - for each completion signature in `Sigs` with a completion tag `cpo_t` and parameter types `P...` an element of type
   `@_decayed-tuple_@<cpo_t, P...>`; and
-- `@_decayed-tuple_@<set_error_t, exception_ptr>` if any of the preceding instantiations of `tuple` have possibly-throwing
-  constructors.
+- `@_decayed-tuple_@<set_error_t, exception_ptr>` if any of the preceding instantiations of `tuple` have
+  possibly-throwing constructors.
 
 [5]{.pnum} Let _`spawn-future-receiver`_ be an exposition-only class template defined below:
 
@@ -2847,8 +2848,8 @@ Add the following as the first subsection of __[exec.scope]__:
 ::: add
 __Scope concepts [exec.scope.concepts]__
 
-[1]{.pnum} The concept is called "async_scope_token", which defines the requirements on a type `Token` that can be used to create
-associations between senders and an async scope.
+[1]{.pnum} The concept is called "async_scope_token", which defines the requirements on a type `Token` that can be used
+to create associations between senders and an async scope.
 
 [2]{.pnum} Let _`test-sender`_ and _`test-env`_ be unspecified types such that
 `sender_in<@_test-sender_@, @_test-env_@>` is `true`.
