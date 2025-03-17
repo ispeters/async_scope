@@ -1,6 +1,6 @@
-# D3296R4 `let_async_scope`
+# P3296R4 `let_async_scope`
 
-Date: 12th February 2025
+Date: 17th March 2025
 
 Author: Anthony Williams <anthony@justsoftwaresolutions.co.uk>
 
