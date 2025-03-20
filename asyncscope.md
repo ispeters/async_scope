@@ -2250,12 +2250,14 @@ async operations created with the sender.
 namespace std::execution {
 
 template <async_scope_token Token, sender Sender>
-struct @_nest-data_@ {
-    using @_wrap-sender_@ = remove_cvref_t<decltype(declval<Token&>().wrap(declval<Sender>()))>;
+struct @_nest-data_@ {                // exposition only
+    using @_wrap-sender_@ =           // exposition only
+        remove_cvref_t<decltype(declval<Token&>().wrap(declval<Sender>()))>;
 
-    optional<@_wrap-sender_@> sndr;
-    Token token;
+    Token @_token\__@;                // exposition only
+    optional<@_wrap-sender_@> @_sndr\__@; // exposition only
 
+    // TODO: replace the constructor body with prose below
     @_nest-data_@(Token t, Sender&& s)
         : sndr(t.wrap(std::forward<Sender>(s))),
           token(t) {
@@ -2263,41 +2265,11 @@ struct @_nest-data_@ {
             sndr.reset();
     }
 
-    @_nest-data_@(const @_nest-data_@& other)
-        requires copy_constructible<@_wrap-sender_@>
-        : token(other.token) {
-        if (other.sndr.has_value() && token.try_associate()) {
-            try {
-                sndr.emplace(*other.sndr);
-            }
-            catch (...) {
-                token.disassociate();
-                throw;
-            }
-        }
-    }
+    @_nest-data_@(const @_nest-data_@& other);
 
-    // alternative copy-constructor implementation:
-    @_nest-data_@(const @_nest-data_@& other)
-        requires copy_constructible<@_wrap-sender_@>
-        : sndr(other.sndr),
-          token(other.token) {
-        if (other.sndr.has_value() && !token.try_associate())
-            sndr.reset();
-    }
+    @_nest-data_@(@_nest-data_@&& other) noexcept(see below);
 
-    @_nest-data_@(@_nest-data_@&& other) noexcept(is_nothrow_move_constructible_v<@_wrap-sender_@>)
-        : sndr(std::move(other).sndr),
-          token(std::move(other).token) {
-        other.sndr.reset();
-    }
-
-    ~@_nest-data_@() {
-        if (sndr.has_value()) {
-            sndr.reset();
-            token.disassociate();
-        }
-    }
+    ~@_nest-data_@();
 };
 
 template <async_scope_token Token, sender Sender>
@@ -2306,11 +2278,55 @@ template <async_scope_token Token, sender Sender>
 }
 ```
 
-[3]{.pnum} The name `nest` denotes a pipeable sender adaptor object. For subexpressions `sndr` and `token`, if
+```c++
+@_nest-data_@(Token t, Sender&& s);
+```
+
+[3]{.pnum} _Effects:_ Constructs a _`nest-data`_ from the given token and sender. __TODO:__ Spec this out.
+
+```c++
+@_nest-data_@(const @_nest-data_@& other);
+```
+
+[4]{.pnum} _Constraints:_ `copy_constructible<@_wrap-sender_@>` is `true`.
+
+[5]{.pnum} _Effects:_ Copy constructs _`token_`_ with `other.@_token\__@` and:
+
+- [5.1]{.pnum} If `!other.@_sndr\__@.has_value()` then default-initializes _`sndr_`_.
+- [5.2]{.pnum} Otherwise if `t.try_associate()` throws an exception then no further effect and the exception is allowed
+  to escape.
+- [5.3]{.pnum} Otherwise if `t.try_associate()` returns `true` then copy constructs _`sndr_`_ with `other.@_sndr\__@`;
+  if the copy constructor throws an exception then invokes `@_token\__@.disassociate()` before the exception is allowed
+  to escape.
+- [5.4]{.pnum} Otherwise `t.try_associate()` returns `false` and _`sndr_`_ is default-initialized.
+
+[6]{.pnum} _Throws:_ What and when `t.try_associate()` and the `optional<@_wrap-sender_@>` copy constructor throw.
+
+```c++
+@_nest-data_@(@_nest-data_@&& other);
+```
+
+[7]{.pnum} _Effects:_ Move constructs _`token_`_ with `other.@_token\__@` and move constructs _`sndr_`_ with
+`other.@_sndr\__@`.
+
+[8]{.pnum} _Postconditions:_ If no exceptions are thrown then `other.@_sndr\__@.has_value()` is `false`.
+
+[9]{.pnum} _Throws:_ Nothing unless the `optional<@_wrap-sender_@>` move constructor throws.
+
+```c++
+~@_nest-data_@()
+```
+
+[10]{.pnum} _Effects:_ If `@_sndr\__@.has_value()` then invokes `@_sndr\__@.reset()` before invoking
+`@_token\__@.disassociate()`.
+
+__TODO:__ Add a remark that _`nest-data`_ instances can be destructured into a [token, optional<sender>]
+
+[11]{.pnum} The name `nest` denotes a pipeable sender adaptor object. For subexpressions `sndr` and `token`, if
 `decltype((sndr))` does not satisfy `sender`, or `decltype((token))` does not satisfy `async_scope_token`, then
 `nest(sndr, token)` is ill-formed.
 
-[4]{.pnum} Otherwise, the expression `nest(sndr, token)` is expression-equivalent to:
+[12]{.pnum} Otherwise, the expression `nest(sndr, token)` is expression-equivalent to:
 
 ```
 transform_sender(@_get-domain-early_@(sndr), @_make-sender_@(nest, @_nest-data_@(token, sndr)))
@@ -2318,7 +2334,7 @@ transform_sender(@_get-domain-early_@(sndr), @_make-sender_@(nest, @_nest-data_@
 
 except that `sndr` is evaluated only once.
 
-[5]{.pnum} The exposition-only class template _`impls-for`_ ([exec.snd.general]{.sref}) is specialized for `nest_t` as
+[13]{.pnum} The exposition-only class template _`impls-for`_ ([exec.snd.general]{.sref}) is specialized for `nest_t` as
 follows:
 
 ```
@@ -2332,7 +2348,7 @@ namespace std::execution {
 }
 ```
 
-[6]{.pnum} The member `@_impls-for_@<nest_t>::@_get-state_@` is initialized with a callable object equivalent to the
+[14]{.pnum} The member `@_impls-for_@<nest_t>::@_get-state_@` is initialized with a callable object equivalent to the
 following lambda:
 ```cpp
 []<class Sndr, class Rcvr>(Sndr&& sndr, Rcvr& rcvr) {
@@ -2385,6 +2401,7 @@ following lambda:
         }
     };
 
+    // TODO: data.sndr.reset() needs to be conditionally invoked here
     if (data.sndr.has_value())
         return op_state{std::forward_like<Sndr>(data.token), std::forward_like<Sndr>(*data.sndr), rcvr};
     else
@@ -2392,7 +2409,7 @@ following lambda:
 }
 ```
 
-[7]{.pnum} The member `@_impls-for_@<nest_t>::@_start_@` is initialized with a callable object equivalent to the
+[15]{.pnum} The member `@_impls-for_@<nest_t>::@_start_@` is initialized with a callable object equivalent to the
 following lambda:
 ```cpp
 [](auto& state, auto&) noexcept -> void {
@@ -2400,7 +2417,7 @@ following lambda:
 }
 ```
 
-[8]{.pnum} The evaluation of `nest(sndr, token)` may cause side effects observable via `token`'s associated async scope
+[16]{.pnum} The evaluation of `nest(sndr, token)` may cause side effects observable via `token`'s associated async scope
 object.
 
 :::
