@@ -3024,7 +3024,7 @@ struct @_impls-for_@<@_join-t_@>: @_default-impls_@ {
     };
 
     static constexpr auto @_get-state_@ =
-        []<class Receiver>(auto&& sender, Receiver& receiver) noexcept(/* std::is_nothrow_constructible_v<schedule, decltype(get_scheduler(get_env(receiver))) */) {
+        []<class Receiver>(auto&& sender, Receiver& receiver) noexcept(false) {
             auto[_, self] = sender;
             return @_state_@<Receiver>(self, receiver);
         };
@@ -3202,7 +3202,7 @@ struct @_impls-for_@<@_join-t_@>: @_default-impls_@ {
     };
 
     static constexpr auto @_get-state_@ =
-        []<class Receiver>(auto&& sender, Receiver& receiver) noexcept(/* TODO(jesswong) */) {
+        []<class Receiver>(auto&& sender, Receiver& receiver) noexcept(false) {
             auto[_, self] = sender;
             return @_state_@<Receiver>(self, receiver);
         };
