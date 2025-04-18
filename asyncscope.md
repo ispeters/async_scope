@@ -31,11 +31,26 @@ Changes
 
 ## R10
 
-- Replace 'method' with 'member function'
-- Address the rest of Jen's feedback: replace "methods" with "member functions", add exposition-only to member
-  variable names, add exception specification to get-state and start
-- Replace "is [boolean]" with "returns [boolean]" to retain consistency
-
+- Address Jens Maurer's feedback from the mailing list: replace [methods]{.rm} with [member functions]{.add}, add
+  exposition-only to member variable names, add exception specification to _`get-state`_ and _`start`_.
+- Replace "is [boolean]" with "returns [boolean]" for consistency.
+- Confirmed that _`nest-data`_ needs a deduction guide to get the required behaviour; its `Sender` type parameter may
+  be either a object type or an lvalue reference type depending on the value category of the sender passed to the
+  `nest` CPO, and this fact is only properly deduced with the provided deduction guide. See [this simplified
+  example](https://godbolt.org/z/xh9nd48d3) for more detail.
+- Update `@_impls-for_@<nest_t>::@_get-state_@` to have a computed `noexcept` clause; other sender algorithms (such as
+  `let_value`) may have to add `std::exception_ptr` to their `set_error` completions if _`get-state`_ throws, which
+  means that _`get-state`_ should be declared to be `noexcept` when it does not throw so that such algorithms can avoid
+  unnecessary `set_error` completions.
+- Update the `async_scope_token` concept to require that `t.disassociate()` be `noexcept` instead of having a semantic
+  requirement that `disassociate` "not exit with an exception"; `disassociate` must be `noexcept` for it to be possible
+  to correctly calculate `@_impls-for_@<nest_t>::@_get-state_@`'s `noexcept` clause.
+- Update `simple_counting_scope::try_associate` and `counting_scope::try_associate` to both be `noexcept`;
+  `@_impls-for_@<nest_t>::@_get-state_@`'s `noexcept` clause depends on whether the given token's `try_associate` is
+  `noexcept` when the given sender is an lvalue so the proposed concrete scope types should correctly advertise that
+  their `try_associate` member functions will never throw.
+- TODO: leave a paragraph in the description of nest-data that describes the class' class invariant: "engaged
+  optional" means association is owned
 
 ## R9
 
@@ -2260,7 +2275,7 @@ struct @_nest-data_@ {               // exposition only
     Token @_token\__@;                // exposition only
     optional<@_wrap-sender_@> @_sndr\__@; // exposition only
 
-    @_nest-data_@(Token t, Sender&& s)
+    explicit @_nest-data_@(Token t, Sender&& s)
         : @_token\__@(t),
           @_sndr\__@(t.wrap(std::forward<Sender>(s))) {
         if (!@_token\__@.try_associate())
@@ -2272,9 +2287,10 @@ struct @_nest-data_@ {               // exposition only
     @_nest-data_@(@_nest-data_@&& other) noexcept(is_nothrow_move_constructible_v<@_wrap-sender_@>);
 
     ~@_nest-data_@();
+
+    optional<pair<Token, @_wrap-sender_@>> release() && noexcept(is_nothrow_move_constructible_v<@_wrap-sender_@>);
 };
 
-// TODO: make sure this is doing what I want
 template <async_scope_token Token, sender Sender>
 @_nest-data_@(Token, Sender&&) -> @_nest-data_@<Token, Sender>;
 
@@ -2311,17 +2327,30 @@ template <async_scope_token Token, sender Sender>
 `other.@_sndr\__@.has_value()` is unchanged.
 
 ```c++
-~@_nest-data_@()
+~@_nest-data_@();
 ```
 
 [8]{.pnum} _Effects:_ If `@_sndr\__@.has_value()` returns `false` then no effect; otherwise, invokes `@_sndr\__@.reset()`
 before invoking `@_token\__@.disassociate()`.
 
-[9]{.pnum} The name `nest` denotes a pipeable sender adaptor object. For subexpressions `sndr` and `token`, if
+```c++
+optional<pair<Token, @_wrap-sender_@>> release() && noexcept(is_nothrow_move_constructible_v<@_wrap-sender_@>);
+```
+
+[9]{.pnum} _Effects:_ If `@_sndr\__@.has_value()` returns `false` then returns a disengaged `optional`; otherwise
+returns an engaged `optional` containing a `pair<Token, @_wrap-sender_@>` as if by:
+
+```c++
+return optional{pair{std::move(@_token\__@), std::move(*@_sndr\__@)}};
+```
+
+[10]{.pnum} _Postconditions:_ _`sndr_`_ is disengaged.
+
+[11]{.pnum} The name `nest` denotes a pipeable sender adaptor object. For subexpressions `sndr` and `token`, if
 `decltype((sndr))` does not satisfy `sender`, or `decltype((token))` does not satisfy `async_scope_token`, then
 `nest(sndr, token)` is ill-formed.
 
-[10]{.pnum} Otherwise, the expression `nest(sndr, token)` is expression-equivalent to:
+[11]{.pnum} Otherwise, the expression `nest(sndr, token)` is expression-equivalent to:
 
 ```
 transform_sender(@_get-domain-early_@(sndr), @_make-sender_@(nest, @_nest-data_@(token, sndr)))
@@ -2329,7 +2358,7 @@ transform_sender(@_get-domain-early_@(sndr), @_make-sender_@(nest, @_nest-data_@
 
 except that `sndr` is evaluated only once.
 
-[11]{.pnum} The exposition-only class template _`impls-for`_ ([exec.snd.general]{.sref}) is specialized for `nest_t` as
+[12]{.pnum} The exposition-only class template _`impls-for`_ ([exec.snd.general]{.sref}) is specialized for `nest_t` as
 follows:
 
 ```
@@ -2343,16 +2372,14 @@ namespace std::execution {
 }
 ```
 
-[12]{.pnum} The member `@_impls-for_@<nest_t>::@_get-state_@` is initialized with a callable object equivalent to the
+[13]{.pnum} The member `@_impls-for_@<nest_t>::@_get-state_@` is initialized with a callable object equivalent to the
 following lambda:
 ```cpp
-[]<class Sndr, class Rcvr>(Sndr&& sndr, Rcvr& rcvr) noexcept(false) {
-    auto& [_, data, ...child] = sndr;
+[]<class Sndr, class Rcvr>(Sndr&& sndr, Rcvr& rcvr) noexcept(/* @_see below_@ */) {
+    auto [_, data] = std::forward<Sndr>(sndr);
 
     using scope_token = decltype(data.token);
     using op_t = decltype(connect(std::forward_like<Sndr>(data.sndr.value()), rcvr));
-
-    static_assert(sizeof...(child) == 0);
 
     struct op_state {
         bool @_associated_@ = false; // exposition only
@@ -2404,7 +2431,7 @@ following lambda:
 }
 ```
 
-[15]{.pnum} The member `@_impls-for_@<nest_t>::@_start_@` is initialized with a callable object equivalent to the
+[14]{.pnum} The member `@_impls-for_@<nest_t>::@_start_@` is initialized with a callable object equivalent to the
 following lambda:
 ```cpp
 [](auto& state, auto&) noexcept -> void {
@@ -2412,7 +2439,7 @@ following lambda:
 }
 ```
 
-[16]{.pnum} The evaluation of `nest(sndr, token)` may cause side effects observable via `token`'s associated async scope
+[15]{.pnum} The evaluation of `nest(sndr, token)` may cause side effects observable via `token`'s associated async scope
 object.
 
 :::
@@ -2874,7 +2901,7 @@ concept async_scope_token =
     copyable<Token> &&
     requires(Token token) {
         { token.try_associate() } -> same_as<bool>;
-        { token.disassociate() } -> same_as<void>;
+        { token.disassociate() } noexcept -> same_as<void>;
         { token.wrap(declval<@_test-sender_@>()) } -> sender_in<@_test-env_@>;
     };
 
@@ -2906,8 +2933,8 @@ public:
     struct token {
         template <sender Sender>
         Sender&& wrap(Sender&& snd) const noexcept;
-        bool try_associate() const;
-        void disassociate() const;
+        bool try_associate() const noexcept;
+        void disassociate() const noexcept;
 
     private:
         simple_counting_scope* @_scope_@; // @_exposition-only_@
@@ -3083,8 +3110,8 @@ public:
     struct token {
         template <sender Sender>
         sender auto wrap(Sender&& snd) const noexcept;
-        bool try_associate() const;
-        void disassociate() const;
+        bool try_associate() const noexcept;
+        void disassociate() const noexcept;
 
     private:
         counting_scope* @_scope_@; // @_exposition-only_@
