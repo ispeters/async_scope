@@ -2272,9 +2272,6 @@ struct @_nest-data_@ {               // exposition only
     using @_wrap-sender_@ =          // exposition only
         remove_cvref_t<decltype(declval<Token&>().wrap(declval<Sender>()))>;
 
-    Token @_token\__@;                // exposition only
-    optional<@_wrap-sender_@> @_sndr\__@; // exposition only
-
     explicit @_nest-data_@(Token t, Sender&& s)
         : @_token\__@(t),
           @_sndr\__@(t.wrap(std::forward<Sender>(s))) {
@@ -2289,6 +2286,10 @@ struct @_nest-data_@ {               // exposition only
     ~@_nest-data_@();
 
     optional<pair<Token, @_wrap-sender_@>> release() && noexcept(is_nothrow_move_constructible_v<@_wrap-sender_@>);
+
+private:
+    Token @_token\__@;                // exposition only
+    optional<@_wrap-sender_@> @_sndr\__@; // exposition only
 };
 
 template <async_scope_token Token, sender Sender>
@@ -2378,44 +2379,44 @@ following lambda:
 []<class Sndr, class Rcvr>(Sndr&& sndr, Rcvr& rcvr) noexcept(/* @_see below_@ */) {
     auto [_, data] = std::forward<Sndr>(sndr);
 
-    using scope_token = decltype(data.token);
-    using op_t = decltype(connect(std::forward_like<Sndr>(data.sndr.value()), rcvr));
+    auto dataParts = std::move(data).release();
+
+    using scope_token = decltype(dataParts->first);
+    using op_t = decltype(connect(std::move(dataParts->second), std::move(rcvr)));
 
     struct op_state {
-        bool @_associated_@ = false; // exposition only
-        scope_token @_token_@; // exposition only
+        bool @_associated_@ = false;   // exposition only
         union {
-            Rcvr* @_rcvr_@; // exposition only
-            op_t @_op_@; // exposition only
+            Rcvr* @_rcvr_@;            // exposition only
+            struct {
+                scope_token @_token_@; // exposition only
+                op_t @_op_@;           // exposition only
+            };
         };
 
-        op_state(scope_token token, Rcvr& r) noexcept
-            : @_token_@(std::move(token)),
-              @_rcvr_@(addressof(r)) {}
+        explicit op_state(Rcvr& r) noexcept
+            : @_rcvr_@(addressof(r)) {}
 
-        op_state(scope_token token, @_wrap-sender_@&& sndr, Rcvr& r)
+        explicit op_state(scope_token tkn, @_wrap-sender_@&& sndr, Rcvr& r) try
             : @_associated_@(true),
-              @_token_@(std::move(token)),
-              @_op_@(connect(std::move(sndr), std::move(r))) {}
-
-        op_state(scope_token token, const @_wrap-sender_@& sndr, Rcvr& r)
-            : @_associated_@(token.try_associate()),
-              @_token_@(std::move(token)),
-              @_rcvr_@(addressof(r)) {
-            if (associated)
-                ::new (@_voidify_@(@_op_@)) op_t(connect(sndr, std::move(r)));
+              @_token_@(std::move(tkn)),
+              @_op_@(connect(std::move(sndr), std::move(r))) {
+        }
+        catch (...) {
+            @_token_@.disassociate();
+            throw;
         }
 
         op_state(op_state&&) = delete;
 
         ~op_state() {
             if (@_associated_@) {
-                token.disassociate();
+                @_token_@.disassociate();
                 @_op_@.~op_t();
             }
         }
 
-        void start() noexcept {
+        void @_start_@() noexcept {    // exposition only
             if (@_associated_@)
                 @_op_@.start();
             else
@@ -2423,23 +2424,24 @@ following lambda:
         }
     };
 
-    // TODO: data.sndr.reset() needs to be conditionally invoked here
-    if (data.sndr.has_value())
-        return op_state{std::forward_like<Sndr>(data.token), std::forward_like<Sndr>(*data.sndr), rcvr};
+    if (dataParts)
+        return op_state{std::move(dataParts->first), std::move(dataParts->second), rcvr};
     else
-        return op_state{data.token, rcvr};
+        return op_state{rcvr};
 }
 ```
 
-[14]{.pnum} The member `@_impls-for_@<nest_t>::@_start_@` is initialized with a callable object equivalent to the
+[14]{.pnum} TODO: explain when _`get-state`_ is and is not `noexcept`
+
+[15]{.pnum} The member `@_impls-for_@<nest_t>::@_start_@` is initialized with a callable object equivalent to the
 following lambda:
 ```cpp
 [](auto& state, auto&) noexcept -> void {
-    state.start();
+    state.@_start_@();
 }
 ```
 
-[15]{.pnum} The evaluation of `nest(sndr, token)` may cause side effects observable via `token`'s associated async scope
+[16]{.pnum} The evaluation of `nest(sndr, token)` may cause side effects observable via `token`'s associated async scope
 object.
 
 :::
