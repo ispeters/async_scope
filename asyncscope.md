@@ -2431,7 +2431,14 @@ following lambda:
 }
 ```
 
-[14]{.pnum} TODO: explain when _`get-state`_ is and is not `noexcept`
+[14]{.pnum} The expression in the `noexcept` clause of `@_impls-for_@<nest_t>::@_get-state_@` is:
+```cpp
+    is_nothrow_move_constructible_v<Sndr> &&
+    is_nothrow_move_constructible_v<Rcvr> &&
+    is_nothrow_move_constructible_v<scope_token> &&
+    is_nothrow_move_constructible_v<@_nest_data_@> &&
+    is_nothrow_constructible_v<connect, Sndr, Rcvr>
+```
 
 [15]{.pnum} The member `@_impls-for_@<nest_t>::@_start_@` is initialized with a callable object equivalent to the
 following lambda:
