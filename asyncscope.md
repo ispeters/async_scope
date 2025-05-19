@@ -31,6 +31,7 @@ Changes
 
 ## R10
 
+- Incorporate significant feedback from Mark Hoemmen, Tomasz Kamiński, and Dietmar Kühl to the wording for `nest`.
 - Address Jens Maurer's feedback from the mailing list: replace [methods]{.rm} with [member functions]{.add}, add
   exposition-only to member variable names, add exception specification to _`get-state`_ and _`start`_.
 - Replace "is [boolean]" with "returns [boolean]" for consistency.
@@ -50,8 +51,10 @@ Changes
   `noexcept` when the given sender is an lvalue so the proposed concrete scope types should correctly advertise that
   their `try_associate` member functions will never throw.
 - Be consistent about trailing underscores in member names.
-- TODO: leave a paragraph in the description of nest-data that describes the class' class invariant: "engaged
-  optional" means association is owned
+- Update `empty_env` to `env<>`.
+- Leave some TODOs for a future R11.
+- Reword paragraph 4 of [exec.spawn.future] to better describe the variant of decayed tuples that capture the result of
+  the spawned operation.
 
 ## R9
 
@@ -1094,13 +1097,13 @@ More on these items can be found below in the sections below.
 ```cpp
 namespace std::execution {
 
-struct @_spawn-receiver_@ { // @_exposition-only_@
+struct @_spawn-receiver_@ { // @_exposition only_@
     void set_value() && noexcept;
     void set_stopped() && noexcept;
 };
 
-template <class Sigs>
-struct @_spawn-future-receiver_@ { // @_exposition-only_@
+template <class Completions>
+struct @_spawn-future-receiver_@ { // @_exposition only_@
     template <class... T>
     void set_value(T&&... t) && noexcept;
 
@@ -1119,7 +1122,7 @@ concept async_scope_token =
     };
 
 template <async_scope_token Token, sender Sender>
-using @@_wrapped-sender-from_@@ = decay_t<decltype(declval<Token&>().wrap(declval<Sender>()))>; // @@_exposition-only_@@
+using @@_wrapped-sender-from_@@ = decay_t<decltype(declval<Token&>().wrap(declval<Sender>()))>; // @@_exposition only_@@
 
 struct nest_t { @_unspecified_@ };
 struct spawn_t { @_unspecified_@ };
@@ -1139,7 +1142,7 @@ class simple_counting_scope {
         void disassociate() const;
 
     private:
-        simple_counting_scope* @_scope_@; // @@_exposition-only_@@
+        simple_counting_scope* @_scope_@; // @@_exposition only_@@
     };
 
     simple_counting_scope() noexcept;
@@ -1165,7 +1168,7 @@ class counting_scope {
         void disassociate() const;
 
     private:
-        counting_scope* @_scope_@; // @@_exposition-only_@@
+        counting_scope* @_scope_@; // @@_exposition only_@@
     };
 
     counting_scope() noexcept;
@@ -1327,7 +1330,7 @@ multi-shot and single-shot otherwise.
 
 ```cpp
 template <class Env>
-struct @@_spawn-receiver_@@ { // @@_exposition-only_@@
+struct @@_spawn-receiver_@@ { // @@_exposition only_@@
     void set_value() noexcept;
     void set_stopped() noexcept;
 };
@@ -1339,7 +1342,7 @@ inline constexpr spawn_t spawn{};
 
 `spawn` is a CPO with the following signature:
 ```cpp
-template <sender Sender, async_scope_token Token, class Env = empty_env>
+template <sender Sender, async_scope_token Token, class Env = env<>>
 void spawn(Sender&& snd, Token token, Env env = {});
 ```
 
@@ -1412,8 +1415,8 @@ for (int i = 0; i < 100; i++)
 ## `execution::spawn_future`
 
 ```cpp
-template <class Sigs>
-struct @_spawn-future-receiver_@ { // @_exposition-only_@
+template <class Completions>
+struct @_spawn-future-receiver_@ { // @_exposition only_@
     template <class... T>
     void set_value(T&&... t) && noexcept;
 
@@ -1430,7 +1433,7 @@ inline constexpr spawn_future_t spawn_future{};
 
 `spawn_future` is a CPO with the following signature:
 ```cpp
-template <sender Sender, async_scope_token Token, class Env = empty_env>
+template <sender Sender, async_scope_token Token, class Env = env<>>
 sender auto spawn_future(Sender&& snd, Token token, Env env = {});
 ```
 
@@ -1536,7 +1539,7 @@ class simple_counting_scope {
         void disassociate() const;
 
     private:
-        simple_counting_scope* @_scope_@; // @@_exposition-only_@@
+        simple_counting_scope* @_scope_@; // @@_exposition only_@@
     };
 
     simple_counting_scope() noexcept;
@@ -1765,7 +1768,7 @@ class counting_scope {
         void disassociate() const;
 
     private:
-        counting_scope* scope; // @@_exposition-only_@@
+        counting_scope* scope; // @@_exposition only_@@
     };
 
     counting_scope() noexcept;
@@ -1880,7 +1883,7 @@ operations.
 ### `counting_scope::join`
 
 ```cpp
-struct @@_join-sender_@@; // @@_exposition-only_@@
+struct @@_join-sender_@@; // @@_exposition only_@@
 
 @@_join-sender_@@ join() noexcept;
 ```
@@ -2268,6 +2271,8 @@ async operations created with the sender.
 ```cpp
 namespace std::execution {
 
+// TODO: add a paragraph that describes the class' class invariant: "engaged optional" means association is owned
+
 template <async_scope_token Token, sender Sender>
 struct @_nest-data_@ {               // exposition only
     using @_wrap-sender_@ =          // exposition only
@@ -2367,12 +2372,16 @@ follows:
 
 ```
 namespace std::execution {
-    template <>
-    struct @_impls-for_@<nest_t> : @_default-impls_@ {
-        static constexpr auto @_get-state_@ = @_see below_@;
 
-        static constexpr auto @_start_@ = @_see below_@;
-    };
+template <>
+struct @_impls-for_@<nest_t> : @_default-impls_@ {
+    static constexpr auto @_get-state_@ = @_see below_@;
+
+    static constexpr auto @_start_@ = @_see below_@;
+
+    // TODO: add @_check-types_@
+};
+
 }
 ```
 
@@ -2436,15 +2445,16 @@ following lambda:
 }
 ```
 
-[14]{.pnum} The expression in the `noexcept` clause of `@_impls-for_@<nest_t>::@_get-state_@` is:
+[14]{.pnum} The expression in the `noexcept` clause of `@_impls-for_@<nest_t>::@_get-state_@` is
 
-TODO: the type of the sender passed to `connect` is not `Sndr` so the last clause is wrong...
 ```cpp
     is_nothrow_constructible_v<remove_cvref_t<Sndr>, Sndr> &&
-    noexcept(auto(@_default-impls_@::@_get-state_@(std::move(sndr)).release())) &&
+    is_nothrow_move_constructible_v<@_wrap-sender_@> &&
     is_nothrow_move_constructible_v<scope_token> &&
-    @_nothrow-callable_@<connect_t, Sndr, Rcvr>
+    @_nothrow-callable_@<connect_t, @_wrap-sender_@, Rcvr>
 ```
+
+where _`wrap-sender`_ is the type `remove_cvref_t<decltype(@_default-impls_@::@_get-state_@(std::move(sndr), rcvr))>::@_wrap-sender_@.`
 
 [15]{.pnum} The member `@_impls-for_@<nest_t>::@_start_@` is initialized with a callable object equivalent to the
 following lambda:
@@ -2481,54 +2491,57 @@ let `Sndr` be `decltype((sndr))`, let `Token` be `decltype((token))`, and let `E
 ```cpp
 namespace std::execution {
 
-template <class Sigs>
-struct @_spawn-future-state-base_@ { // @_exposition-only_@
-    using @_variant_t_@ = @_see below_@; // @_exposition-only_@
-    @_variant_t_@ @_result_@;            // @_exposition-only_@
-    virtual void @_complete_@() = 0; // @_exposition-only_@
+template <class Completions>
+struct @_spawn-future-state-base_@; // @_exposition only_@
+
+template <class... Sigs>
+struct @_spawn-future-state-base_@<completion_signatures<Sigs...>> { // @_exposition only_@
+    using @_variant_t_@ = @_see below_@; // @_exposition only_@
+    @_variant_t_@ @_result_@;            // @_exposition only_@
+    virtual void @_complete_@() = 0; // @_exposition only_@
 };
 
 }
 ```
 
-[4]{.pnum} The class template _`spawn-future-state-base`_ can be instantiated with a type parameter, `Sigs`, that is an
-instantiation of `completion_signatures`. For an instantiation of _`spawn-future-state-base`_, the _`result`_ member has
-the type `variant<T...>` where the parameter pack contains the following:
+[4]{.pnum} Let `Sigs` be the pack of arguments to the `completion_signatures` specialization provided as a parameter to
+the _`spawn-future-state-base`_ class template. Let _`as-tuple`_ be an alias template that transforms a completion
+signature `Tag(Args...)` into the tuple specialization `@_decayed-tuple_@<Tag, Args...>`.
 
-- `monostate` as the first element;
-- for each completion signature in `Sigs` with a completion tag `cpo_t` and parameter types `P...` an element of type
-  `@_decayed-tuple_@<cpo_t, P...>`, with duplicates removed; and (TODO: update to match https://eel.is/c%2B%2Bdraft/exec#schedule.from-8)
-- `@_decayed-tuple_@<set_error_t, exception_ptr>` if any of the preceding instantiations of `tuple` have
-  possibly-throwing constructors (TODO: also need to make sure this doesn't introduce a duplicate; follow the example of the previous link).
+- [4.1]{.pnum} If `is_nothrow_constructible_v<decay_t<Arg>, Arg>` is `true` for every type `Arg` in every parameter pack
+  `Args` in every completion signature `Tag(Args...)` in `Sigs` then _`variant_t`_ denotes the type
+  `variant<monostate, @_as-tuple_@<Sigs>...>`, except with duplicates removed.
+- [4.2]{.pnum} Otherwise _`variant_t`_ denotes the type
+  `variant<monostate, tuple<set_error_t, exception_ptr>, @_as-tuple_@<Sigs>...>`, except with duplicates removed.
 
 [5]{.pnum} Let _`spawn-future-receiver`_ be an exposition-only class template defined below:
 
 ```cpp
 namespace std::execution {
 
-template <class Sigs>
-struct @_spawn-future-receiver_@ { // @_exposition-only_@
+template <class Completions>
+struct @_spawn-future-receiver_@ { // @_exposition only_@
     using receiver_concept = receiver_t;
 
-    @_spawn-future-state-base_@<Sigs>* @_state_@; // @_exposition-only_@
+    @_spawn-future-state-base_@<Completions>* @_state_@; // @_exposition only_@
 
     template <class... T>
     void set_value(T&&... t) && noexcept {
-        std::move(*this).@_set_complete_@(set_value_t{}, std::forward<T>(t)...);
+        @_set-complete_@<set_value_t>(std::forward<T>(t)...);
     }
 
     template <class E>
     void set_error(E&& e) && noexcept {
-        std::move(*this).@_set_complete_@(set_error_t{}, std::forward<E>(e));
+        @_set-complete_@<set_error_t>(std::forward<E>(e));
     }
 
     void set_stopped() && noexcept {
-        std::move(*this).@_set_complete_@(set_stopped_t{});
+        @_set-complete_@<set_stopped_t>();
     }
 
 private:
     template <class CPO, class... T>
-    void @_set_complete_@(CPO, T&&... t) && noexcept { // @_exposition-only_@
+    void @_set-complete_@(T&&... t) noexcept { // @_exposition only_@
         constexpr bool nothrow = (is_nothrow_constructible_v<decay_t<T>, T> && ...);
 
         try {
@@ -2546,6 +2559,8 @@ private:
 
 }
 ```
+
+TODO: rewrite para 6 in terms of _`stop_when`_.
 
 [6]{.pnum} For the expression `spawn_future(sndr, token, env)` let `stoken` be a stop token that will receive stop
 requests sent from the returned future and any stop requests sent to the stop token returned from `get_stop_token(env)`.
@@ -2567,8 +2582,8 @@ and let `alloc` and `senv` be defined as follows:
 namespace std::execution {
 
 template <class Alloc, async_scope_token Token, sender Sender>
-struct @_spawn-future-state_@ : @_spawn-future-state-base_@<completion_signatures_of_t<Sender, empty_env>> {
-    using @_sigs-t_@ = completion_signatures_of_t<Sender, empty_env>; // @_exposition only_@
+struct @_spawn-future-state_@ : @_spawn-future-state-base_@<completion_signatures_of_t<Sender, env<>>> {
+    using @_sigs-t_@ = completion_signatures_of_t<Sender, env<>>; // @_exposition only_@
     using @_receiver-t_@ = @_spawn-future-receiver_@<@_sigs-t_@>; // @_exposition only_@
     using @_op-t_@ = decltype(connect(declval<Sender>(), @_receiver-t_@{nullptr})); // @_exposition only_@
 
@@ -2669,6 +2684,8 @@ namespace std::execution {
 template <>
 struct @_impls-for_@<spawn_future_t> : @_default-impls_@ {
     static constexpr auto @_start_@ = @_see below_@;
+
+    // TODO: add @_check-types_@
 };
 
 }
@@ -2683,9 +2700,11 @@ the following lambda:
 ```
 
 [16]{.pnum} Then the expression `spawn_future(sndr, token)` is expression-equivalent to
-`spawn_future(sndr, token, empty_env{})` and the expression `spawn_future(sndr, token, env)` is expression-equivalent to
+`spawn_future(sndr, token, env<>{})` and the expression `spawn_future(sndr, token, env)` is expression-equivalent to
 the following:
 ```cpp
+    // TODO: consider rewriting this in prose
+
     auto makeSender = [&] {
         return write_env(token.wrap(std::forward<Sender>(sndr)), senv);
     };
@@ -2851,7 +2870,7 @@ private:
     allocator_traits<@_alloc-t_@>::deallocate(alloc, this, 1);
 ```
 
-[12]{.pnum} Then the expression `spawn(sndr, token)` is expression-equivalent to `spawn(sndr, token, empty_env{})` and
+[12]{.pnum} Then the expression `spawn(sndr, token)` is expression-equivalent to `spawn(sndr, token, env<>{})` and
 the expression `spawn(sndr, token, env)` is expression-equivalent to the following:
 ```
     auto makeSender = [&] {
@@ -2951,19 +2970,19 @@ public:
         void disassociate() const noexcept;
 
     private:
-        simple_counting_scope* @_scope_@; // @_exposition-only_@
+        simple_counting_scope* @_scope_@; // @_exposition only_@
     };
 
-    struct @_join-t_@; // @_exposition-only_@
+    struct @_join-t_@; // @_exposition only_@
 
-    enum @_state-type_@ { // @_exposition-only_@
-        @_unused_@, // @_exposition-only_@
-        @_open_@, // @_exposition-only_@
-        @_close_@, // @_exposition-only_@
-        @_open-and-joining_@, // @_exposition-only_@
-        @_closed-and-joining_@, // @_exposition-only_@
-        @_unused-and-closed_@, // @_exposition-only_@
-        @_joined_@, // @_exposition-only_@
+    enum @_state-type_@ { // @_exposition only_@
+        @_unused_@, // @_exposition only_@
+        @_open_@, // @_exposition only_@
+        @_close_@, // @_exposition only_@
+        @_open-and-joining_@, // @_exposition only_@
+        @_closed-and-joining_@, // @_exposition only_@
+        @_unused-and-closed_@, // @_exposition only_@
+        @_joined_@, // @_exposition only_@
     };
 
     // [exec.simple.counting.ctor], constructor and destructor
@@ -2977,8 +2996,8 @@ public:
     auto join() noexcept;
 
 private:
-    size_t @_count_@; // @_exposition-only_@
-    @_state-type_@ @_state_@; // @_exposition-only_@
+    size_t @_count_@; // @_exposition only_@
+    @_state-type_@ @_state_@; // @_exposition only_@
 };
 ```
 
@@ -3044,26 +3063,27 @@ which happens after a call to `s.close()` returns `false`.
 template <>
 struct @_impls-for_@<@_join-t_@>: @_default-impls_@ {
     template <class Receiver>
-    struct @_state_@ {  // @_exposition-only_@
-        simple_counting_scope* @_scope_@; // @_exposition-only_@
-        remove_cvref_t<Receiver>& @_receiver_@; // @_exposition-only_@
-        using @_op_t_@ = decltype(connect(schedule(get_scheduler(get_env(receiver))), receiver)); // @_exposition-only_@
-        @_op_t_@ @_op_@; // @_exposition-only_@
+    struct @_state_@ {  // @_exposition only_@
+        simple_counting_scope* @_scope_@; // @_exposition only_@
+        remove_cvref_t<Receiver>& @_receiver_@; // @_exposition only_@
+        using @_op_t_@ = decltype(connect(schedule(get_scheduler(get_env(receiver))), receiver)); // @_exposition only_@
+        @_op_t_@ @_op_@; // @_exposition only_@
 
-        @_state_@(simple_counting_scope* scope, Receiver& receiver) // @_exposition-only_@
+        @_state_@(simple_counting_scope* scope, Receiver& receiver) // @_exposition only_@
           : @_scope_@(scope),
             @_receiver_@(receiver),
             @_op_@(connect(schedule(get_scheduler(get_env(receiver))), receiver)) {}
 
-        void @_complete_@() { // @_exposition-only_@
+        void @_complete_@() noexcept { // @_exposition only_@
             @_op_@.start();
         }
 
-        void @_complete-inline_@() { // @_exposition-only_@
+        void @_complete-inline_@() noexcept { // @_exposition only_@
             set_value(std::move(@_receiver_@));
         }
     };
 
+    // TODO: review why this is noexcept(false)
     static constexpr auto @_get-state_@ =
         []<class Receiver>(auto&& sender, Receiver& receiver) noexcept(false) {
             auto[_, self] = sender;
@@ -3072,6 +3092,8 @@ struct @_impls-for_@<@_join-t_@>: @_default-impls_@ {
 
     static constexpr auto @_start_@ =
         [](auto& s, auto&) noexcept { @_see-below_@; };
+
+    // TODO: add @_check-types_@
 };
 ```
 
@@ -3111,7 +3133,7 @@ __Token [exec.simple.counting.token]__
 `@_joined_@` and calls `@_complete_@()` on all objects registered with `*@_scope_@`.
 
 [5]{.pnum} [_Note:_ Calling `@_complete_@()` on any registered object may cause `*@_scope_@` to get destroyed.
-_--End-Note_]
+_-- end note_]
 
 __Counting Scope [exec.counting.scope]__
 
@@ -3128,19 +3150,19 @@ public:
         void disassociate() const noexcept;
 
     private:
-        counting_scope* @_scope_@; // @_exposition-only_@
+        counting_scope* @_scope_@; // @_exposition only_@
     };
 
-    struct @_join-t_@; // @_exposition-only_@
+    struct @_join-t_@; // @_exposition only_@
 
-    enum @_state-type_@ { // @_exposition-only_@
-        @_unused_@, // @_exposition-only_@
-        @_open_@, // @_exposition-only_@
-        @_close_@, // @_exposition-only_@
-        @_open-and-joining_@, // @_exposition-only_@
-        @_closed-and-joining_@, // @_exposition-only_@
-        @_unused-and-closed_@, // @_exposition-only_@
-        @_joined_@, // @_exposition-only_@
+    enum @_state-type_@ { // @_exposition only_@
+        @_unused_@, // @_exposition only_@
+        @_open_@, // @_exposition only_@
+        @_close_@, // @_exposition only_@
+        @_open-and-joining_@, // @_exposition only_@
+        @_closed-and-joining_@, // @_exposition only_@
+        @_unused-and-closed_@, // @_exposition only_@
+        @_joined_@, // @_exposition only_@
     };
 
     // [exec.counting.ctor], constructor and destructor
@@ -3155,9 +3177,9 @@ public:
     void request_stop() noexcept;
 
 private:
-    size_t @_count_@; // @_exposition-only_@
-    @_state-type_@ @_state_@; // @_exposition-only_@
-    inplace_stop_source @_s_source_@ // @_exposition-only_@
+    size_t @_count_@; // @_exposition only_@
+    @_state-type_@ @_state_@; // @_exposition only_@
+    inplace_stop_source @_s_source_@ // @_exposition only_@
 };
 ```
 
@@ -3222,26 +3244,27 @@ happens after a call to `s.close()` returns `false`.
 template <>
 struct @_impls-for_@<@_join-t_@>: @_default-impls_@ {
     template <class Receiver>
-    struct @_state_@ {  // @_exposition-only_@
-        counting_scope* @_scope_@; // @_exposition-only_@
-        remove_cvref_t<Receiver>& @_receiver_@; // @_exposition-only_@
-        using @_op_t_@ = decltype(connect(schedule(get_scheduler(get_env(receiver))), receiver)); // @_exposition-only_@
-        @_op_t_@ @_op_@; // @_exposition-only_@
+    struct @_state_@ {  // @_exposition only_@
+        counting_scope* @_scope_@; // @_exposition only_@
+        remove_cvref_t<Receiver>& @_receiver_@; // @_exposition only_@
+        using @_op_t_@ = decltype(connect(schedule(get_scheduler(get_env(receiver))), receiver)); // @_exposition only_@
+        @_op_t_@ @_op_@; // @_exposition only_@
 
-        @_state_@(counting_scope* scope, Receiver& receiver) // @_exposition-only_@
+        @_state_@(counting_scope* scope, Receiver& receiver) // @_exposition only_@
           : @_scope_@(scope),
             @_receiver_@(receiver),
             @_op_@(connect(schedule(get_scheduler(get_env(receiver))), receiver)) {}
 
-        void @_complete_@() noexcept { // @_exposition-only_@
+        void @_complete_@() noexcept { // @_exposition only_@
             @_op_@.start();
         }
 
-        void @_complete-inline_@() noexcept { // @_exposition-only_@
+        void @_complete-inline_@() noexcept { // @_exposition only_@
             set_value(std::move(@_receiver_@));
         }
     };
 
+    // TODO: review why this is noexcept(false)
     static constexpr auto @_get-state_@ =
         []<class Receiver>(auto&& sender, Receiver& receiver) noexcept(false) {
             auto[_, self] = sender;
@@ -3297,7 +3320,7 @@ sender, _`snd`_, to `r`, except that the operation will receive a stop request w
 `@_complete_@()` on all objects registered with `*@_scope_@`.
 
 [5]{.pnum} [_Note:_ Calling `@_complete_@()` on any registered object may cause `*@_scope_@` to get destroyed.
-_--End-Note_]
+_-- end note_]
 
 :::
 
