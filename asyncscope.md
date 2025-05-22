@@ -1,6 +1,6 @@
 ---
 title: "`async_scope` -- Creating scopes for non-sequential concurrency"
-document: P3149R9
+document: P3149R10
 date: today
 audience:
   - "SG1 Parallelism and Concurrency"
@@ -28,6 +28,33 @@ toc: true
 
 Changes
 =======
+
+## R10
+
+- Incorporate significant feedback from Mark Hoemmen, Tomasz Kamiński, and Dietmar Kühl to the wording for `nest`.
+- Address Jens Maurer's feedback from the mailing list: replace [methods]{.rm} with [member functions]{.add}, add
+  exposition-only to member variable names, add exception specification to _`get-state`_ and _`start`_.
+- Replace "is [boolean]" with "returns [boolean]" for consistency.
+- Confirmed that _`nest-data`_ needs a deduction guide to get the required behaviour; its `Sender` type parameter may
+  be either a object type or an lvalue reference type depending on the value category of the sender passed to the
+  `nest` CPO, and this fact is only properly deduced with the provided deduction guide. See [this simplified
+  example](https://godbolt.org/z/xh9nd48d3) for more detail.
+- Update `@_impls-for_@<nest_t>::@_get-state_@` to have a computed `noexcept` clause; other sender algorithms (such as
+  `let_value`) may have to add `std::exception_ptr` to their `set_error` completions if _`get-state`_ throws, which
+  means that _`get-state`_ should be declared to be `noexcept` when it does not throw so that such algorithms can avoid
+  unnecessary `set_error` completions.
+- Update the `async_scope_token` concept to require that `t.disassociate()` be `noexcept` instead of having a semantic
+  requirement that `disassociate` "not exit with an exception"; `disassociate` must be `noexcept` for it to be possible
+  to correctly calculate `@_impls-for_@<nest_t>::@_get-state_@`'s `noexcept` clause.
+- Update `simple_counting_scope::try_associate` and `counting_scope::try_associate` to both be `noexcept`;
+  `@_impls-for_@<nest_t>::@_get-state_@`'s `noexcept` clause depends on whether the given token's `try_associate` is
+  `noexcept` when the given sender is an lvalue so the proposed concrete scope types should correctly advertise that
+  their `try_associate` member functions will never throw.
+- Be consistent about trailing underscores in member names.
+- Update `empty_env` to `env<>`.
+- Leave some TODOs for a future R11.
+- Reword paragraph 4 of [exec.spawn.future] to better describe the variant of decayed tuples that capture the result of
+  the spawned operation.
 
 ## R9
 
@@ -256,8 +283,8 @@ concept async_scope_token =
     };
 ```
 
-with `execution::nest()` forwarding to the `nest()` method on the provided token and `spawn()` and `spawn_future()`
-being expressed in terms of `nest()`, to this:
+with `execution::nest()` forwarding to the `nest()` member function on the provided token and `spawn()` and
+`spawn_future()` being expressed in terms of `nest()`, to this:
 
 ```cpp
 template <class Assoc>
@@ -852,7 +879,7 @@ with `io_uring` support.
 This example is based on real code in rsys, but it reduces the real code to slideware and ports it from Unifex to the
 proposed `std::execution` equivalents. The central abstraction in rsys is a `Call`, but each integration of rsys has
 different needs so the set of features supported by a `Call` varies with the build configuration. We support this
-configurability by exposing the equivalent of the following method on the `Call` class:
+configurability by exposing the equivalent of the following member function on the `Call` class:
 ```cpp
 template <typename Feature>
 Handle<Feature> Call::get();
@@ -1070,13 +1097,13 @@ More on these items can be found below in the sections below.
 ```cpp
 namespace std::execution {
 
-struct @_spawn-receiver_@ { // @_exposition-only_@
+struct @_spawn-receiver_@ { // @_exposition only_@
     void set_value() && noexcept;
     void set_stopped() && noexcept;
 };
 
-template <class Sigs>
-struct @_spawn-future-receiver_@ { // @_exposition-only_@
+template <class Completions>
+struct @_spawn-future-receiver_@ { // @_exposition only_@
     template <class... T>
     void set_value(T&&... t) && noexcept;
 
@@ -1095,7 +1122,7 @@ concept async_scope_token =
     };
 
 template <async_scope_token Token, sender Sender>
-using @@_wrapped-sender-from_@@ = decay_t<decltype(declval<Token&>().wrap(declval<Sender>()))>; // @@_exposition-only_@@
+using @@_wrapped-sender-from_@@ = decay_t<decltype(declval<Token&>().wrap(declval<Sender>()))>; // @@_exposition only_@@
 
 struct nest_t { @_unspecified_@ };
 struct spawn_t { @_unspecified_@ };
@@ -1115,7 +1142,7 @@ class simple_counting_scope {
         void disassociate() const;
 
     private:
-        simple_counting_scope* @_scope_@; // @@_exposition-only_@@
+        simple_counting_scope* @_scope_@; // @@_exposition only_@@
     };
 
     simple_counting_scope() noexcept;
@@ -1141,7 +1168,7 @@ class counting_scope {
         void disassociate() const;
 
     private:
-        counting_scope* @_scope_@; // @@_exposition-only_@@
+        counting_scope* @_scope_@; // @@_exposition only_@@
     };
 
     counting_scope() noexcept;
@@ -1175,22 +1202,23 @@ concept async_scope_token =
 ```
 
 An async scope token is a non-owning handle to an async scope that behaves like a reference-to-async-scope; tokens are
-no-throw copyable and movable, and it is undefined behaviour to invoke any methods on a token that has outlived its
-scope.
+no-throw copyable and movable, and it is undefined behaviour to invoke any member function on a token that has outlived
+its scope.
 
-The `try_associate()` method on a token attempts to create a new association with the scope; `try_associate()` returns
-`true` when the association is successful, and it may either return `false` or throw an exception to indicate failure.
-Returning `false` will generally lead to algorithms that operate on tokens behaving as if provided a sender that
-completes immediately with `set_stopped()`, leading to rejected work being discarded as a "no-op". Throwing an exception
-will generally lead to that exception escaping from the calling algorithm.
+The `try_associate()` member function on a token attempts to create a new association with the scope; `try_associate()`
+returns `true` when the association is successful, and it may either return `false` or throw an exception to indicate
+failure.  Returning `false` will generally lead to algorithms that operate on tokens behaving as if provided a sender
+that completes immediately with `set_stopped()`, leading to rejected work being discarded as a "no-op". Throwing an
+exception will generally lead to that exception escaping from the calling algorithm.
 
-The `disassociate()` method removes a previously-established assocation with the scope. `disassociate()` must be called
-exactly once for every call to `try_associate()` that returns `true`; it is undefined behaviour to do otherwise.
+The `disassociate()` member function removes a previously-established assocation with the scope. `disassociate()` must
+be called exactly once for every call to `try_associate()` that returns `true`; it is undefined behaviour to do
+otherwise.
 
-Tokens also have a `wrap()` method that takes and returns a sender. The `wrap()` method gives the token an opportunity
-to modify the input sender's behaviour in a scope-specific way. The proposed `counting_scope` uses this opportunity to
-associate the input sender with a stop token that the scope can use to request stop on all outstanding operations
-associated within the scope.
+Tokens also have a `wrap()` member function that takes and returns a sender. The `wrap()` member function gives the
+token an opportunity to modify the input sender's behaviour in a scope-specific way. The proposed `counting_scope` uses
+this opportunity to associate the input sender with a stop token that the scope can use to request stop on all
+outstanding operations associated within the scope.
 
 In order to provide the Strong Exception Guarantee, the algorithms proposed in this paper invoke `token.wrap(snd)`
 before invoking `token.try_associate()`. Other algorithms written in terms of `async_scope_token` should do the same.
@@ -1217,7 +1245,7 @@ that behaves the same as its input sender, with the following additional effects
 
 - the association ends when the nest-sender is destroyed or, if it is connected, when the resulting operation state is
   destroyed; and
-- whatever effects are added by the token's `wrap()` method.
+- whatever effects are added by the token's `wrap()` member function.
 
 When unsuccessful, `nest()` will either return an "unassociated" nest-sender or it will allow any thrown exceptions to
 escape.
@@ -1233,7 +1261,7 @@ When `nest()` returns an unassociated nest-sender:
  - the unassociated nest-sender will only complete with `set_stopped()`.
 
 Given an `async_scope_token`, `token`, and a sender, `snd`, `nest(snd, token)` is expression-equivalent to
-`@_make-sender_@(nest, @_nest-data_@{snd, token})`, where _`nest-data`_ is an exposition-only class whose constructor
+`@_make-sender_@(nest, @_nest-data_@(snd, token))`, where _`nest-data`_ is an exposition-only class whose constructor
 performs the following operations in the following order:
 
 1. store the result of `token.wrap(snd)` in a member variable
@@ -1302,7 +1330,7 @@ multi-shot and single-shot otherwise.
 
 ```cpp
 template <class Env>
-struct @@_spawn-receiver_@@ { // @@_exposition-only_@@
+struct @@_spawn-receiver_@@ { // @@_exposition only_@@
     void set_value() noexcept;
     void set_stopped() noexcept;
 };
@@ -1314,7 +1342,7 @@ inline constexpr spawn_t spawn{};
 
 `spawn` is a CPO with the following signature:
 ```cpp
-template <sender Sender, async_scope_token Token, class Env = empty_env>
+template <sender Sender, async_scope_token Token, class Env = env<>>
 void spawn(Sender&& snd, Token token, Env env = {});
 ```
 
@@ -1387,8 +1415,8 @@ for (int i = 0; i < 100; i++)
 ## `execution::spawn_future`
 
 ```cpp
-template <class Sigs>
-struct @_spawn-future-receiver_@ { // @_exposition-only_@
+template <class Completions>
+struct @_spawn-future-receiver_@ { // @_exposition only_@
     template <class... T>
     void set_value(T&&... t) && noexcept;
 
@@ -1405,7 +1433,7 @@ inline constexpr spawn_future_t spawn_future{};
 
 `spawn_future` is a CPO with the following signature:
 ```cpp
-template <sender Sender, async_scope_token Token, class Env = empty_env>
+template <sender Sender, async_scope_token Token, class Env = env<>>
 sender auto spawn_future(Sender&& snd, Token token, Env env = {});
 ```
 
@@ -1430,13 +1458,13 @@ for the spawned sender to complete and then completes itself with the spawned se
 `spawn_future(snd, token, env)` proceeds with the following steps in the following order:
 
 1. An allocator, `alloc`, is chosen as described above.
-2. A stop token, `stok`, is created such that it receives stop requests sent by the returned future _and_ any stop
+2. A stop token, `stoken`, is created such that it receives stop requests sent by the returned future _and_ any stop
    requests received by the stop token returned from `get_stop_token(env)`;
 3. An environment, `senv`, is chosen as follows:
-   - if `alloc` is `get_allocator(env)` then `senv` is `@_JOIN-ENV_@(prop(get_stop_token, stok), env)`;
+   - if `alloc` is `get_allocator(env)` then `senv` is `@_JOIN-ENV_@(prop(get_stop_token, stoken), env)`;
    - otherwise, if `alloc` is `get_allocator(get_env(token.wrap(snd)))` then `senv` is
-     `@_JOIN-ENV_@(@_JOIN-ENV_@(prop(get_allocator, alloc), prop(get_stop_token, stok)), env)`;
-   - otherwise, `senv` is `@_JOIN-ENV_@(prop(get_stop_token, stok), env)`.
+     `@_JOIN-ENV_@(@_JOIN-ENV_@(prop(get_allocator, alloc), prop(get_stop_token, stoken)), env)`;
+   - otherwise, `senv` is `@_JOIN-ENV_@(prop(get_stop_token, stoken), env)`.
 4. Storage for the spawned sender's state is dynamically allocated using `alloc`; the address of this storage is known
    as `op`.
 5. The state for the spawned sender is constructed in the allocated storage
@@ -1511,7 +1539,7 @@ class simple_counting_scope {
         void disassociate() const;
 
     private:
-        simple_counting_scope* @_scope_@; // @@_exposition-only_@@
+        simple_counting_scope* @_scope_@; // @@_exposition only_@@
     };
 
     simple_counting_scope() noexcept;
@@ -1616,7 +1644,7 @@ Calling `close()` on a `simple_counting_scope` moves the scope to the closed, un
 state, and causes all future calls to `try_associate()` to return `false`.
 
 Associating work with a `simple_counting_scope` can be done through `simple_counting_scope`'s token, which provides
-three methods: `wrap(sender auto&& s`), `try_associate()`, and `disassociate()`.
+three member functions: `wrap(sender auto&& s`), `try_associate()`, and `disassociate()`.
 
 - `wrap(sender auto&& s)` takes in a sender and returns it unmodified.
 - `try_associate()` attempts to create a new association with the `simple_counting_scope` and will return `true` when
@@ -1715,8 +1743,8 @@ The following atomic state change is attempted on the token's scope:
 - increment the scope's count of outstanding operations; and
 - move the scope to the open state if it was in the unused state.
 
-The atomic state change succeeds and the method returns `true` if the scope is observed to be in the unused, open, or
-open-and-joining state; otherwise the scope's state is left unchanged and the method returns `false`.
+The atomic state change succeeds and the member function returns `true` if the scope is observed to be in the unused,
+open, or open-and-joining state; otherwise the scope's state is left unchanged and the member function returns `false`.
 
 ### `simple_counting_scope::token::disassociate`
 
@@ -1740,7 +1768,7 @@ class counting_scope {
         void disassociate() const;
 
     private:
-        counting_scope* scope; // @@_exposition-only_@@
+        counting_scope* scope; // @@_exposition only_@@
     };
 
     counting_scope() noexcept;
@@ -1759,7 +1787,7 @@ class counting_scope {
 };
 ```
 
-A `counting_scope` behaves like a `simple_counting_scope` augmented with a stop source; the `wrap` method on a
+A `counting_scope` behaves like a `simple_counting_scope` augmented with a stop source; the `wrap` member function on a
 `counting_scope`'s `token` returns a sender that, when connected and started, produces an _`operation-state`_ that
 receives stop requests from both its receiver and from the `counting_scope`. This extension of `simple_counting_scope`
 allows a `counting_scope` to request stop on all of its outstanding operations by requesting stop on its stop source.
@@ -1855,7 +1883,7 @@ operations.
 ### `counting_scope::join`
 
 ```cpp
-struct @@_join-sender_@@; // @@_exposition-only_@@
+struct @@_join-sender_@@; // @@_exposition only_@@
 
 @@_join-sender_@@ join() noexcept;
 ```
@@ -2121,8 +2149,8 @@ alternatives: `async_scope`, `task_pool`, `task_group`, `sender_group`
 
 ### `counting_scope::join()`
 
-This method returns a sender that, when started, waits for the scope's count of outstanding senders to drop to zero
-before completing. It is somewhat analogous to `std::thread::join()` but does not block.
+This member function returns a sender that, when started, waits for the scope's count of outstanding senders to drop to
+zero before completing. It is somewhat analogous to `std::thread::join()` but does not block.
 
 `join()` must be invoked, and the returned sender must be connected, started, and completed, before the scope may be
 destroyed so it may be useful to convey some of this importance in the name, although `std::thread` has similar
@@ -2243,55 +2271,33 @@ async operations created with the sender.
 ```cpp
 namespace std::execution {
 
+// TODO: add a paragraph that describes the class' class invariant: "engaged optional" means association is owned
+
 template <async_scope_token Token, sender Sender>
-struct @_nest-data_@ {
-    using @_wrap-sender_@ = remove_cvref_t<decltype(declval<Token&>().wrap(declval<Sender>()))>;
+struct @_nest-data_@ {               // exposition only
+    using @_wrap-sender_@ =          // exposition only
+        remove_cvref_t<decltype(declval<Token&>().wrap(declval<Sender>()))>;
 
-    optional<@_wrap-sender_@> sndr;
-    Token token;
-
-    @_nest-data_@(Token t, Sender&& s)
-        : sndr(t.wrap(std::forward<Sender>(s))),
-          token(t) {
-        if (!token.try_associate())
-            sndr.reset();
+    explicit @_nest-data_@(Token t, Sender&& s)
+        : @_token_@(t),
+          @_sndr_@(t.wrap(std::forward<Sender>(s))) {
+        if (!@_token_@.try_associate())
+            @_sndr_@.reset();
     }
 
     @_nest-data_@(const @_nest-data_@& other)
-        requires copy_constructible<@_wrap-sender_@>
-        : token(other.token) {
-        if (other.sndr.has_value() && token.try_associate()) {
-            try {
-                sndr.emplace(*other.sndr);
-            }
-            catch (...) {
-                token.disassociate();
-                throw;
-            }
-        }
-    }
+        noexcept(is_nothrow_copy_constructible_v<@_wrap-sender_@> &&
+                 noexcept(other.@_token_@.try_associate()));
 
-    // alternative copy-constructor implementation:
-    @_nest-data_@(const @_nest-data_@& other)
-        requires copy_constructible<@_wrap-sender_@>
-        : sndr(other.sndr),
-          token(other.token) {
-        if (other.sndr.has_value() && !token.try_associate())
-            sndr.reset();
-    }
+    @_nest-data_@(@_nest-data_@&& other) noexcept(is_nothrow_move_constructible_v<@_wrap-sender_@>);
 
-    @_nest-data_@(@_nest-data_@&& other) noexcept(is_nothrow_move_constructible_v<@_wrap-sender_@>)
-        : sndr(std::move(other).sndr),
-          token(std::move(other).token) {
-        other.sndr.reset();
-    }
+    ~@_nest-data_@();
 
-    ~@_nest-data_@() {
-        if (sndr.has_value()) {
-            sndr.reset();
-            token.disassociate();
-        }
-    }
+    optional<pair<Token, @_wrap-sender_@>> release() && noexcept(is_nothrow_move_constructible_v<@_wrap-sender_@>);
+
+private:
+    Token @_token_@;                 // exposition only
+    optional<@_wrap-sender_@> @_sndr_@;  // exposition only
 };
 
 template <async_scope_token Token, sender Sender>
@@ -2300,101 +2306,165 @@ template <async_scope_token Token, sender Sender>
 }
 ```
 
-[3]{.pnum} The name `nest` denotes a pipeable sender adaptor object. For subexpressions `sndr` and `token`, if
+```c++
+@_nest-data_@(const @_nest-data_@& other)
+    noexcept(is_nothrow_copy_constructible_v<@_wrap-sender_@> &&
+             noexcept(other.@_token_@.try_associate()));
+```
+
+[3]{.pnum} _Constraints:_ `copy_constructible<@_wrap-sender_@>` returns `true`.
+
+[4]{.pnum} _Effects:_ Copy constructs _`token`_ with `other.@_token_@` and:
+
+- [5.1]{.pnum} If `other.@_sndr_@.has_value()` returns `false` then value-initializes _`sndr`_.
+- [5.2]{.pnum} Otherwise, `@_token_@.try_associate()` is invoked.
+   - [5.2.1]{.pnum} If `@_token_@.try_associate()` throws an exception then no further effect and the exception is
+     propagated.
+   - [5.2.2]{.pnum} Otherwise if `@_token_@.try_associate()` returns `true` then copy constructs _`sndr`_ with
+     `other.@_sndr_@`; if the copy constructor throws an exception then `@_token_@.disassociate()` is invoked before
+     the exception is propagated.
+   - [5.2.3]{.pnum} Otherwise _`sndr`_ is value-initialized.
+
+```c++
+@_nest-data_@(@_nest-data_@&& other) noexcept(is_nothrow_move_constructible_v<@_wrap-sender_@>);
+```
+
+[5]{.pnum} _Effects:_ Move constructs _`token`_ with `other.@_token_@` and move constructs _`sndr`_ with
+`other.@_sndr_@`.
+
+[6]{.pnum} _Postconditions:_ If no exceptions are thrown then `other.@_sndr_@.has_value()` returns `false`; otherwise,
+`other.@_sndr_@.has_value()` is unchanged.
+
+```c++
+~@_nest-data_@();
+```
+
+[7]{.pnum} _Effects:_ If `@_sndr_@.has_value()` returns `false` then no effect; otherwise, invokes `@_sndr_@.reset()`
+before invoking `@_token_@.disassociate()`.
+
+```c++
+optional<pair<Token, @_wrap-sender_@>> release() && noexcept(is_nothrow_move_constructible_v<@_wrap-sender_@>);
+```
+
+[8]{.pnum} _Effects:_ If `@_sndr_@.has_value()` returns `false` then returns a disengaged `optional`; otherwise
+returns an engaged `optional` containing a `pair<Token, @_wrap-sender_@>` as if by:
+
+```c++
+return optional{pair{std::move(@_token_@), std::move(*@_sndr_@)}};
+```
+
+[9]{.pnum} _Postconditions:_ _`sndr`_ is disengaged.
+
+[10]{.pnum} The name `nest` denotes a pipeable sender adaptor object. For subexpressions `sndr` and `token`, if
 `decltype((sndr))` does not satisfy `sender`, or `decltype((token))` does not satisfy `async_scope_token`, then
 `nest(sndr, token)` is ill-formed.
 
-[4]{.pnum} Otherwise, the expression `nest(sndr, token)` is expression-equivalent to:
+[11]{.pnum} Otherwise, the expression `nest(sndr, token)` is expression-equivalent to:
 
 ```
-transform_sender(@_get-domain-early_@(sndr), @_make-sender_@(nest, @_nest-data_@{token, sndr}))
+transform_sender(@_get-domain-early_@(sndr), @_make-sender_@(nest, @_nest-data_@(token, sndr)))
 ```
 
 except that `sndr` is evaluated only once.
 
-[5]{.pnum} The exposition-only class template _`impls-for`_ ([exec.snd.general]{.sref}) is specialized for `nest_t` as
+[12]{.pnum} The exposition-only class template _`impls-for`_ ([exec.snd.general]{.sref}) is specialized for `nest_t` as
 follows:
 
 ```
 namespace std::execution {
-    template <>
-    struct @_impls-for_@<nest_t> : @_default-impls_@ {
-        static constexpr auto @_get-state_@ = @_see below_@;
 
-        static constexpr auto @_start_@ = @_see below_@;
-    };
+template <>
+struct @_impls-for_@<nest_t> : @_default-impls_@ {
+    static constexpr auto @_get-state_@ = @_see below_@;
+
+    static constexpr auto @_start_@ = @_see below_@;
+
+    // TODO: add @_check-types_@
+};
+
 }
 ```
 
-[6]{.pnum} The member `@_impls-for_@<nest_t>::@_get-state_@` is initialized with a callable object equivalent to the
+[13]{.pnum} The member `@_impls-for_@<nest_t>::@_get-state_@` is initialized with a callable object equivalent to the
 following lambda:
 ```cpp
-[]<class Sndr, class Rcvr>(Sndr&& sndr, Rcvr& rcvr) {
-    auto& [_, data, ...child] = sndr;
+[]<class Sndr, class Rcvr>(Sndr&& sndr, Rcvr& rcvr) noexcept(/* @_see below_@ */) {
+    auto [_, data] = std::forward<Sndr>(sndr);
 
-    using scope_token = decltype(data.token);
-    using op_t = decltype(connect(std::forward_like<Sndr>(data.sndr.value()), rcvr));
+    auto dataParts = std::move(data).release();
 
-    static_assert(sizeof...(child) == 0);
+    using scope_token = decltype(dataParts->first);
+    using wrap_sender = decltype(dataParts->second);
+    using op_t = decltype(connect(std::move(dataParts->second), std::move(rcvr)));
 
     struct op_state {
-        bool associated = false;
-        scope_token token;
+        bool @_associated_@ = false;   // exposition only
         union {
-            Rcvr* rcvr;
-            op_t op;
+            Rcvr* @_rcvr_@;            // exposition only
+            struct {
+                scope_token @_token_@; // exposition only
+                op_t @_op_@;           // exposition only
+            };
         };
 
-        op_state(scope_token token, Rcvr& r) noexcept
-            : token(std::move(token)),
-              rcvr(addressof(r)) {}
+        explicit op_state(Rcvr& r) noexcept
+            : @_rcvr_@(addressof(r)) {}
 
-        op_state(scope_token token, @_wrap-sender_@&& sndr, Rcvr& r)
-            : associated(true),
-              token(std::move(token)),
-              op(connect(std::move(sndr), std::move(r))) {}
-
-        op_state(scope_token token, const @_wrap-sender_@& sndr, Rcvr& r)
-            : associated(token.try_associate()),
-              token(std::move(token)),
-              rcvr(addressof(r)) {
-            if (associated)
-                ::new (@_voidify_@(op)) op_t(connect(sndr, std::move(r)));
+        explicit op_state(scope_token tkn, wrap_sender&& sndr, Rcvr& r) try
+            : @_associated_@(true),
+              @_token_@(std::move(tkn)),
+              @_op_@(connect(std::move(sndr), std::move(r))) {
+        }
+        catch (...) {
+            @_token_@.disassociate();
+            throw;
         }
 
         op_state(op_state&&) = delete;
 
         ~op_state() {
-            if (associated) {
-                token.disassociate();
-                op.~op_t();
+            if (@_associated_@) {
+                @_op_@.~op_t();
+                @_token_@.disassociate();
+                @_token_@.~scope_token();
             }
         }
 
-        void start() noexcept {
-            if (associated)
-                op.start();
+        void @_start_@() noexcept {    // exposition only
+            if (@_associated_@)
+                @_op_@.start();
             else
-                set_stopped(std::move(*rcvr));
+                set_stopped(std::move(*@_rcvr_@));
         }
     };
 
-    if (data.sndr.has_value())
-        return op_state{std::forward_like<Sndr>(data.token), std::forward_like<Sndr>(*data.sndr), rcvr};
+    if (dataParts)
+        return op_state{std::move(dataParts->first), std::move(dataParts->second), rcvr};
     else
-        return op_state{data.token, rcvr};
+        return op_state{rcvr};
 }
 ```
 
-[7]{.pnum} The member `@_impls-for_@<nest_t>::@_start_@` is initialized with a callable object equivalent to the
+[14]{.pnum} The expression in the `noexcept` clause of `@_impls-for_@<nest_t>::@_get-state_@` is
+
+```cpp
+    is_nothrow_constructible_v<remove_cvref_t<Sndr>, Sndr> &&
+    is_nothrow_move_constructible_v<@_wrap-sender_@> &&
+    is_nothrow_move_constructible_v<scope_token> &&
+    @_nothrow-callable_@<connect_t, @_wrap-sender_@, Rcvr>
+```
+
+where _`wrap-sender`_ is the type `remove_cvref_t<decltype(@_default-impls_@::@_get-state_@(std::move(sndr), rcvr))>::@_wrap-sender_@.`
+
+[15]{.pnum} The member `@_impls-for_@<nest_t>::@_start_@` is initialized with a callable object equivalent to the
 following lambda:
 ```cpp
 [](auto& state, auto&) noexcept -> void {
-    state.start();
+    state.@_start_@();
 }
 ```
 
-[8]{.pnum} The evaluation of `nest(sndr, token)` may cause side effects observable via `token`'s associated async scope
+[16]{.pnum} The evaluation of `nest(sndr, token)` may cause side effects observable via `token`'s associated async scope
 object.
 
 :::
@@ -2406,81 +2476,83 @@ Add the following as a new subsection immediately after __[exec.nest]__:
 ::: add
 __`std::execution::spawn_future` [exec.spawn.future]__
 
+TODO: define "_`future-sender`_ type" for this section to mean the sender that is returned
+
 [1]{.pnum} `spawn_future` attempts to associate the given input sender with the given token's async scope and, on
 success, eagerly starts the input sender; the return value is a sender that, when connected and started, completes with
 either the result of the eagerly-started input sender or with `set_stopped` if the input sender was not started.
 
 [2]{.pnum} The name `spawn_future` denotes a customization point object. For subexpressions `sndr`, `token`, and `env`,
 let `Sndr` be `decltype((sndr))`, let `Token` be `decltype((token))`, and let `Env` be `decltype((env))`. If
-`sender<Sndr>` or `async_scope_token<Token>` is `false`, the expression `spawn_future(sndr, token, env)` is ill-formed.
+`sender<Sndr>` or `async_scope_token<Token>` returns `false`, the expression `spawn_future(sndr, token, env)` is ill-formed.
 
 [3]{.pnum} Let _`spawn-future-state-base`_ be an exposition-only class template defined below:
 
 ```cpp
 namespace std::execution {
 
-template <class Sigs>
-struct @_spawn-future-state-base_@ { // @_exposition-only_@
-    variant</* @_see below_@ */> @_result_@; // @_exposition-only_@
-    virtual void @_complete_@() = 0; // @_exposition-only_@
+template <class Completions>
+struct @_spawn-future-state-base_@; // @_exposition only_@
+
+template <class... Sigs>
+struct @_spawn-future-state-base_@<completion_signatures<Sigs...>> { // @_exposition only_@
+    using @_variant_t_@ = @_see below_@; // @_exposition only_@
+    @_variant_t_@ @_result_@;            // @_exposition only_@
+    virtual void @_complete_@() = 0; // @_exposition only_@
 };
 
 }
 ```
 
-[4]{.pnum} The class template _`spawn-future-state-base`_ can be instantiated with a type parameter, `Sigs`, that is an
-instantiation of `completion_signatures`. For an instantiation of _`spawn-future-state-base`_, the result member has the
-type `variant<T...>` where the parameter pack contains the following:
+[4]{.pnum} Let `Sigs` be the pack of arguments to the `completion_signatures` specialization provided as a parameter to
+the _`spawn-future-state-base`_ class template. Let _`as-tuple`_ be an alias template that transforms a completion
+signature `Tag(Args...)` into the tuple specialization `@_decayed-tuple_@<Tag, Args...>`.
 
-- `monostate` as the first element;
-- for each completion signature in `Sigs` with a completion tag `cpo_t` and parameter types `P...` an element of type
-  `@_decayed-tuple_@<cpo_t, P...>`; and
-- `@_decayed-tuple_@<set_error_t, exception_ptr>` if any of the preceding instantiations of `tuple` have possibly-throwing
-  constructors.
+- [4.1]{.pnum} If `is_nothrow_constructible_v<decay_t<Arg>, Arg>` is `true` for every type `Arg` in every parameter pack
+  `Args` in every completion signature `Tag(Args...)` in `Sigs` then _`variant_t`_ denotes the type
+  `variant<monostate, @_as-tuple_@<Sigs>...>`, except with duplicates removed.
+- [4.2]{.pnum} Otherwise _`variant_t`_ denotes the type
+  `variant<monostate, tuple<set_error_t, exception_ptr>, @_as-tuple_@<Sigs>...>`, except with duplicates removed.
 
 [5]{.pnum} Let _`spawn-future-receiver`_ be an exposition-only class template defined below:
 
 ```cpp
 namespace std::execution {
 
-template <class Sigs>
-struct @_spawn-future-receiver_@ { // @_exposition-only_@
+template <class Completions>
+struct @_spawn-future-receiver_@ { // @_exposition only_@
     using receiver_concept = receiver_t;
 
-    @_spawn-future-state-base_@<Sigs>* @_state_@; // @_exposition-only_@
+    @_spawn-future-state-base_@<Completions>* @_state_@; // @_exposition only_@
 
     template <class... T>
     void set_value(T&&... t) && noexcept {
-        constexpr bool nothrow = (is_nothrow_constructible_v<decay_t<T>, T> && ...);
-
-        try {
-            @_state_@->@_result_@.template emplace<@_decayed-tuple_@<set_value_t, T...>>(set_value_t{}, std::forward<T>(t)...);
-        }
-        catch (...) {
-            if constexpr (!nothrow) {
-                @_state_@->@_result_@.template emplace<@_decayed-tuple_@<set_error_t, exception_ptr>>(set_error_t{}, current_exception());
-            }
-        }
-        @_state_@->@_complete_@();
+        @_set-complete_@<set_value_t>(std::forward<T>(t)...);
     }
 
     template <class E>
     void set_error(E&& e) && noexcept {
-        constexpr bool nothrow = is_nothrow_constructible_v<decay_t<E>, E>;
-
-        try {
-            @_state_@->@_result_@.template emplace<@_decayed-tuple_@<set_error_t, E>>(set_error_t{}, std::forward<E>(e));
-        }
-        catch (...) {
-            if constexpr (!nothrow) {
-                @_state_@->@_result_@.template emplace<@_decayed-tuple_@<set_error_t, exception_ptr>>(set_error_t{}, current_exception());
-            }
-        }
-        @_state_@->@_complete_@();
+        @_set-complete_@<set_error_t>(std::forward<E>(e));
     }
 
     void set_stopped() && noexcept {
-        @_state_@->@_result_@.template emplace<@_decayed-tuple_@<set_stopped_t>>(set_stopped_t{});
+        @_set-complete_@<set_stopped_t>();
+    }
+
+private:
+    template <class CPO, class... T>
+    void @_set-complete_@(T&&... t) noexcept { // @_exposition only_@
+        constexpr bool nothrow = (is_nothrow_constructible_v<decay_t<T>, T> && ...);
+
+        try {
+            @_state_@->@_result_@.template emplace<@_decayed-tuple_@<CPO, T...>>(CPO{}, std::forward<T>(t)...);
+        }
+        catch (...) {
+            if constexpr (!nothrow) {
+                using tuple_t = @_decayed-tuple_@<set_error_t, exception_ptr>;
+                @_state_@->@_result_@.template emplace<tuple_t>(set_error_t{}, current_exception());
+            }
+        }
         @_state_@->@_complete_@();
     }
 };
@@ -2488,19 +2560,21 @@ struct @_spawn-future-receiver_@ { // @_exposition-only_@
 }
 ```
 
-[6]{.pnum} For the expression `spawn_future(sndr, token, env)` let `stok` be a stop token that will receive stop
+TODO: rewrite para 6 in terms of _`stop_when`_.
+
+[6]{.pnum} For the expression `spawn_future(sndr, token, env)` let `stoken` be a stop token that will receive stop
 requests sent from the returned future and any stop requests sent to the stop token returned from `get_stop_token(env)`.
 
 [7]{.pnum} For the expression `spawn_future(sndr, token, env)` let `newSender` be the expression `token.wrap(sndr)`
 and let `alloc` and `senv` be defined as follows:
 
 - if the expression `get_allocator(env)` is well defined, then `alloc` is the result of `get_allocator(env)` and `senv`
-  is the expression `@_JOIN-ENV_@(prop(get_stop_token, stok), env)`;
+  is the expression `@_JOIN-ENV_@(prop(get_stop_token, stoken), env)`;
 - otherwise, if the expression `get_allocator(get_env(@_new-sender_@))` is well-defined, then `alloc` is the result of
   `get_allocator(get_env(@_new-sender_@))` and `senv` is the expression
-  `@_JOIN-ENV_@(@_JOIN-ENV_@(prop(get_allocator, alloc), prop(get_stop_token, stok)), env)`;
+  `@_JOIN-ENV_@(@_JOIN-ENV_@(prop(get_allocator, alloc), prop(get_stop_token, stoken)), env)`;
 - otherwise, `alloc` is `std::allocator<void>` and `senv` is the expression
-  `@_JOIN-ENV_@(prop(get_stop_token, stok), env)`.
+  `@_JOIN-ENV_@(prop(get_stop_token, stoken), env)`.
 
 [8]{.pnum} Let _`spawn-future-state`_ be an exposition-only class template defined below:
 
@@ -2508,8 +2582,8 @@ and let `alloc` and `senv` be defined as follows:
 namespace std::execution {
 
 template <class Alloc, async_scope_token Token, sender Sender>
-struct @_spawn-future-state_@ : @_spawn-future-state-base_@<completion_signatures_of_t<Sender, empty_env>> {
-    using @_sigs-t_@ = completion_signatures_of_t<Sender, empty_env>; // @_exposition only_@
+struct @_spawn-future-state_@ : @_spawn-future-state-base_@<completion_signatures_of_t<Sender, env<>>> {
+    using @_sigs-t_@ = completion_signatures_of_t<Sender, env<>>; // @_exposition only_@
     using @_receiver-t_@ = @_spawn-future-receiver_@<@_sigs-t_@>; // @_exposition only_@
     using @_op-t_@ = decltype(connect(declval<Sender>(), @_receiver-t_@{nullptr})); // @_exposition only_@
 
@@ -2588,11 +2662,11 @@ private:
 
 [13]{.pnum} _Effects_: Equivalent to:
 ```cpp
-    auto token = std::move(this->token);
-    auto associated = this->associated;
+    auto token = std::move(this->@_token_@);
+    auto associated = this->@_associated_@;
 
     {
-        auto alloc = std::move(this->alloc);
+        auto alloc = std::move(this->@_alloc_@);
 
         allocator_traits<@_alloc-t_@>::destroy(alloc, this);
         allocator_traits<@_alloc-t_@>::deallocate(alloc, this, 1);
@@ -2610,6 +2684,8 @@ namespace std::execution {
 template <>
 struct @_impls-for_@<spawn_future_t> : @_default-impls_@ {
     static constexpr auto @_start_@ = @_see below_@;
+
+    // TODO: add @_check-types_@
 };
 
 }
@@ -2624,9 +2700,11 @@ the following lambda:
 ```
 
 [16]{.pnum} Then the expression `spawn_future(sndr, token)` is expression-equivalent to
-`spawn_future(sndr, token, empty_env{})` and the expression `spawn_future(sndr, token, env)` is expression-equivalent to
+`spawn_future(sndr, token, env<>{})` and the expression `spawn_future(sndr, token, env)` is expression-equivalent to
 the following:
 ```cpp
+    // TODO: consider rewriting this in prose
+
     auto makeSender = [&] {
         return write_env(token.wrap(std::forward<Sender>(sndr)), senv);
     };
@@ -2681,7 +2759,7 @@ eagerly starts the input sender.
 
 [2]{.pnum} The name `spawn` denotes a customization point object. For subexpressions `sndr`, `token`, and `env`, let
 `Sndr` be `decltype((sndr))`, let `Token` be `decltype((token))`, and let `Env` be `decltype((env))`. If `sender<Sndr>`
-or `async_scope_token<Token>` is `false`, the expression `spawn(sndr, token, env)` is ill-formed.
+or `async_scope_token<Token>` returns `false`, the expression `spawn(sndr, token, env)` is ill-formed.
 
 [3]{.pnum} Let _`spawn-state-base`_ be an exposition only class defined below:
 
@@ -2740,7 +2818,7 @@ private:
 
     @_alloc-t_@ alloc;
     @_op-t_@ op;
-    Token token;
+    Token @_token_@;
 
     void @_destroy_@() noexcept; // see below
 };
@@ -2755,7 +2833,7 @@ private:
 ```cpp
     this->alloc = alloc;
     this->op = connect(std::move(sndr), @_spawn-receiver_@{this});
-    this->token = token;
+    this->@_token_@ = token;
 ```
 
 `void @_run_@();`
@@ -2763,7 +2841,7 @@ private:
 [9]{.pnum} _Effects_: Equivalent to:
 
 ```cpp
-    if (token.try_associate())
+    if (@_token_@.try_associate())
         op.start();
     else
         @_destroy_@();
@@ -2774,7 +2852,7 @@ private:
 [10]{.pnum} _Effects_: Equivalent to:
 
 ```cpp
-    auto token = std::move(this->token);
+    auto token = std::move(this->@_token_@);
 
     @_destroy_@();
 
@@ -2792,11 +2870,11 @@ private:
     allocator_traits<@_alloc-t_@>::deallocate(alloc, this, 1);
 ```
 
-[12]{.pnum} Then the expression `spawn(sndr, token)` is expression-equivalent to `spawn(sndr, token, empty_env{})` and
+[12]{.pnum} Then the expression `spawn(sndr, token)` is expression-equivalent to `spawn(sndr, token, env<>{})` and
 the expression `spawn(sndr, token, env)` is expression-equivalent to the following:
 ```
     auto makeSender = [&] {
-        return write_env(token.wrap(std::forward<Sender>(sndr)), senv);
+        return write_env(@_token_@.wrap(std::forward<Sender>(sndr)), senv);
     };
 
     using @_sender-t_@ = decltype(makeSender());
@@ -2809,7 +2887,7 @@ the expression `spawn(sndr, token, env)` is expression-equivalent to the followi
     auto* op = @_traits-t_@::allocate(stateAlloc, 1);
 
     try {
-        @_traits-t_@::construct(stateAlloc, op, alloc, makeSender(), token);
+        @_traits-t_@::construct(stateAlloc, op, alloc, makeSender(), @_token_@);
     }
     catch(...) {
         @_traits-t_@::deallocate(stateAlloc, op, 1);
@@ -2842,11 +2920,11 @@ Add the following as the first subsection of __[exec.scope]__:
 ::: add
 __Scope concepts [exec.scope.concepts]__
 
-[1]{.pnum} The `async_scope_token<Token>` concept defines the requirements on a type `Token` that can be used to create
-associations between senders and an async scope.
+[1]{.pnum} The `async_scope_token` concept defines the requirements on a type `Token` that can be used
+to create associations between senders and an async scope.
 
 [2]{.pnum} Let _`test-sender`_ and _`test-env`_ be unspecified types such that
-`sender_in<@_test-sender_@, @_test-env_@>` is `true`.
+`sender_in<@_test-sender_@, @_test-env_@>` returns `true`.
 
 ```cpp
 namespace std::execution {
@@ -2856,7 +2934,7 @@ concept async_scope_token =
     copyable<Token> &&
     requires(Token token) {
         { token.try_associate() } -> same_as<bool>;
-        { token.disassociate() } -> same_as<void>;
+        { token.disassociate() } noexcept -> same_as<void>;
         { token.wrap(declval<@_test-sender_@>()) } -> sender_in<@_test-env_@>;
     };
 
@@ -2864,7 +2942,7 @@ concept async_scope_token =
 ```
 
 [3]{.pnum} `async_scope_token<Token>` is modeled only if `Token`'s copy operations, move operations, and `disassociate`
-method do not exit with an exception.
+member function does not exit with an exception.
 
 [4]{.pnum} Let `token` be an expression, and let `Token` be `decltype((token))`. `Token` models `async_scope_token` only
 if, for all expressions `sndr` whose type models `sender`, `token.wrap(sndr)` is a valid expression whose type models
@@ -2888,23 +2966,23 @@ public:
     struct token {
         template <sender Sender>
         Sender&& wrap(Sender&& snd) const noexcept;
-        bool try_associate() const;
-        void disassociate() const;
+        bool try_associate() const noexcept;
+        void disassociate() const noexcept;
 
     private:
-        simple_counting_scope* @_scope_@; // @_exposition-only_@
+        simple_counting_scope* @_scope_@; // @_exposition only_@
     };
 
-    struct @_join-t_@; // @_exposition-only_@
+    struct @_join-t_@; // @_exposition only_@
 
-    enum @_state-type_@ { // @_exposition-only_@
-        @_unused_@, // @_exposition-only_@
-        @_open_@, // @_exposition-only_@
-        @_close_@, // @_exposition-only_@
-        @_open-and-joining_@, // @_exposition-only_@
-        @_closed-and-joining_@, // @_exposition-only_@
-        @_unused-and-closed_@, // @_exposition-only_@
-        @_joined_@, // @_exposition-only_@
+    enum @_state-type_@ { // @_exposition only_@
+        @_unused_@, // @_exposition only_@
+        @_open_@, // @_exposition only_@
+        @_close_@, // @_exposition only_@
+        @_open-and-joining_@, // @_exposition only_@
+        @_closed-and-joining_@, // @_exposition only_@
+        @_unused-and-closed_@, // @_exposition only_@
+        @_joined_@, // @_exposition only_@
     };
 
     // [exec.simple.counting.ctor], constructor and destructor
@@ -2918,8 +2996,8 @@ public:
     auto join() noexcept;
 
 private:
-    size_t @_count_@; // @_exposition-only_@
-    @_state-type_@ @_state_@; // @_exposition-only_@
+    size_t @_count_@; // @_exposition only_@
+    @_state-type_@ @_state_@; // @_exposition only_@
 };
 ```
 
@@ -2961,7 +3039,7 @@ __Members [exec.simple.counting.mem]__
 
 `token get_token() noexcept;`
 
-[1]{.pnum} _Returns:_ An object `t` of type `simple_counting_scope::token` such that `t.@_scope_@ == this` is `true`.
+[1]{.pnum} _Returns:_ An object `t` of type `simple_counting_scope::token` such that `t.@_scope_@ == this` returns `true`.
 
 `void close() noexcept;`
 
@@ -2985,34 +3063,37 @@ which happens after a call to `s.close()` returns `false`.
 template <>
 struct @_impls-for_@<@_join-t_@>: @_default-impls_@ {
     template <class Receiver>
-    struct @_state_@ {  // @_exposition-only_@
-        simple_counting_scope* @_scope_@; // @_exposition-only_@
-        remove_cvref_t<Receiver>& @_receiver_@; // @_exposition-only_@
-        using @_op_t_@ = decltype(connect(schedule(get_scheduler(get_env(receiver))), receiver)); // @_exposition-only_@
-        @_op_t_@ @_op_@; // @_exposition-only_@
+    struct @_state_@ {  // @_exposition only_@
+        simple_counting_scope* @_scope_@; // @_exposition only_@
+        remove_cvref_t<Receiver>& @_receiver_@; // @_exposition only_@
+        using @_op_t_@ = decltype(connect(schedule(get_scheduler(get_env(receiver))), receiver)); // @_exposition only_@
+        @_op_t_@ @_op_@; // @_exposition only_@
 
-        @_state_@(simple_counting_scope* scope, Receiver& receiver) // @_exposition-only_@
+        @_state_@(simple_counting_scope* scope, Receiver& receiver) // @_exposition only_@
           : @_scope_@(scope),
             @_receiver_@(receiver),
             @_op_@(connect(schedule(get_scheduler(get_env(receiver))), receiver)) {}
 
-        void @_complete_@() { // @_exposition-only_@
+        void @_complete_@() noexcept { // @_exposition only_@
             @_op_@.start();
         }
 
-        void @_complete-inline_@() { // @_exposition-only_@
+        void @_complete-inline_@() noexcept { // @_exposition only_@
             set_value(std::move(@_receiver_@));
         }
     };
 
+    // TODO: review why this is noexcept(false)
     static constexpr auto @_get-state_@ =
-        []<class Receiver>(auto&& sender, Receiver& receiver) {
+        []<class Receiver>(auto&& sender, Receiver& receiver) noexcept(false) {
             auto[_, self] = sender;
             return @_state_@<Receiver>(self, receiver);
         };
 
     static constexpr auto @_start_@ =
-        [](auto& s, auto&) { @_see-below_@; };
+        [](auto& s, auto&) noexcept { @_see-below_@; };
+
+    // TODO: add @_check-types_@
 };
 ```
 
@@ -3052,7 +3133,7 @@ __Token [exec.simple.counting.token]__
 `@_joined_@` and calls `@_complete_@()` on all objects registered with `*@_scope_@`.
 
 [5]{.pnum} [_Note:_ Calling `@_complete_@()` on any registered object may cause `*@_scope_@` to get destroyed.
-_--End-Note_]
+_-- end note_]
 
 __Counting Scope [exec.counting.scope]__
 
@@ -3065,23 +3146,23 @@ public:
     struct token {
         template <sender Sender>
         sender auto wrap(Sender&& snd) const noexcept;
-        bool try_associate() const;
-        void disassociate() const;
+        bool try_associate() const noexcept;
+        void disassociate() const noexcept;
 
     private:
-        counting_scope* @_scope_@; // @_exposition-only_@
+        counting_scope* @_scope_@; // @_exposition only_@
     };
 
-    struct @_join-t_@; // @_exposition-only_@
+    struct @_join-t_@; // @_exposition only_@
 
-    enum @_state-type_@ { // @_exposition-only_@
-        @_unused_@, // @_exposition-only_@
-        @_open_@, // @_exposition-only_@
-        @_close_@, // @_exposition-only_@
-        @_open-and-joining_@, // @_exposition-only_@
-        @_closed-and-joining_@, // @_exposition-only_@
-        @_unused-and-closed_@, // @_exposition-only_@
-        @_joined_@, // @_exposition-only_@
+    enum @_state-type_@ { // @_exposition only_@
+        @_unused_@, // @_exposition only_@
+        @_open_@, // @_exposition only_@
+        @_close_@, // @_exposition only_@
+        @_open-and-joining_@, // @_exposition only_@
+        @_closed-and-joining_@, // @_exposition only_@
+        @_unused-and-closed_@, // @_exposition only_@
+        @_joined_@, // @_exposition only_@
     };
 
     // [exec.counting.ctor], constructor and destructor
@@ -3096,9 +3177,9 @@ public:
     void request_stop() noexcept;
 
 private:
-    size_t @_count_@; // @_exposition-only_@
-    @_state-type_@ @_state_@; // @_exposition-only_@
-    inplace_stop_source @_s_source_@ // @_exposition-only_@
+    size_t @_count_@; // @_exposition only_@
+    @_state-type_@ @_state_@; // @_exposition only_@
+    inplace_stop_source @_s_source_@ // @_exposition only_@
 };
 ```
 
@@ -3139,7 +3220,7 @@ __Members [exec.counting.mem]__
 
 `token get_token() noexcept;`
 
-[1]{.pnum} _Returns:_ An object `t` of type `counting_scope::token` such that `t.@_scope_@ == this` is `true`.
+[1]{.pnum} _Returns:_ An object `t` of type `counting_scope::token` such that `t.@_scope_@ == this` returns `true`.
 
 `void close() noexcept;`
 
@@ -3163,34 +3244,35 @@ happens after a call to `s.close()` returns `false`.
 template <>
 struct @_impls-for_@<@_join-t_@>: @_default-impls_@ {
     template <class Receiver>
-    struct @_state_@ {  // @_exposition-only_@
-        counting_scope* @_scope_@; // @_exposition-only_@
-        remove_cvref_t<Receiver>& @_receiver_@; // @_exposition-only_@
-        using @_op_t_@ = decltype(connect(schedule(get_scheduler(get_env(receiver))), receiver)); // @_exposition-only_@
-        @_op_t_@ @_op_@; // @_exposition-only_@
+    struct @_state_@ {  // @_exposition only_@
+        counting_scope* @_scope_@; // @_exposition only_@
+        remove_cvref_t<Receiver>& @_receiver_@; // @_exposition only_@
+        using @_op_t_@ = decltype(connect(schedule(get_scheduler(get_env(receiver))), receiver)); // @_exposition only_@
+        @_op_t_@ @_op_@; // @_exposition only_@
 
-        @_state_@(counting_scope* scope, Receiver& receiver) // @_exposition-only_@
+        @_state_@(counting_scope* scope, Receiver& receiver) // @_exposition only_@
           : @_scope_@(scope),
             @_receiver_@(receiver),
             @_op_@(connect(schedule(get_scheduler(get_env(receiver))), receiver)) {}
 
-        void @_complete_@() { // @_exposition-only_@
+        void @_complete_@() noexcept { // @_exposition only_@
             @_op_@.start();
         }
 
-        void @_complete-inline_@() { // @_exposition-only_@
+        void @_complete-inline_@() noexcept { // @_exposition only_@
             set_value(std::move(@_receiver_@));
         }
     };
 
+    // TODO: review why this is noexcept(false)
     static constexpr auto @_get-state_@ =
-        []<class Receiver>(auto&& sender, Receiver& receiver) {
+        []<class Receiver>(auto&& sender, Receiver& receiver) noexcept(false) {
             auto[_, self] = sender;
             return @_state_@<Receiver>(self, receiver);
         };
 
     static constexpr auto @_start_@ =
-        [](auto& s, auto&) { @_see-below_@; };
+        [](auto& s, auto&) noexcept { @_see-below_@; };
 };
 ```
 
@@ -3238,7 +3320,7 @@ sender, _`snd`_, to `r`, except that the operation will receive a stop request w
 `@_complete_@()` on all objects registered with `*@_scope_@`.
 
 [5]{.pnum} [_Note:_ Calling `@_complete_@()` on any registered object may cause `*@_scope_@` to get destroyed.
-_--End-Note_]
+_-- end note_]
 
 :::
 
