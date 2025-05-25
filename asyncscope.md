@@ -2499,6 +2499,103 @@ template <async_scope_token Token, sender Sender>
 ```
 ::::
 
+:::cmptable
+### Before
+```cpp
+namespace std::execution {
+
+template <class Token>
+concept async_scope_token =
+    copyable<Token> &&
+    requires(Token token) {
+        { token.try_associate() } -> same_as<bool>;
+        { token.disassociate() } noexcept -> same_as<void>;
+        { token.wrap(declval<@_test-sender_@>()) } -> sender_in<@_test-env_@>;
+    };
+
+struct simple_counting_scope::token {
+    template <sender Sender>
+    Sender&& wrap(Sender&& snd) const noexcept;
+
+    bool try_associate() const noexcept;
+
+    void disassociate() const noexcept;
+
+private:
+    simple_counting_scope* @_scope_@; // exposition only
+};
+
+struct counting_scope::token {
+    template <sender Sender>
+    sender auto wrap(Sender&& snd) const noexcept;
+    bool try_associate() const noexcept;
+    void disassociate() const noexcept;
+
+private:
+    counting_scope* @_scope_@; // @_exposition only_@
+};
+
+}
+```
+### After
+```cpp
+namespace std::execution {
+
+template <class Assoc>
+concept async_scope_assocation =
+    copyable<Assoc> &&
+    default_initializable<Assoc> &&
+    requires(Assoc assoc) {
+        { static_cast<bool>(assoc) } noexcept;
+    };
+
+template <class Token>
+concept async_scope_token =
+    copyable<Token> &&
+    requires(Token token) {
+        { token.try_associate() } -> async_scope_association;
+        { token.wrap(declval<@_test-sender_@>()) } -> sender_in<@_test-env_@>;
+    };
+
+struct simple_counting_scope::assoc {
+    explicit operator bool() const noexcept;
+
+private:
+    simple_counting_scope* @_scope_@; // exposition only
+};
+
+struct simple_counting_scope::token {
+    template <sender Sender>
+    Sender&& wrap(Sender&& snd) const noexcept;
+
+    assoc try_associate() const noexcept;
+
+private:
+    simple_counting_scope* @_scope_@; // exposition only
+};
+
+
+struct counting_scope::assoc {
+    explicit operator bool() const noexcept;
+
+private:
+    counting_scope* @_scope_@; // @_exposition only_@
+};
+
+struct counting_scope::token {
+    template <sender Sender>
+    sender auto wrap(Sender&& snd) const noexcept;
+
+    assoc try_associate() const noexcept;
+
+private:
+    counting_scope* @_scope_@; // @_exposition only_@
+};
+
+}
+```
+::::
+
 ::: add
 __`std::execution::nest` [exec.nest]__
 
