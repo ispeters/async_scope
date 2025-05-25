@@ -2363,16 +2363,17 @@ struct @_nest-data_@ {      // exposition only
         return @_sndr_@;
     }
 
-    @_wrap-sender_@&& get_sender() && noexcept {
-        return std::move(@_sndr_@);
+    @_wrap-sender_@ get_sender() && noexcept {
+        @_wrap-sender_@ ret(std::move(@_sndr_@);
+        @_sndr_@.~@_wrap-sender_@();
+        return ret;
     }
 
     const @_assoc-t_@& get_assoc() const& noexcept {
         return @_assoc_@;
     }
 
-    @_assoc-t_@ get_assoc() && noexcept {
-        @_sndr_@.~@_wrap-sender_@();
+    @_assoc-t_@&& get_assoc() && noexcept {
         return std::move(@_assoc_@);
     }
 
@@ -2456,24 +2457,32 @@ template <async_scope_token Token, sender Sender>
 []<class Sndr, class Rcvr>(Sndr&& sndr, Rcvr& rcvr) noexcept(/* @_see below_@ */) {
     auto&& [_, data] = std::forward<Sndr>(sndr);
 
-    using nest_data_t = decltype(data);
+    using nest_data_t = remove_cvref_t<decltype(data)>;
 
-    using assoc_t = typename remove_reference_t<nest_data_t>::@_assoc_t_@;
+    using assoc_t = typename nest_data_t::@_assoc-t_@;
     using op_t = decltype(connect(std::forward_like<Sndr>(data).get_sender(), std::move(rcvr)));
 
     struct op_state {
+        assoc_t @_assoc_@;          // exposition only
         union {
             Rcvr* @_rcvr_@;         // exposition only
             op_t @_op_@;            // exposition only
         };
-        assoc_t @_assoc_@;          // exposition only
-
-        explicit op_state(Rcvr& r) noexcept
-            : @_rcvr_@(addressof(r)) {}
 
         explicit op_state(nest_data_t&& nd, Rcvr& r)
-            : @_op_@(connect(std::forward_like<Sndr>(nd).get_sender(), std::move(r))),
-              @_assoc_@(std::forward_like<Sndr>(nd).get_assoc()) {
+            : @_assoc_@(std::move(nd).get_assoc()) {
+            if (@_assoc_@)
+                ::new (@_voidify_@(@_op_@)) op_t{connect(std::move(nd).get_sender(), std::move(r))};
+            else
+                @_rcvr_ = &r;
+        }
+
+        explicit op_state(const nest_data_t& nd, Rcvr& r)
+            : @_assoc_@(nd.get_assoc()) {
+            if (@_assoc_@)
+                ::new (@_voidify_@(@_op_@)) op_t{connect(nd.get_sender(), std::move(r))};
+            else
+                @_rcvr_ = &r;
         }
 
         op_state(op_state&&) = delete;
@@ -2491,10 +2500,7 @@ template <async_scope_token Token, sender Sender>
         }
     };
 
-    if (assoc)
-        return op_state{std::forward_like<Sndr>(data), rcvr};
-    else
-        return op_state{rcvr};
+    return op_state{std::forward_like<Sndr>(data), rcvr};
 }
 ```
 ::::
