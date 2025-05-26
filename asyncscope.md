@@ -2266,7 +2266,6 @@ Add the following as a new subsection at the end of [exec.adapt]{.sref}:
 ```cpp
 namespace std::execution {
 
-
 template <async_scope_token Token, sender Sender>
 struct @_nest-data_@ {               // exposition only
     using @_wrap-sender_@ =          // exposition only
@@ -2307,74 +2306,56 @@ template <async_scope_token Token, sender Sender>
 ```cpp
 namespace std::execution {
 
-
 template <async_scope_token Token, sender Sender>
 struct @_nest-data_@ {      // exposition only
-    using @_wrap-sender_@ = // exposition only
-        remove_cvref_t<decltype(declval<Token&>().wrap(declval<Sender>()))>;
     using @_assoc-t_@ =     // exposition only
         remove_cvref_t<decltype(declval<Token&>().try_associate())>;
+    using @_wrap-sender_@ = // exposition only
+        remove_cvref_t<decltype(declval<Token&>().wrap(declval<Sender>()))>;
 
-    explicit @_nest-data_@(Token t, Sender&& s) {
-        ::new (@_voidify_@(@_sndr_@)) @_wrap-sender_@(t.wrap(std::forward<Sender>(s)));
-
-        try {
-            @_assoc_@ = t.try_associate();
+    struct @_deleter_@ {    // exposition only
+        void operator()(@_wrap-sender_@* p) const noexcept {
+            if (p)
+                destroy_at(p);
         }
-        catch (...) {
-            @_sndr_@.~@_wrap-sender_@();
-            throw;
-        }
+    };
 
-        if (!@_assoc_@)
-            @_sndr_@.~@_wrap-sender_@();
+    using @_sender-ref_@ =  // exposition only
+        unique_ptr<@_wrap-sender_@, @_deleter_@>;
+
+    explicit @_nest-data_@(Token t, Sender&& s)
+        noexcept(noexcept(t.wrap(std::forward<Sender>(s))) &&
+                 noexcept(t.try_associate()))
+        : @_sndr_@(t.wrap(std::forward<Sender>(s))) {
+        @_sender-ref_@ guard{addressof(@_sndr_@)};
+
+        @_assoc_@ = t.try_associate();
+
+        if (@_assoc_@)
+            (void)guard.release();
     }
 
     @_nest-data_@(const @_nest-data_@& other)
         noexcept(is_nothrow_copy_constructible_v<@_wrap-sender_@> &&
                  is_nothrow_copy_constructible_v<@_assoc_t_@>)
-      : @_assoc_@(other.@_assoc_@) {
-      if (@_assoc_@)
-          ::new (@_voidify_@(@_sndr_@)) @_wrap-sender_@(other.@_sndr_@);
+        requires copy_constructible<@_wrap-sender_@>
+        : @_assoc_@(other.@_assoc_@) {
+        if (@_assoc_@)
+            construct_at(addressof(@_sndr_@), other.@_sndr_@);
     }
 
     @_nest-data_@(@_nest-data_@&& other)
-        noexcept(is_nothrow_move_constructible_v<@_wrap-sender_@>) {
-        if (other.@_assoc_@) {
-            ::new (@_voidify_@(@_sndr_@)) @_wrap-sender_@(std::move(other.@_sndr_@));
-
-            using std::swap;
-            swap(@_assoc_@, other.@_assoc_@);
-
-            other.@_sndr_@.~@_wrap-sender_@();
-        }
-    }
+        noexcept(is_nothrow_move_constructible_v<@_wrap-sender_@>)
+        : @_nest-data_@(std::move(other).release()) {}
 
     ~@_nest-data_@() {
         if (@_assoc_@)
-            @_sndr_@.~@_wrap-sender_@();
+            destroy_at(addressof(@_sndr_@));
     }
 
-    explicit operator bool() const noexcept {
-        return !!@_assoc_@;
-    }
-
-    const @_wrap-sender_@& get_sender() const& noexcept {
-        return @_sndr_@;
-    }
-
-    @_wrap-sender_@ get_sender() && noexcept {
-        @_wrap-sender_@ ret(std::move(@_sndr_@);
-        @_sndr_@.~@_wrap-sender_@();
-        return ret;
-    }
-
-    const @_assoc-t_@& get_assoc() const& noexcept {
-        return @_assoc_@;
-    }
-
-    @_assoc-t_@&& get_assoc() && noexcept {
-        return std::move(@_assoc_@);
+    pair<@_assoc-t_@, @_sender-ref_@> release() && noexcept {
+        @_wrap-sender_@* p = @_assoc_@ ? addressof(@_sndr_@) : nullptr;
+        return pair{std::move(@_assoc_@), @_sender-ref_@{p}};
     }
 
 private:
@@ -2382,6 +2363,12 @@ private:
     union {
         @_wrap-sender_@ @_sndr_@; // exposition only
     };
+
+    @_nest-data_@(pair<@_assoc-t_@, @_sender-ref_@> parts)
+        : @_assoc_@(std::move(parts.first)) {
+        if (@_assoc_@)
+            construct_at(addressof(@_sndr_@), std::move(other.@_sndr_@));
+    }
 };
 
 template <async_scope_token Token, sender Sender>
@@ -2454,36 +2441,39 @@ template <async_scope_token Token, sender Sender>
 
 ### After
 ```cpp
-[]<class Sndr, class Rcvr>(Sndr&& sndr, Rcvr& rcvr) noexcept(/* @_see below_@ */) {
+[]<class Sndr, class Rcvr>
+    requires constructible_from<remove_cvref_t<Sndr>, Sndr>
+(Sndr&& sndr, Rcvr& rcvr) noexcept(/* @_see below_@ */) {
     auto&& [_, data] = std::forward<Sndr>(sndr);
 
     using nest_data_t = remove_cvref_t<decltype(data)>;
 
     using assoc_t = typename nest_data_t::@_assoc-t_@;
-    using op_t = decltype(connect(std::forward_like<Sndr>(data).get_sender(), std::move(rcvr)));
+    using sender_ref_t = typename nest_data_t::@_sender-ref_@;
+    using op_t = connect_result_t<sender_ref_t::element_type, Rcvr>;
 
-    struct op_state {
+    class op_state {
         assoc_t @_assoc_@;          // exposition only
         union {
             Rcvr* @_rcvr_@;         // exposition only
             op_t @_op_@;            // exposition only
         };
 
-        explicit op_state(nest_data_t&& nd, Rcvr& r)
-            : @_assoc_@(std::move(nd).get_assoc()) {
+        explicit op_state(pair<assoc_t, sender_ref_t> parts, Rcvr& r)
+            : @_assoc_@(std::move(parts.first)) {
             if (@_assoc_@)
-                ::new (@_voidify_@(@_op_@)) op_t{connect(std::move(nd).get_sender(), std::move(r))};
+                ::new (@_voidify_@(@_op_@)) op_t{connect(std::move(*parts.second), std::move(r))};
             else
                 @_rcvr_ = &r;
         }
 
+    public:
+        explicit op_state(nest_data_t&& nd, Rcvr& r)
+            : op_state(std::move(nd).release(), r) {}
+
         explicit op_state(const nest_data_t& nd, Rcvr& r)
-            : @_assoc_@(nd.get_assoc()) {
-            if (@_assoc_@)
-                ::new (@_voidify_@(@_op_@)) op_t{connect(nd.get_sender(), std::move(r))};
-            else
-                @_rcvr_ = &r;
-        }
+            requires copy_constructible<nest_data_t>
+            : op_state(nest_data_t(nd).release(), r) {}
 
         op_state(op_state&&) = delete;
 
