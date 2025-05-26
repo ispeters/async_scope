@@ -2367,7 +2367,7 @@ private:
     @_nest-data_@(pair<@_assoc-t_@, @_sender-ref_@> parts)
         : @_assoc_@(std::move(parts.first)) {
         if (@_assoc_@)
-            construct_at(addressof(@_sndr_@), std::move(other.@_sndr_@));
+            construct_at(addressof(@_sndr_@), std::move(parts.second));
     }
 };
 
