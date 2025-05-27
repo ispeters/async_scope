@@ -2599,44 +2599,40 @@ namespace std::execution {
 
 template <class Alloc, async_scope_token Token, sender Sender>
 struct @_spawn-state_@ : @_spawn-state-base_@ {
-    using @_op-t_@ = decltype(connect(declval<Sender>(), @_spawn-receiver_@{nullptr})); // @_exposition only_@
+    using @_op-t_@ = connect_result_t<Sender, @_spawn-receiver_@>; // @_exposition only_@
 
-    @_spawn-state_@(Alloc alloc, Sender&& sndr, Token token) noexcept(is_nothrow_copy_constructible_v<Alloc> &&
-                                                                      is_nothrow_constructible_v<remove<cvref_t<Sender>>, Sender> &&
-                                                                      is_nothrow_move_constructible_v<Sender> &&
-                                                                      is_nothrow_constructible_v<@_spawn_receiver_@, @_spawn-state_@> &&
-                                                                      @_nothrow_callable_@<connect_t, Sender, @_spawn_receiver_@> &&
-                                                                      is_nothrow_move_constructible_v<Token>)
-                : alloc(alloc),
-                  op(connect(std::move(sndr), @_spawn-receiver_@{this})),
-                  token(std::move(token)) {}
+    @_spawn-state_@(Alloc a, Sender&& sndr, Token t)
+        : @_alloc_@(std::move(a)),
+          @_op_@(connect(std::move(sndr), @_spawn-receiver_@{this})),
+          @_token_@(std::move(t)) {}
 
     void @_run_@() {
         if (@_token_@.try_associate())
-            op.start();
+            @_op_@.start();
         else
             @_destroy_@();
     }
     void @_complete_@() noexcept(is_nothrow_move_constructible_v<Token>) override {
-        auto token = std::move(this->@_token_@);
+        auto t = std::move(@_token_@);
 
         @_destroy_@();
 
-        token.disassociate();
+        t.disassociate();
     }
 
 private:
-    using @_alloc-t_@ = typename allocator_traits<Alloc>::template rebind_alloc<@_spawn-state_@>; // @_exposition only_@
+    using @_alloc-t_@ = // @_exposition only_@
+        typename allocator_traits<Alloc>::template rebind_alloc<@_spawn-state_@>;
 
-    @_alloc-t_@ alloc; // @_exposition only_@
-    @_op-t_@ op; // @_exposition only_@
+    @_alloc-t_@ @_alloc_@; // @_exposition only_@
+    @_op-t_@ @_op_@; // @_exposition only_@
     Token @_token_@; // @_exposition only_@
 
-    void @_destroy_@() noexcept {
-        auto alloc = std::move(this->alloc);
+    void @_destroy_@() noexcept { // @_exposition only_@
+        auto a = std::move(@_alloc_@);
 
-        allocator_traits<@_alloc-t_@>::destroy(alloc, this);
-        allocator_traits<@_alloc-t_@>::deallocate(alloc, this, 1);
+        allocator_traits<@_alloc-t_@>::destroy(a, this);
+        allocator_traits<@_alloc-t_@>::deallocate(a, this, 1);
     }
 
 };
@@ -2650,42 +2646,39 @@ namespace std::execution {
 
 template <class Alloc, async_scope_token Token, sender Sender>
 struct @_spawn-state_@ : @_spawn-state-base_@ {
-    using @_op-t_@ = decltype(connect(declval<Sender>(), @_spawn-receiver_@{nullptr})); // @_exposition only_@
+    using @_op-t_@ = connect_result_t<Sender, @_spawn-receiver_@>; // @_exposition only_@
     using @_assoc-t_@ = remove_cvref_t<decltype(declval<Token&>().try_associate())>; // @_exposition only_@
 
-    @_spawn-state_@(Alloc alloc, Sender&& sndr, Token token) noexcept(is_nothrow_copy_constructible_v<Alloc> &&
-                                                                      is_nothrow_constructible_v<remove<cvref_t<Sender>>, Sender> &&
-                                                                      is_nothrow_move_constructible_v<Sender> &&
-                                                                      is_nothrow_constructible_v<@_spawn_receiver_@, @_spawn-state_@> &&
-                                                                      @_nothrow_callable_@<connect_t, Sender, @_spawn_receiver_@> &&
-                                                                      noexcept(token.try_associate()))
-                : alloc(alloc),
-                  op(connect(std::move(sndr), @_spawn-receiver_@{this})),
-                  assoc(token.try_associate()) {}
+    @_spawn-state_@(Alloc a, Sender&& sndr, Token t)
+        : @_alloc_@(std::move(a)),
+          @_op_@(connect(std::move(sndr), @_spawn-receiver_@{this})) {
+        @_assoc_@ = t.try_associate();
+    }
 
     void @_run_@() {
-        if (assoc)
-            op.start();
+        if (@_assoc_@)
+            @_op_@.start();
         else
             @_destroy_@();
     }
     void @_complete_@() noexcept(is_nothrow_move_constructible_v<@_assoc_t_@>) override {
-        auto assoc = std::move(this->assoc);
+        auto a = std::move(@_assoc_@);
         @_destroy_@();
     }
 
 private:
-    using @_alloc-t_@ = typename allocator_traits<Alloc>::template rebind_alloc<@_spawn-state_@>; // @_exposition only_@
+    using @_alloc-t_@ = // @_exposition only_@
+        typename allocator_traits<Alloc>::template rebind_alloc<@_spawn-state_@>;
 
-    @_alloc-t_@ alloc; // @_exposition only_@
-    @_op-t_@ op; // @_exposition only_@
-    @_assoc-t_@ assoc; // @_exposition only_@
+    @_assoc-t_@ @_assoc_@; // @_exposition only_@
+    @_alloc-t_@ @_alloc_@; // @_exposition only_@
+    @_op-t_@ @_op_@; // @_exposition only_@
 
-    void @_destroy_@() noexcept {
-        auto alloc = std::move(this->alloc);
+    void @_destroy_@() noexcept { // @_exposition only_@
+        auto a = std::move(@_alloc_@);
 
-        allocator_traits<@_alloc-t_@>::destroy(alloc, this);
-        allocator_traits<@_alloc-t_@>::deallocate(alloc, this, 1);
+        allocator_traits<@_alloc-t_@>::destroy(a, this);
+        allocator_traits<@_alloc-t_@>::deallocate(a, this, 1);
     }
 
 };
