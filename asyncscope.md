@@ -2261,17 +2261,10 @@ To the `<execution>` synopsis [execution.syn]{.sref}, make the following additio
 
 Add the following as a new subsection at the end of [exec.adapt]{.sref}:
 
-::: add
-__`std::execution::nest` [exec.nest]__
-
-[1]{.pnum} `nest` tries to associate a sender with an async scope such that the scope can track the lifetime of any
-async operations created with the sender.
-
-[2]{.pnum} Let _`nest-data`_ be the following exposition-only class template:
+:::cmptable
+### Before
 ```cpp
 namespace std::execution {
-
-// TODO: add a paragraph that describes the class' class invariant: "engaged optional" means association is owned
 
 template <async_scope_token Token, sender Sender>
 struct @_nest-data_@ {               // exposition only
@@ -2289,11 +2282,13 @@ struct @_nest-data_@ {               // exposition only
         noexcept(is_nothrow_copy_constructible_v<@_wrap-sender_@> &&
                  noexcept(other.@_token_@.try_associate()));
 
-    @_nest-data_@(@_nest-data_@&& other) noexcept(is_nothrow_move_constructible_v<@_wrap-sender_@>);
+    @_nest-data_@(@_nest-data_@&& other)
+        noexcept(is_nothrow_move_constructible_v<@_wrap-sender_@>);
 
     ~@_nest-data_@();
 
-    optional<pair<Token, @_wrap-sender_@>> release() && noexcept(is_nothrow_move_constructible_v<@_wrap-sender_@>);
+    optional<pair<Token, @_wrap-sender_@>> release() &&
+        noexcept(is_nothrow_move_constructible_v<@_wrap-sender_@>);
 
 private:
     Token @_token_@;                 // exposition only
@@ -2305,6 +2300,401 @@ template <async_scope_token Token, sender Sender>
 
 }
 ```
+
+### After
+
+```cpp
+namespace std::execution {
+
+template <async_scope_token Token, sender Sender>
+struct @_nest-data_@ {      // exposition only
+    using @_assoc-t_@ =     // exposition only
+        remove_cvref_t<decltype(declval<Token&>().try_associate())>;
+    using @_wrap-sender_@ = // exposition only
+        remove_cvref_t<decltype(declval<Token&>().wrap(declval<Sender>()))>;
+
+    struct @_deleter_@ {    // exposition only
+        void operator()(@_wrap-sender_@* p) const noexcept {
+            if (p)
+                destroy_at(p);
+        }
+    };
+
+    using @_sender-ref_@ =  // exposition only
+        unique_ptr<@_wrap-sender_@, @_deleter_@>;
+
+    explicit @_nest-data_@(Token t, Sender&& s)
+        noexcept(noexcept(t.wrap(std::forward<Sender>(s))) &&
+                 noexcept(t.try_associate()))
+        : @_sndr_@(t.wrap(std::forward<Sender>(s))) {
+        @_sender-ref_@ guard{addressof(@_sndr_@)};
+
+        @_assoc_@ = t.try_associate();
+
+        if (@_assoc_@)
+            (void)guard.release();
+    }
+
+    @_nest-data_@(const @_nest-data_@& other)
+        noexcept(is_nothrow_copy_constructible_v<@_wrap-sender_@> &&
+                 is_nothrow_copy_constructible_v<@_assoc_t_@>)
+        requires copy_constructible<@_wrap-sender_@>
+        : @_assoc_@(other.@_assoc_@) {
+        if (@_assoc_@)
+            construct_at(addressof(@_sndr_@), other.@_sndr_@);
+    }
+
+    @_nest-data_@(@_nest-data_@&& other)
+        noexcept(is_nothrow_move_constructible_v<@_wrap-sender_@>)
+        : @_nest-data_@(std::move(other).release()) {}
+
+    ~@_nest-data_@() {
+        if (@_assoc_@)
+            destroy_at(addressof(@_sndr_@));
+    }
+
+    pair<@_assoc-t_@, @_sender-ref_@> release() && noexcept {
+        @_wrap-sender_@* p = @_assoc_@ ? addressof(@_sndr_@) : nullptr;
+        return pair{std::move(@_assoc_@), @_sender-ref_@{p}};
+    }
+
+private:
+    @_assoc-t_@ @_assoc_@;        // exposition only
+    union {
+        @_wrap-sender_@ @_sndr_@; // exposition only
+    };
+
+    @_nest-data_@(pair<@_assoc-t_@, @_sender-ref_@> parts)
+        : @_assoc_@(std::move(parts.first)) {
+        if (@_assoc_@)
+            construct_at(addressof(@_sndr_@), std::move(parts.second));
+    }
+};
+
+template <async_scope_token Token, sender Sender>
+@_nest-data_@(Token, Sender&&) -> @_nest-data_@<Token, Sender>;
+
+}
+```
+
+::::
+
+:::cmptable
+### Before
+```cpp
+[]<class Sndr, class Rcvr>(Sndr&& sndr, Rcvr& rcvr) noexcept(/* @_see below_@ */) {
+    auto [_, data] = std::forward<Sndr>(sndr);
+
+    auto dataParts = std::move(data).release();
+
+    using scope_token = decltype(dataParts->first);
+    using wrap_sender = decltype(dataParts->second);
+    using op_t = decltype(connect(std::move(dataParts->second), std::move(rcvr)));
+
+    struct op_state {
+        bool @_associated_@ = false;   // exposition only
+        union {
+            Rcvr* @_rcvr_@;            // exposition only
+            struct {
+                scope_token @_token_@; // exposition only
+                op_t @_op_@;           // exposition only
+            };
+        };
+
+        explicit op_state(Rcvr& r) noexcept
+            : @_rcvr_@(addressof(r)) {}
+
+        explicit op_state(scope_token tkn, wrap_sender&& sndr, Rcvr& r) try
+            : @_associated_@(true),
+              @_token_@(std::move(tkn)),
+              @_op_@(connect(std::move(sndr), std::move(r))) {
+        }
+        catch (...) {
+            @_token_@.disassociate();
+            throw;
+        }
+
+        op_state(op_state&&) = delete;
+
+        ~op_state() {
+            if (@_associated_@) {
+                @_op_@.~op_t();
+                @_token_@.disassociate();
+                @_token_@.~scope_token();
+            }
+        }
+
+        void @_start_@() noexcept {    // exposition only
+            if (@_associated_@)
+                @_op_@.start();
+            else
+                set_stopped(std::move(*@_rcvr_@));
+        }
+    };
+
+    if (dataParts)
+        return op_state{std::move(dataParts->first), std::move(dataParts->second), rcvr};
+    else
+        return op_state{rcvr};
+}
+```
+
+### After
+```cpp
+[]<class Sndr, class Rcvr>
+    requires constructible_from<remove_cvref_t<Sndr>, Sndr>
+(Sndr&& sndr, Rcvr& rcvr) noexcept(/* @_see below_@ */) {
+    auto&& [_, data] = std::forward<Sndr>(sndr);
+
+    using nest_data_t = remove_cvref_t<decltype(data)>;
+
+    using assoc_t = typename nest_data_t::@_assoc-t_@;
+    using sender_ref_t = typename nest_data_t::@_sender-ref_@;
+    using op_t = connect_result_t<sender_ref_t::element_type, Rcvr>;
+
+    class op_state {
+        assoc_t @_assoc_@;          // exposition only
+        union {
+            Rcvr* @_rcvr_@;         // exposition only
+            op_t @_op_@;            // exposition only
+        };
+
+        explicit op_state(pair<assoc_t, sender_ref_t> parts, Rcvr& r)
+            : @_assoc_@(std::move(parts.first)) {
+            if (@_assoc_@)
+                ::new (@_voidify_@(@_op_@)) op_t{connect(std::move(*parts.second), std::move(r))};
+            else
+                @_rcvr_ = &r;
+        }
+
+    public:
+        explicit op_state(nest_data_t&& nd, Rcvr& r)
+            : op_state(std::move(nd).release(), r) {}
+
+        explicit op_state(const nest_data_t& nd, Rcvr& r)
+            requires copy_constructible<nest_data_t>
+            : op_state(nest_data_t(nd).release(), r) {}
+
+        op_state(op_state&&) = delete;
+
+        ~op_state() {
+            if (@_assoc_@)
+                @_op_@.~op_t();
+        }
+
+        void @_start_@() noexcept { // exposition only
+            if (@_assoc_@)
+                @_op_@.start();
+            else
+                set_stopped(std::move(*@_rcvr_@));
+        }
+    };
+
+    return op_state{std::forward_like<Sndr>(data), rcvr};
+}
+```
+::::
+
+:::cmptable
+### Before
+```cpp
+namespace std::execution {
+
+template <class Token>
+concept async_scope_token =
+    copyable<Token> &&
+    requires(Token token) {
+        { token.try_associate() } -> same_as<bool>;
+        { token.disassociate() } noexcept -> same_as<void>;
+        { token.wrap(declval<@_test-sender_@>()) } -> sender_in<@_test-env_@>;
+    };
+
+struct simple_counting_scope::token {
+    template <sender Sender>
+    Sender&& wrap(Sender&& snd) const noexcept;
+
+    bool try_associate() const noexcept;
+
+    void disassociate() const noexcept;
+
+private:
+    simple_counting_scope* @_scope_@; // exposition only
+};
+
+struct counting_scope::token {
+    template <sender Sender>
+    sender auto wrap(Sender&& snd) const noexcept;
+    bool try_associate() const noexcept;
+    void disassociate() const noexcept;
+
+private:
+    counting_scope* @_scope_@; // @_exposition only_@
+};
+
+}
+```
+### After
+```cpp
+namespace std::execution {
+
+template <class Assoc>
+concept async_scope_assocation =
+    copyable<Assoc> &&
+    default_initializable<Assoc> &&
+    requires(Assoc assoc) {
+        { static_cast<bool>(assoc) } noexcept;
+    };
+
+template <class Token>
+concept async_scope_token =
+    copyable<Token> &&
+    requires(Token token) {
+        { token.try_associate() } -> async_scope_association;
+        { token.wrap(declval<@_test-sender_@>()) } -> sender_in<@_test-env_@>;
+    };
+
+struct simple_counting_scope::assoc {
+    explicit operator bool() const noexcept;
+
+private:
+    simple_counting_scope* @_scope_@; // exposition only
+};
+
+struct simple_counting_scope::token {
+    template <sender Sender>
+    Sender&& wrap(Sender&& snd) const noexcept;
+
+    assoc try_associate() const noexcept;
+
+private:
+    simple_counting_scope* @_scope_@; // exposition only
+};
+
+
+struct counting_scope::assoc {
+    explicit operator bool() const noexcept;
+
+private:
+    counting_scope* @_scope_@; // @_exposition only_@
+};
+
+struct counting_scope::token {
+    template <sender Sender>
+    sender auto wrap(Sender&& snd) const noexcept;
+
+    assoc try_associate() const noexcept;
+
+private:
+    counting_scope* @_scope_@; // @_exposition only_@
+};
+
+}
+```
+::::
+
+:::cmptable
+### Before
+```cpp
+namespace std::execution {
+
+template <class Alloc, async_scope_token Token, sender Sender>
+struct @_spawn-state_@ : @_spawn-state-base_@ {
+    using @_op-t_@ = connect_result_t<Sender, @_spawn-receiver_@>; // @_exposition only_@
+
+    @_spawn-state_@(Alloc a, Sender&& sndr, Token t)
+        : @_alloc_@(std::move(a)),
+          @_op_@(connect(std::move(sndr), @_spawn-receiver_@{this})),
+          @_token_@(std::move(t)) {}
+
+    void @_run_@() {
+        if (@_token_@.try_associate())
+            @_op_@.start();
+        else
+            @_destroy_@();
+    }
+    void @_complete_@() noexcept(is_nothrow_move_constructible_v<Token>) override {
+        auto t = std::move(@_token_@);
+
+        @_destroy_@();
+
+        t.disassociate();
+    }
+
+private:
+    using @_alloc-t_@ = // @_exposition only_@
+        typename allocator_traits<Alloc>::template rebind_alloc<@_spawn-state_@>;
+
+    @_alloc-t_@ @_alloc_@; // @_exposition only_@
+    @_op-t_@ @_op_@; // @_exposition only_@
+    Token @_token_@; // @_exposition only_@
+
+    void @_destroy_@() noexcept { // @_exposition only_@
+        auto a = std::move(@_alloc_@);
+
+        allocator_traits<@_alloc-t_@>::destroy(a, this);
+        allocator_traits<@_alloc-t_@>::deallocate(a, this, 1);
+    }
+
+};
+
+}
+```
+
+### After
+```cpp
+namespace std::execution {
+
+template <class Alloc, async_scope_token Token, sender Sender>
+struct @_spawn-state_@ : @_spawn-state-base_@ {
+    using @_op-t_@ = connect_result_t<Sender, @_spawn-receiver_@>; // @_exposition only_@
+    using @_assoc-t_@ = remove_cvref_t<decltype(declval<Token&>().try_associate())>; // @_exposition only_@
+
+    @_spawn-state_@(Alloc a, Sender&& sndr, Token t)
+        : @_alloc_@(std::move(a)),
+          @_op_@(connect(std::move(sndr), @_spawn-receiver_@{this})) {
+        @_assoc_@ = t.try_associate();
+    }
+
+    void @_run_@() {
+        if (@_assoc_@)
+            @_op_@.start();
+        else
+            @_destroy_@();
+    }
+    void @_complete_@() noexcept(is_nothrow_move_constructible_v<@_assoc_t_@>) override {
+        auto a = std::move(@_assoc_@);
+        @_destroy_@();
+    }
+
+private:
+    using @_alloc-t_@ = // @_exposition only_@
+        typename allocator_traits<Alloc>::template rebind_alloc<@_spawn-state_@>;
+
+    @_assoc-t_@ @_assoc_@; // @_exposition only_@
+    @_alloc-t_@ @_alloc_@; // @_exposition only_@
+    @_op-t_@ @_op_@; // @_exposition only_@
+
+    void @_destroy_@() noexcept { // @_exposition only_@
+        auto a = std::move(@_alloc_@);
+
+        allocator_traits<@_alloc-t_@>::destroy(a, this);
+        allocator_traits<@_alloc-t_@>::deallocate(a, this, 1);
+    }
+
+};
+
+}
+```
+
+::::
+
+::: add
+__`std::execution::nest` [exec.nest]__
+
+[1]{.pnum} `nest` tries to associate a sender with an async scope such that the scope can track the lifetime of any
+async operations created with the sender.
+
+[2]{.pnum} Let _`nest-data`_ be the following exposition-only class template:
 
 ```c++
 @_nest-data_@(const @_nest-data_@& other)
@@ -2387,63 +2777,6 @@ struct @_impls-for_@<nest_t> : @_default-impls_@ {
 
 [13]{.pnum} The member `@_impls-for_@<nest_t>::@_get-state_@` is initialized with a callable object equivalent to the
 following lambda:
-```cpp
-[]<class Sndr, class Rcvr>(Sndr&& sndr, Rcvr& rcvr) noexcept(/* @_see below_@ */) {
-    auto [_, data] = std::forward<Sndr>(sndr);
-
-    auto dataParts = std::move(data).release();
-
-    using scope_token = decltype(dataParts->first);
-    using wrap_sender = decltype(dataParts->second);
-    using op_t = decltype(connect(std::move(dataParts->second), std::move(rcvr)));
-
-    struct op_state {
-        bool @_associated_@ = false;   // exposition only
-        union {
-            Rcvr* @_rcvr_@;            // exposition only
-            struct {
-                scope_token @_token_@; // exposition only
-                op_t @_op_@;           // exposition only
-            };
-        };
-
-        explicit op_state(Rcvr& r) noexcept
-            : @_rcvr_@(addressof(r)) {}
-
-        explicit op_state(scope_token tkn, wrap_sender&& sndr, Rcvr& r) try
-            : @_associated_@(true),
-              @_token_@(std::move(tkn)),
-              @_op_@(connect(std::move(sndr), std::move(r))) {
-        }
-        catch (...) {
-            @_token_@.disassociate();
-            throw;
-        }
-
-        op_state(op_state&&) = delete;
-
-        ~op_state() {
-            if (@_associated_@) {
-                @_op_@.~op_t();
-                @_token_@.disassociate();
-                @_token_@.~scope_token();
-            }
-        }
-
-        void @_start_@() noexcept {    // exposition only
-            if (@_associated_@)
-                @_op_@.start();
-            else
-                set_stopped(std::move(*@_rcvr_@));
-        }
-    };
-
-    if (dataParts)
-        return op_state{std::move(dataParts->first), std::move(dataParts->second), rcvr};
-    else
-        return op_state{rcvr};
-}
-```
 
 [14]{.pnum} The expression in the `noexcept` clause of `@_impls-for_@<nest_t>::@_get-state_@` is
 
