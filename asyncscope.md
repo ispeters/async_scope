@@ -2592,6 +2592,109 @@ private:
 ```
 ::::
 
+:::cmptable
+### Before
+```cpp
+namespace std::execution {
+
+template <class Alloc, async_scope_token Token, sender Sender>
+struct @_spawn-state_@ : @_spawn-state-base_@ {
+    using @_op-t_@ = decltype(connect(declval<Sender>(), @_spawn-receiver_@{nullptr})); // @_exposition only_@
+
+    @_spawn-state_@(Alloc alloc, Sender&& sndr, Token token) noexcept(is_nothrow_copy_constructible_v<Alloc> &&
+                                                                      is_nothrow_constructible_v<remove<cvref_t<Sender>>, Sender> &&
+                                                                      is_nothrow_move_constructible_v<Sender> &&
+                                                                      is_nothrow_constructible_v<@_spawn_receiver_@, @_spawn-state_@> &&
+                                                                      @_nothrow_callable_@<connect_t, Sender, @_spawn_receiver_@> &&
+                                                                      is_nothrow_move_constructible_v<Token>)
+                : alloc(alloc),
+                  op(connect(std::move(sndr), @_spawn-receiver_@{this})),
+                  token(std::move(token)) {}
+
+    void @_run_@() {
+        if (@_token_@.try_associate())
+            op.start();
+        else
+            @_destroy_@();
+    }
+    void @_complete_@() noexcept(is_nothrow_move_constructible_v<Token>) override {
+        auto token = std::move(this->@_token_@);
+
+        @_destroy_@();
+
+        token.disassociate();
+    }
+
+private:
+    using @_alloc-t_@ = typename allocator_traits<Alloc>::template rebind_alloc<@_spawn-state_@>; // @_exposition only_@
+
+    @_alloc-t_@ alloc; // @_exposition only_@
+    @_op-t_@ op; // @_exposition only_@
+    Token @_token_@; // @_exposition only_@
+
+    void @_destroy_@() noexcept {
+        auto alloc = std::move(this->alloc);
+
+        allocator_traits<@_alloc-t_@>::destroy(alloc, this);
+        allocator_traits<@_alloc-t_@>::deallocate(alloc, this, 1);
+    }
+
+};
+
+}
+```
+
+### After
+```cpp
+namespace std::execution {
+
+template <class Alloc, async_scope_token Token, sender Sender>
+struct @_spawn-state_@ : @_spawn-state-base_@ {
+    using @_op-t_@ = decltype(connect(declval<Sender>(), @_spawn-receiver_@{nullptr})); // @_exposition only_@
+    using @_assoc-t_@ = remove_cvref_t<decltype(declval<Token&>().try_associate())>; // @_exposition only_@
+
+    @_spawn-state_@(Alloc alloc, Sender&& sndr, Token token) noexcept(is_nothrow_copy_constructible_v<Alloc> &&
+                                                                      is_nothrow_constructible_v<remove<cvref_t<Sender>>, Sender> &&
+                                                                      is_nothrow_move_constructible_v<Sender> &&
+                                                                      is_nothrow_constructible_v<@_spawn_receiver_@, @_spawn-state_@> &&
+                                                                      @_nothrow_callable_@<connect_t, Sender, @_spawn_receiver_@> &&
+                                                                      noexcept(token.try_associate()))
+                : alloc(alloc),
+                  op(connect(std::move(sndr), @_spawn-receiver_@{this})),
+                  assoc(token.try_associate()) {}
+
+    void @_run_@() {
+        if (assoc)
+            op.start();
+        else
+            @_destroy_@();
+    }
+    void @_complete_@() noexcept(is_nothrow_move_constructible_v<@_assoc_t_@>) override {
+        auto assoc = std::move(this->assoc);
+        @_destroy_@();
+    }
+
+private:
+    using @_alloc-t_@ = typename allocator_traits<Alloc>::template rebind_alloc<@_spawn-state_@>; // @_exposition only_@
+
+    @_alloc-t_@ alloc; // @_exposition only_@
+    @_op-t_@ op; // @_exposition only_@
+    @_assoc-t_@ assoc; // @_exposition only_@
+
+    void @_destroy_@() noexcept {
+        auto alloc = std::move(this->alloc);
+
+        allocator_traits<@_alloc-t_@>::destroy(alloc, this);
+        allocator_traits<@_alloc-t_@>::deallocate(alloc, this, 1);
+    }
+
+};
+
+}
+```
+
+::::
+
 ::: add
 __`std::execution::nest` [exec.nest]__
 
@@ -3062,97 +3165,6 @@ private:
 
 }
 ```
-
-:::cmptable
-### Before
-```cpp
-namespace std::execution {
-
-template <class Alloc, async_scope_token Token, sender Sender>
-struct @_spawn-state_@ : @_spawn-state-base_@ {
-    using @_op-t_@ = decltype(connect(declval<Sender>(), @_spawn-receiver_@{nullptr}));
-
-    @_spawn-state_@(Alloc alloc, Sender&& sndr, Token token) noexcept(...)
-                : alloc(alloc),
-                  op(connect(std::move(sndr), @_spawn-receiver_@{this})),
-                  token(std::move(token)) {}
-    void @_run_@() {
-        if (@_token_@.try_associate())
-            op.start();
-        else
-            @_destroy_@();
-    }
-    void @_complete_@() override {
-        auto token = std::move(this->@_token_@);
-
-        @_destroy_@();
-
-        token.disassociate();
-    }
-
-private:
-    using @_alloc-t_@ = typename allocator_traits<Alloc>::template rebind_alloc<@_spawn-state_@>;
-
-    @_alloc-t_@ alloc;
-    @_op-t_@ op;
-    Token @_token_@;
-
-    void @_destroy_@() noexcept {
-        auto alloc = std::move(this->alloc);
-
-        allocator_traits<@_alloc-t_@>::destroy(alloc, this);
-        allocator_traits<@_alloc-t_@>::deallocate(alloc, this, 1);
-    }
-
-};
-
-}
-```
-
-### After
-```cpp
-namespace std::execution {
-
-template <class Alloc, async_scope_token Token, sender Sender>
-struct @_spawn-state_@ : @_spawn-state-base_@ {
-    using @_op-t_@ = decltype(connect(declval<Sender>(), @_spawn-receiver_@{nullptr}));
-    using @_assoc-t_@ = remove_cvref_t<decltype(declval<Token&>().try_associate())>;
-
-    @_spawn-state_@(Alloc alloc, Sender&& sndr, Token token) noexcept(...)
-                : alloc(alloc),
-                  op(connect(std::move(sndr), @_spawn-receiver_@{this})),
-                  assoc(token.try_associate()) {}
-    void @_run_@() {
-        if (assoc)
-            op.start();
-        else
-            @_destroy_@();
-    }
-    void @_complete_@() override {
-        auto assoc = std::move(this->assoc);
-        @_destroy_@();
-    }
-
-private:
-    using @_alloc-t_@ = typename allocator_traits<Alloc>::template rebind_alloc<@_spawn-state_@>;
-
-    @_alloc-t_@ alloc;
-    @_op-t_@ op;
-    @_assoc-t_@ assoc;
-
-    void @_destroy_@() noexcept {
-        auto alloc = std::move(this->alloc);
-
-        allocator_traits<@_alloc-t_@>::destroy(alloc, this);
-        allocator_traits<@_alloc-t_@>::deallocate(alloc, this, 1);
-    }
-
-};
-
-}
-```
-
-::::
 
 `@_spawn-state_@(Alloc alloc, Sender&& sndr, Token token);`
 
