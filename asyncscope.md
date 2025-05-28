@@ -29,6 +29,10 @@ toc: true
 Changes
 =======
 
+## R11
+
+- Rename `async_scope_token` to `scope_token` and `nest` to `associate`.
+
 ## R10
 
 - Incorporate significant feedback from Mark Hoemmen, Tomasz Kamiński, and Dietmar Kühl to the wording for `nest`.
