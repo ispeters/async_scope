@@ -1796,7 +1796,7 @@ A `counting_scope` behaves like a `simple_counting_scope` augmented with a stop 
 receives stop requests from both its receiver and from the `counting_scope`. This extension of `simple_counting_scope`
 allows a `counting_scope` to request stop on all of its outstanding operations by requesting stop on its stop source.
 
-Assuming an exposition-only _`stop_when(sender auto&&, stoppable_token auto)`_ (explained below), `counting_scope`
+Assuming an exposition-only _`stop-when(sender auto&&, stoppable_token auto)`_ (explained below), `counting_scope`
 behaves as if it were implemented like so:
 
 ```cpp
@@ -1805,7 +1805,7 @@ class counting_scope {
         template <sender S>
         sender auto wrap(S&& snd) const
                 noexcept(std::is_nothrow_constructible_v<std::remove_cvref_t<S>, S>) {
-            return @@_stop_when_@@(std::forward<S>(snd), scope_->source_.get_token());
+            return @@_stop-when_@@(std::forward<S>(snd), scope_->source_.get_token());
         }
 
     private:
@@ -1831,13 +1831,13 @@ private:
 };
 ```
 
-_`stop_when(sender auto&& snd, stoppable_token auto stoken)`_ is an exposition-only sender algorithm that maps its input
+_`stop-when(sender auto&& snd, stoppable_token auto stoken)`_ is an exposition-only sender algorithm that maps its input
 sender, `snd`, to an output sender, `osnd`, such that, when `osnd` is connected to a receiver, `r`, the resulting
 _`operation-state`_ behaves the same as connecting the original sender, `snd`, to `r`, except that `snd` will receive a
-stop request when either the token returned from `get_stop_token(r)` receives a stop request or when `stoken` receives a
-stop request.
+stop request when either the token returned from `get_stop_token(get_env(r))` receives a stop request or when `stoken`
+receives a stop request.
 
-Other than the use of _`stop_when()`_ in `counting_scope::token::wrap()` and the addition of `request_stop()` to the
+Other than the use of _`stop-when()`_ in `counting_scope::token::wrap()` and the addition of `request_stop()` to the
 interface, `counting_scope` has the same behavior and lifecycle as `simple_counting_scope`.
 
 ### `counting_scope::counting_scope`
@@ -2473,9 +2473,31 @@ object.
 
 :::
 
-## `execution::spawn_future`
+## Exposition-only `execution::@_stop-when_@`
 
 Add the following as a new subsection immediately after __[exec.nest]__:
+
+::: add
+__Exposition-only `execution::@_stop-when_@` [exec.stop.when]__
+
+[1]{.pnum} _`stop-when`_ fuses an additional stop token, `token`, into a sender so that, once connected to a receiver,
+`r`, the resulting operation state receives stop requests from both `token` and the token returned from
+`get_stop_token(get_env(r))`.
+
+[2]{.pnum} The name _`stop-when`_ denotes an exposition-only pipeable sender adaptor object. For subexpressions `sndr`
+and `token`, if `decltype((sndr))` does not satisfy `sender`, or `decltype((token))` does not satisfy `stoppable_token`,
+then `@_stop-when_@(sndr, token)` is ill-formed.
+
+[3]{.pnum} Otherwise, the expression `@_stop-when_@(sndr, token)` produces a sender, `osndr`, such that, when `osnd` is
+connected to a receiver, `r`, the resulting _`operation-state`_, `opstate`, behaves the same as connecting the original
+sender, `sndr`, to `r`, except that `opstate` will receive a stop request when either the token returned from
+`get_stop_token(get_env(r))` receives a stop request or when `token` receives a stop request.
+
+:::
+
+## `execution::spawn_future`
+
+Add the following as a new subsection immediately after __[exec.stop.when]__:
 
 ::: add
 __`std::execution::spawn_future` [exec.spawn.future]__
@@ -2564,7 +2586,7 @@ private:
 }
 ```
 
-TODO: rewrite para 6 in terms of _`stop_when`_.
+TODO: rewrite para 6 in terms of _`stop-when`_.
 
 [6]{.pnum} For the expression `spawn_future(sndr, token, env)` let `stoken` be a stop token that will receive stop
 requests sent from the returned future and any stop requests sent to the stop token returned from `get_stop_token(env)`.
@@ -3301,10 +3323,10 @@ __Token [exec.counting.token]__
 `sender auto wrap(Sender&& snd) const noexcept;`
 
 [1]{.pnum} _Returns:_ Sender `osnd` from an exposition-only sender algorithm
-_`stop_when(sender auto&& snd, stoppable_token auto stoken)`_ that maps its input sender, _`snd`_, such that, when
+_`stop-when(sender auto&& snd, stoppable_token auto stoken)`_ that maps its input sender, _`snd`_, such that, when
 `osnd` is connected to a receiver `r`, the resulting _`operation-state`_ behaves the same as connecting the original
 sender, _`snd`_, to `r`, except that the operation will receive a stop request when either the token returned from
-`get_stop_token(r)` receives a stop request or when _`stoken`_ receives a stop request.
+`get_stop_token(get_env(r))` receives a stop request or when _`stoken`_ receives a stop request.
 
 `bool try_associate() const;`
 
