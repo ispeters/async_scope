@@ -2385,7 +2385,8 @@ struct @_impls-for_@<nest_t> : @_default-impls_@ {
     static constexpr auto @_start_@ = @_see below_@;
 
     // TODO: add @_check-types_@
-    static constexpr auto @_check-types_@ = @_see below_@;
+    template<class Sndr, class Env>
+    static consteval void @_check-types_@ = @_see_below_@;
 };
 
 }
@@ -2470,7 +2471,14 @@ following lambda:
 }
 ```
 
-[17]{.pnum} The evaluation of `nest(sndr, token)` may cause side effects observable via `token`'s associated async scope
+[17]{.pnum} The member `@_impls-for_@<nest_t>::@_check-types_@` is initialized with a callable object equivalent to the following lambda:
+```cpp
+[]<class Sndr, class Env>(Sndr&&, Env&&) {
+    return get_completion_signatures<@_nest-data_@::@_wrap-sender_@, @_FWD-ENV-T_@(Env)>();
+}
+```
+
+[18]{.pnum} The evaluation of `nest(sndr, token)` may cause side effects observable via `token`'s associated async scope
 object.
 
 :::
