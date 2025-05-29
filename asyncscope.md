@@ -1,6 +1,6 @@
 ---
 title: "`async_scope` -- Creating scopes for non-sequential concurrency"
-document: P3149R10
+document: D3149R11
 date: today
 audience:
   - "SG1 Parallelism and Concurrency"
@@ -28,6 +28,10 @@ toc: true
 
 Changes
 =======
+
+## R11
+
+- Rename `async_scope_token` to `scope_token` and `nest` to `associate`.
 
 ## R10
 
@@ -1792,7 +1796,7 @@ A `counting_scope` behaves like a `simple_counting_scope` augmented with a stop 
 receives stop requests from both its receiver and from the `counting_scope`. This extension of `simple_counting_scope`
 allows a `counting_scope` to request stop on all of its outstanding operations by requesting stop on its stop source.
 
-Assuming an exposition-only _`stop_when(sender auto&&, stoppable_token auto)`_ (explained below), `counting_scope`
+Assuming an exposition-only _`stop-when(sender auto&&, stoppable_token auto)`_ (explained below), `counting_scope`
 behaves as if it were implemented like so:
 
 ```cpp
@@ -1801,7 +1805,7 @@ class counting_scope {
         template <sender S>
         sender auto wrap(S&& snd) const
                 noexcept(std::is_nothrow_constructible_v<std::remove_cvref_t<S>, S>) {
-            return @@_stop_when_@@(std::forward<S>(snd), scope_->source_.get_token());
+            return @@_stop-when_@@(std::forward<S>(snd), scope_->source_.get_token());
         }
 
     private:
@@ -1827,13 +1831,13 @@ private:
 };
 ```
 
-_`stop_when(sender auto&& snd, stoppable_token auto stoken)`_ is an exposition-only sender algorithm that maps its input
+_`stop-when(sender auto&& snd, stoppable_token auto stoken)`_ is an exposition-only sender algorithm that maps its input
 sender, `snd`, to an output sender, `osnd`, such that, when `osnd` is connected to a receiver, `r`, the resulting
 _`operation-state`_ behaves the same as connecting the original sender, `snd`, to `r`, except that `snd` will receive a
-stop request when either the token returned from `get_stop_token(r)` receives a stop request or when `stoken` receives a
-stop request.
+stop request when either the token returned from `get_stop_token(get_env(r))` receives a stop request or when `stoken`
+receives a stop request.
 
-Other than the use of _`stop_when()`_ in `counting_scope::token::wrap()` and the addition of `request_stop()` to the
+Other than the use of _`stop-when()`_ in `counting_scope::token::wrap()` and the addition of `request_stop()` to the
 interface, `counting_scope` has the same behavior and lifecycle as `simple_counting_scope`.
 
 ### `counting_scope::counting_scope`
@@ -2271,8 +2275,6 @@ async operations created with the sender.
 ```cpp
 namespace std::execution {
 
-// TODO: add a paragraph that describes the class' class invariant: "engaged optional" means association is owned
-
 template <async_scope_token Token, sender Sender>
 struct @_nest-data_@ {               // exposition only
     using @_wrap-sender_@ =          // exposition only
@@ -2306,15 +2308,18 @@ template <async_scope_token Token, sender Sender>
 }
 ```
 
+`// TODO: add a paragraph that describes the class' class invariant: "engaged optional" means association is owned`
+[3]{.pnum} If `@_sndr_@` is an engaged optional, then an association was successfully made and is owned by `nest`.
+
 ```c++
 @_nest-data_@(const @_nest-data_@& other)
     noexcept(is_nothrow_copy_constructible_v<@_wrap-sender_@> &&
              noexcept(other.@_token_@.try_associate()));
 ```
 
-[3]{.pnum} _Constraints:_ `copy_constructible<@_wrap-sender_@>` returns `true`.
+[4]{.pnum} _Constraints:_ `copy_constructible<@_wrap-sender_@>` returns `true`.
 
-[4]{.pnum} _Effects:_ Copy constructs _`token`_ with `other.@_token_@` and:
+[5]{.pnum} _Effects:_ Copy constructs _`token`_ with `other.@_token_@` and:
 
 - [5.1]{.pnum} If `other.@_sndr_@.has_value()` returns `false` then value-initializes _`sndr`_.
 - [5.2]{.pnum} Otherwise, `@_token_@.try_associate()` is invoked.
@@ -2329,37 +2334,37 @@ template <async_scope_token Token, sender Sender>
 @_nest-data_@(@_nest-data_@&& other) noexcept(is_nothrow_move_constructible_v<@_wrap-sender_@>);
 ```
 
-[5]{.pnum} _Effects:_ Move constructs _`token`_ with `other.@_token_@` and move constructs _`sndr`_ with
+[6]{.pnum} _Effects:_ Move constructs _`token`_ with `other.@_token_@` and move constructs _`sndr`_ with
 `other.@_sndr_@`.
 
-[6]{.pnum} _Postconditions:_ If no exceptions are thrown then `other.@_sndr_@.has_value()` returns `false`; otherwise,
+[7]{.pnum} _Postconditions:_ If no exceptions are thrown then `other.@_sndr_@.has_value()` returns `false`; otherwise,
 `other.@_sndr_@.has_value()` is unchanged.
 
 ```c++
 ~@_nest-data_@();
 ```
 
-[7]{.pnum} _Effects:_ If `@_sndr_@.has_value()` returns `false` then no effect; otherwise, invokes `@_sndr_@.reset()`
+[8]{.pnum} _Effects:_ If `@_sndr_@.has_value()` returns `false` then no effect; otherwise, invokes `@_sndr_@.reset()`
 before invoking `@_token_@.disassociate()`.
 
 ```c++
 optional<pair<Token, @_wrap-sender_@>> release() && noexcept(is_nothrow_move_constructible_v<@_wrap-sender_@>);
 ```
 
-[8]{.pnum} _Effects:_ If `@_sndr_@.has_value()` returns `false` then returns a disengaged `optional`; otherwise
+[9]{.pnum} _Effects:_ If `@_sndr_@.has_value()` returns `false` then returns a disengaged `optional`; otherwise
 returns an engaged `optional` containing a `pair<Token, @_wrap-sender_@>` as if by:
 
 ```c++
 return optional{pair{std::move(@_token_@), std::move(*@_sndr_@)}};
 ```
 
-[9]{.pnum} _Postconditions:_ _`sndr`_ is disengaged.
+[10]{.pnum} _Postconditions:_ _`sndr`_ is disengaged.
 
-[10]{.pnum} The name `nest` denotes a pipeable sender adaptor object. For subexpressions `sndr` and `token`, if
+[11]{.pnum} The name `nest` denotes a pipeable sender adaptor object. For subexpressions `sndr` and `token`, if
 `decltype((sndr))` does not satisfy `sender`, or `decltype((token))` does not satisfy `async_scope_token`, then
 `nest(sndr, token)` is ill-formed.
 
-[11]{.pnum} Otherwise, the expression `nest(sndr, token)` is expression-equivalent to:
+[12]{.pnum} Otherwise, the expression `nest(sndr, token)` is expression-equivalent to:
 
 ```
 transform_sender(@_get-domain-early_@(sndr), @_make-sender_@(nest, @_nest-data_@(token, sndr)))
@@ -2367,10 +2372,10 @@ transform_sender(@_get-domain-early_@(sndr), @_make-sender_@(nest, @_nest-data_@
 
 except that `sndr` is evaluated only once.
 
-[12]{.pnum} The exposition-only class template _`impls-for`_ ([exec.snd.general]{.sref}) is specialized for `nest_t` as
+[13]{.pnum} The exposition-only class template _`impls-for`_ ([exec.snd.general]{.sref}) is specialized for `nest_t` as
 follows:
 
-```
+```cpp
 namespace std::execution {
 
 template <>
@@ -2380,12 +2385,14 @@ struct @_impls-for_@<nest_t> : @_default-impls_@ {
     static constexpr auto @_start_@ = @_see below_@;
 
     // TODO: add @_check-types_@
+    template<class Sndr, class Env>
+    static consteval void @_check-types_@ = @_see_below_@;
 };
 
 }
 ```
 
-[13]{.pnum} The member `@_impls-for_@<nest_t>::@_get-state_@` is initialized with a callable object equivalent to the
+[14]{.pnum} The member `@_impls-for_@<nest_t>::@_get-state_@` is initialized with a callable object equivalent to the
 following lambda:
 ```cpp
 []<class Sndr, class Rcvr>(Sndr&& sndr, Rcvr& rcvr) noexcept(/* @_see below_@ */) {
@@ -2445,7 +2452,7 @@ following lambda:
 }
 ```
 
-[14]{.pnum} The expression in the `noexcept` clause of `@_impls-for_@<nest_t>::@_get-state_@` is
+[15]{.pnum} The expression in the `noexcept` clause of `@_impls-for_@<nest_t>::@_get-state_@` is
 
 ```cpp
     is_nothrow_constructible_v<remove_cvref_t<Sndr>, Sndr> &&
@@ -2456,7 +2463,7 @@ following lambda:
 
 where _`wrap-sender`_ is the type `remove_cvref_t<decltype(@_default-impls_@::@_get-state_@(std::move(sndr), rcvr))>::@_wrap-sender_@.`
 
-[15]{.pnum} The member `@_impls-for_@<nest_t>::@_start_@` is initialized with a callable object equivalent to the
+[16]{.pnum} The member `@_impls-for_@<nest_t>::@_start_@` is initialized with a callable object equivalent to the
 following lambda:
 ```cpp
 [](auto& state, auto&) noexcept -> void {
@@ -2464,14 +2471,46 @@ following lambda:
 }
 ```
 
-[16]{.pnum} The evaluation of `nest(sndr, token)` may cause side effects observable via `token`'s associated async scope
+[17]{.pnum} The member `@_impls-for_@<nest_t>::@_check-types_@` is initialized with a callable object equivalent to the following lambda:
+```cpp
+[]<class Sndr, class Env>(Sndr&&, Env&&) {
+    return get_completion_signatures<@_nest-data_@::@_wrap-sender_@, @_FWD-ENV-T_@(Env)>();
+}
+```
+
+[18]{.pnum} The evaluation of `nest(sndr, token)` may cause side effects observable via `token`'s associated async scope
 object.
+
+:::
+
+## Exposition-only `execution::@_stop-when_@`
+
+Add the following as a new subsection immediately after __[exec.nest]__:
+
+::: add
+__Exposition-only `execution::@_stop-when_@` [exec.stop.when]__
+
+[1]{.pnum} _`stop-when`_ fuses an additional stop token, `token`, into a sender so that, once connected to a receiver,
+`r`, the resulting operation state receives stop requests from both `token` and the token returned from
+`get_stop_token(get_env(r))`.
+
+[2]{.pnum} The name _`stop-when`_ denotes an exposition-only pipeable sender adaptor object. For subexpressions `sndr`
+and `token`, if `decltype((sndr))` does not satisfy `sender`, or `decltype((token))` does not satisfy `stoppable_token`,
+then `@_stop-when_@(sndr, token)` is ill-formed.
+
+[3]{.pnum} Otherwise, if `decltype((token))` models `unstoppable_token` then `@_stop-when_@(sndr, token)` is
+expression-equivalent to `sndr`.
+
+[4]{.pnum} Otherwise, the expression `@_stop-when_@(sndr, token)` produces a sender, `osndr`, such that, when `osnd` is
+connected to a receiver, `r`, the resulting _`operation-state`_, `opstate`, behaves the same as connecting the original
+sender, `sndr`, to `r`, except that `opstate` will receive a stop request when either the token returned from
+`get_stop_token(get_env(r))` receives a stop request or when `token` receives a stop request.
 
 :::
 
 ## `execution::spawn_future`
 
-Add the following as a new subsection immediately after __[exec.nest]__:
+Add the following as a new subsection immediately after __[exec.stop.when]__:
 
 ::: add
 __`std::execution::spawn_future` [exec.spawn.future]__
@@ -2560,7 +2599,7 @@ private:
 }
 ```
 
-TODO: rewrite para 6 in terms of _`stop_when`_.
+TODO: rewrite para 6 in terms of _`stop-when`_.
 
 [6]{.pnum} For the expression `spawn_future(sndr, token, env)` let `stoken` be a stop token that will receive stop
 requests sent from the returned future and any stop requests sent to the stop token returned from `get_stop_token(env)`.
@@ -3296,11 +3335,7 @@ __Token [exec.counting.token]__
 `template <sender Sender>` \
 `sender auto wrap(Sender&& snd) const noexcept;`
 
-[1]{.pnum} _Returns:_ Sender `osnd` from an exposition-only sender algorithm
-_`stop_when(sender auto&& snd, stoppable_token auto stoken)`_ that maps its input sender, _`snd`_, such that, when
-`osnd` is connected to a receiver `r`, the resulting _`operation-state`_ behaves the same as connecting the original
-sender, _`snd`_, to `r`, except that the operation will receive a stop request when either the token returned from
-`get_stop_token(r)` receives a stop request or when _`stoken`_ receives a stop request.
+[1]{.pnum} _Returns:_ `@_stop-when_@(std::forward<Sender>(snd), @_scope_@->@_s_source_@.get_token())`.
 
 `bool try_associate() const;`
 
