@@ -3322,11 +3322,7 @@ __Token [exec.counting.token]__
 `template <sender Sender>` \
 `sender auto wrap(Sender&& snd) const noexcept;`
 
-[1]{.pnum} _Returns:_ Sender `osnd` from an exposition-only sender algorithm
-_`stop-when(sender auto&& snd, stoppable_token auto stoken)`_ that maps its input sender, _`snd`_, such that, when
-`osnd` is connected to a receiver `r`, the resulting _`operation-state`_ behaves the same as connecting the original
-sender, _`snd`_, to `r`, except that the operation will receive a stop request when either the token returned from
-`get_stop_token(get_env(r))` receives a stop request or when _`stoken`_ receives a stop request.
+[1]{.pnum} _Returns:_ `@_stop-when_@(std::forward<Sender>(snd), @_scope_@->@_s_source_@.get_token())`.
 
 `bool try_associate() const;`
 
