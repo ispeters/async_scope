@@ -2488,7 +2488,10 @@ __Exposition-only `execution::@_stop-when_@` [exec.stop.when]__
 and `token`, if `decltype((sndr))` does not satisfy `sender`, or `decltype((token))` does not satisfy `stoppable_token`,
 then `@_stop-when_@(sndr, token)` is ill-formed.
 
-[3]{.pnum} Otherwise, the expression `@_stop-when_@(sndr, token)` produces a sender, `osndr`, such that, when `osnd` is
+[3]{.pnum} Otherwise, if `decltype((token))` models `unstoppable_token` then `@_stop-when_@(sndr, token)` is
+expression-equivalent to `sndr`.
+
+[4]{.pnum} Otherwise, the expression `@_stop-when_@(sndr, token)` produces a sender, `osndr`, such that, when `osnd` is
 connected to a receiver, `r`, the resulting _`operation-state`_, `opstate`, behaves the same as connecting the original
 sender, `sndr`, to `r`, except that `opstate` will receive a stop request when either the token returned from
 `get_stop_token(get_env(r))` receives a stop request or when `token` receives a stop request.
