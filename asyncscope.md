@@ -2275,8 +2275,6 @@ async operations created with the sender.
 ```cpp
 namespace std::execution {
 
-// TODO: add a paragraph that describes the class' class invariant: "engaged optional" means association is owned
-
 template <async_scope_token Token, sender Sender>
 struct @_nest-data_@ {               // exposition only
     using @_wrap-sender_@ =          // exposition only
@@ -2310,15 +2308,18 @@ template <async_scope_token Token, sender Sender>
 }
 ```
 
+`// TODO: add a paragraph that describes the class' class invariant: "engaged optional" means association is owned`
+[3]{.pnum} If `@_sndr_@` is an engaged optional, then an association was successfully made and is owned by `nest`.
+
 ```c++
 @_nest-data_@(const @_nest-data_@& other)
     noexcept(is_nothrow_copy_constructible_v<@_wrap-sender_@> &&
              noexcept(other.@_token_@.try_associate()));
 ```
 
-[3]{.pnum} _Constraints:_ `copy_constructible<@_wrap-sender_@>` returns `true`.
+[4]{.pnum} _Constraints:_ `copy_constructible<@_wrap-sender_@>` returns `true`.
 
-[4]{.pnum} _Effects:_ Copy constructs _`token`_ with `other.@_token_@` and:
+[5]{.pnum} _Effects:_ Copy constructs _`token`_ with `other.@_token_@` and:
 
 - [5.1]{.pnum} If `other.@_sndr_@.has_value()` returns `false` then value-initializes _`sndr`_.
 - [5.2]{.pnum} Otherwise, `@_token_@.try_associate()` is invoked.
@@ -2333,37 +2334,37 @@ template <async_scope_token Token, sender Sender>
 @_nest-data_@(@_nest-data_@&& other) noexcept(is_nothrow_move_constructible_v<@_wrap-sender_@>);
 ```
 
-[5]{.pnum} _Effects:_ Move constructs _`token`_ with `other.@_token_@` and move constructs _`sndr`_ with
+[6]{.pnum} _Effects:_ Move constructs _`token`_ with `other.@_token_@` and move constructs _`sndr`_ with
 `other.@_sndr_@`.
 
-[6]{.pnum} _Postconditions:_ If no exceptions are thrown then `other.@_sndr_@.has_value()` returns `false`; otherwise,
+[7]{.pnum} _Postconditions:_ If no exceptions are thrown then `other.@_sndr_@.has_value()` returns `false`; otherwise,
 `other.@_sndr_@.has_value()` is unchanged.
 
 ```c++
 ~@_nest-data_@();
 ```
 
-[7]{.pnum} _Effects:_ If `@_sndr_@.has_value()` returns `false` then no effect; otherwise, invokes `@_sndr_@.reset()`
+[8]{.pnum} _Effects:_ If `@_sndr_@.has_value()` returns `false` then no effect; otherwise, invokes `@_sndr_@.reset()`
 before invoking `@_token_@.disassociate()`.
 
 ```c++
 optional<pair<Token, @_wrap-sender_@>> release() && noexcept(is_nothrow_move_constructible_v<@_wrap-sender_@>);
 ```
 
-[8]{.pnum} _Effects:_ If `@_sndr_@.has_value()` returns `false` then returns a disengaged `optional`; otherwise
+[9]{.pnum} _Effects:_ If `@_sndr_@.has_value()` returns `false` then returns a disengaged `optional`; otherwise
 returns an engaged `optional` containing a `pair<Token, @_wrap-sender_@>` as if by:
 
 ```c++
 return optional{pair{std::move(@_token_@), std::move(*@_sndr_@)}};
 ```
 
-[9]{.pnum} _Postconditions:_ _`sndr`_ is disengaged.
+[10]{.pnum} _Postconditions:_ _`sndr`_ is disengaged.
 
-[10]{.pnum} The name `nest` denotes a pipeable sender adaptor object. For subexpressions `sndr` and `token`, if
+[11]{.pnum} The name `nest` denotes a pipeable sender adaptor object. For subexpressions `sndr` and `token`, if
 `decltype((sndr))` does not satisfy `sender`, or `decltype((token))` does not satisfy `async_scope_token`, then
 `nest(sndr, token)` is ill-formed.
 
-[11]{.pnum} Otherwise, the expression `nest(sndr, token)` is expression-equivalent to:
+[12]{.pnum} Otherwise, the expression `nest(sndr, token)` is expression-equivalent to:
 
 ```
 transform_sender(@_get-domain-early_@(sndr), @_make-sender_@(nest, @_nest-data_@(token, sndr)))
@@ -2371,10 +2372,10 @@ transform_sender(@_get-domain-early_@(sndr), @_make-sender_@(nest, @_nest-data_@
 
 except that `sndr` is evaluated only once.
 
-[12]{.pnum} The exposition-only class template _`impls-for`_ ([exec.snd.general]{.sref}) is specialized for `nest_t` as
+[13]{.pnum} The exposition-only class template _`impls-for`_ ([exec.snd.general]{.sref}) is specialized for `nest_t` as
 follows:
 
-```
+```cpp
 namespace std::execution {
 
 template <>
@@ -2384,12 +2385,13 @@ struct @_impls-for_@<nest_t> : @_default-impls_@ {
     static constexpr auto @_start_@ = @_see below_@;
 
     // TODO: add @_check-types_@
+    static constexpr auto @_check-types_@ = @_see below_@;
 };
 
 }
 ```
 
-[13]{.pnum} The member `@_impls-for_@<nest_t>::@_get-state_@` is initialized with a callable object equivalent to the
+[14]{.pnum} The member `@_impls-for_@<nest_t>::@_get-state_@` is initialized with a callable object equivalent to the
 following lambda:
 ```cpp
 []<class Sndr, class Rcvr>(Sndr&& sndr, Rcvr& rcvr) noexcept(/* @_see below_@ */) {
@@ -2449,7 +2451,7 @@ following lambda:
 }
 ```
 
-[14]{.pnum} The expression in the `noexcept` clause of `@_impls-for_@<nest_t>::@_get-state_@` is
+[15]{.pnum} The expression in the `noexcept` clause of `@_impls-for_@<nest_t>::@_get-state_@` is
 
 ```cpp
     is_nothrow_constructible_v<remove_cvref_t<Sndr>, Sndr> &&
@@ -2460,7 +2462,7 @@ following lambda:
 
 where _`wrap-sender`_ is the type `remove_cvref_t<decltype(@_default-impls_@::@_get-state_@(std::move(sndr), rcvr))>::@_wrap-sender_@.`
 
-[15]{.pnum} The member `@_impls-for_@<nest_t>::@_start_@` is initialized with a callable object equivalent to the
+[16]{.pnum} The member `@_impls-for_@<nest_t>::@_start_@` is initialized with a callable object equivalent to the
 following lambda:
 ```cpp
 [](auto& state, auto&) noexcept -> void {
@@ -2468,7 +2470,7 @@ following lambda:
 }
 ```
 
-[16]{.pnum} The evaluation of `nest(sndr, token)` may cause side effects observable via `token`'s associated async scope
+[17]{.pnum} The evaluation of `nest(sndr, token)` may cause side effects observable via `token`'s associated async scope
 object.
 
 :::
