@@ -2308,8 +2308,7 @@ template <async_scope_token Token, sender Sender>
 }
 ```
 
-`// TODO: add a paragraph that describes the class' class invariant: "engaged optional" means association is owned`
-[3]{.pnum} If `@_sndr_@` is an engaged optional, then an association was successfully made and is owned by `nest`.
+[3]{.pnum} If `@_sndr_@` is an engaged optional, then an association was successfully made and is owned by the _`nest-data`_.
 
 ```c++
 @_nest-data_@(const @_nest-data_@& other)
@@ -2384,9 +2383,12 @@ struct @_impls-for_@<nest_t> : @_default-impls_@ {
 
     static constexpr auto @_start_@ = @_see below_@;
 
-    // TODO: add @_check-types_@
-    template<class Sndr, class Env>
-    static consteval void @_check-types_@ = @_see_below_@;
+    template<class Sndr, class... Env>
+    static consteval void @_check-types_@() {
+        using nest_data_t = decltype(declval<Sndr>().template get<1>());
+        using child_type_t = typename nest_data_t::@_wrap-sender_@;
+        (void)get_completion_signatures<child_type_t, @_FWD-ENV-T_@(Env)...>();
+    }
 };
 
 }
@@ -2437,9 +2439,9 @@ following lambda:
             }
         }
 
-        void @_start_@() noexcept {    // exposition only
+        void @_run_@() noexcept {    // exposition only
             if (@_associated_@)
-                @_op_@.start();
+                start(@_op_@);
             else
                 set_stopped(std::move(*@_rcvr_@));
         }
@@ -2467,18 +2469,11 @@ where _`wrap-sender`_ is the type `remove_cvref_t<decltype(@_default-impls_@::@_
 following lambda:
 ```cpp
 [](auto& state, auto&) noexcept -> void {
-    state.@_start_@();
+    state.@_run_@();
 }
 ```
 
-[17]{.pnum} The member `@_impls-for_@<nest_t>::@_check-types_@` is initialized with a callable object equivalent to the following lambda:
-```cpp
-[]<class Sndr, class Env>(Sndr&&, Env&&) {
-    return get_completion_signatures<@_nest-data_@::@_wrap-sender_@, @_FWD-ENV-T_@(Env)>();
-}
-```
-
-[18]{.pnum} The evaluation of `nest(sndr, token)` may cause side effects observable via `token`'s associated async scope
+[17]{.pnum} The evaluation of `nest(sndr, token)` may cause side effects observable via `token`'s associated async scope
 object.
 
 :::
@@ -2494,9 +2489,9 @@ __Exposition-only `execution::@_stop-when_@` [exec.stop.when]__
 `r`, the resulting operation state receives stop requests from both `token` and the token returned from
 `get_stop_token(get_env(r))`.
 
-[2]{.pnum} The name _`stop-when`_ denotes an exposition-only pipeable sender adaptor object. For subexpressions `sndr`
-and `token`, if `decltype((sndr))` does not satisfy `sender`, or `decltype((token))` does not satisfy `stoppable_token`,
-then `@_stop-when_@(sndr, token)` is ill-formed.
+[2]{.pnum} The name _`stop-when`_ denotes an exposition-only sender adaptor. For subexpressions `sndr` and `token`, if
+`decltype((sndr))` does not satisfy `sender`, or `decltype((token))` does not satisfy `stoppable_token`, then
+`@_stop-when_@(sndr, token)` is ill-formed.
 
 [3]{.pnum} Otherwise, if `decltype((token))` models `unstoppable_token` then `@_stop-when_@(sndr, token)` is
 expression-equivalent to `sndr`.
@@ -2655,7 +2650,7 @@ private:
 [9]{.pnum} _Effects_: Equivalent to:
 ```cpp
     if (associated = token.try_associate())
-        op.start();
+        start(op);
     else {
         this->result.emplace<@_decayed-tuple_@<set_stopped_t>>(set_stopped_t{});
         @_complete_@();
@@ -2881,7 +2876,7 @@ private:
 
 ```cpp
     if (@_token_@.try_associate())
-        op.start();
+        start(op);
     else
         @_destroy_@();
 ```
@@ -3093,7 +3088,7 @@ which happens after a call to `s.close()` returns `false`.
 
 `sender auto join() noexcept;`
 
-[4]{.pnum} _Returns:_ `@_make_sender_@(@_join-t_@, this)`
+[4]{.pnum} _Returns:_ `@_make-sender_@(@_join-t_@, this)`
 
 [5]{.pnum} The exposition-only class template `@_impls-for_@` ([exec.snd.general]{.sref}) is specialized for
 `@_join-t_@` as follows:
@@ -3114,7 +3109,7 @@ struct @_impls-for_@<@_join-t_@>: @_default-impls_@ {
             @_op_@(connect(schedule(get_scheduler(get_env(receiver))), receiver)) {}
 
         void @_complete_@() noexcept { // @_exposition only_@
-            @_op_@.start();
+            start(@_op_@);
         }
 
         void @_complete-inline_@() noexcept { // @_exposition only_@
@@ -3274,7 +3269,7 @@ happens after a call to `s.close()` returns `false`.
 
 `sender auto join() noexcept;`
 
-[4]{.pnum} _Returns:_ `@_make_sender_@(@_join-t_@, this)`
+[4]{.pnum} _Returns:_ `@_make-sender_@(@_join-t_@, this)`
 
 [5]{.pnum} The exposition-only class template `@_impls-for_@` ([exec.snd.general]{.sref}) is specialized for
 `@_join-t_@` as follows:
@@ -3295,7 +3290,7 @@ struct @_impls-for_@<@_join-t_@>: @_default-impls_@ {
             @_op_@(connect(schedule(get_scheduler(get_env(receiver))), receiver)) {}
 
         void @_complete_@() noexcept { // @_exposition only_@
-            @_op_@.start();
+            start(@_op_@);
         }
 
         void @_complete-inline_@() noexcept { // @_exposition only_@
