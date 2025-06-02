@@ -3,8 +3,7 @@ title: "`async_scope` -- Creating scopes for non-sequential concurrency"
 document: D3149R11
 date: today
 audience:
-  - "SG1 Parallelism and Concurrency"
-  - "LEWG Library Evolution"
+  - "LWG Library Working Group"
 author:
   - name: Ian Petersen
     email: <ispeters@gmail.com>
