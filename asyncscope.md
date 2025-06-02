@@ -31,7 +31,10 @@ Changes
 
 ## R11
 
-- Rename `async_scope_token` to `scope_token` and `nest` to `associate`.
+- Rename `async_scope_token` to `scope_token` and `nest` to `associate` per P3685R0 and P3706R0.
+- Update wording section to formalize the definition of _`stop-when`_ and reword `spawn_future` and
+  `counting_scope::token::wrap` in terms of it.
+- Add _`check-types`_ to the various specializations of _`impls-for`_ per P3557R2.
 
 ## R10
 
@@ -574,7 +577,7 @@ int main() {
 
     // make sure we always join
     unifex::scope_guard join = [&]() noexcept {
-        // wait for all associateed work to finish
+        // wait for all associated work to finish
         this_thread::sync_wait(scope.join()); // NEW!
     };
 
@@ -1126,7 +1129,7 @@ concept scope_token =
     };
 
 template <scope_token Token, sender Sender>
-using @@_wrapped-sender-from_@@ = decay_t<decltype(declval<Token&>().wrap(declval<Sender>()))>; // @@_exposition only_@@
+using @_wrapped-sender-from_@ = decay_t<decltype(declval<Token&>().wrap(declval<Sender>()))>; // @_exposition only_@
 
 struct associate_t { @_unspecified_@ };
 struct spawn_t { @_unspecified_@ };
@@ -1146,7 +1149,7 @@ class simple_counting_scope {
         void disassociate() const;
 
     private:
-        simple_counting_scope* @_scope_@; // @@_exposition only_@@
+        simple_counting_scope* @_scope_@; // @_exposition only_@
     };
 
     simple_counting_scope() noexcept;
@@ -1172,7 +1175,7 @@ class counting_scope {
         void disassociate() const;
 
     private:
-        counting_scope* @_scope_@; // @@_exposition only_@@
+        counting_scope* @_scope_@; // @_exposition only_@
     };
 
     counting_scope() noexcept;
@@ -1335,7 +1338,7 @@ multi-shot and single-shot otherwise.
 
 ```cpp
 template <class Env>
-struct @@_spawn-receiver_@@ { // @@_exposition only_@@
+struct @_spawn-receiver_@ { // @_exposition only_@
     void set_value() noexcept;
     void set_stopped() noexcept;
 };
@@ -1376,7 +1379,7 @@ _`operation-state`_. The following algorithm determines which _Allocator_ to use
 3. an `op_t` is dynamically allocated by the _Allocator_ chosen as described above
 4. the fields of the `op_t` are initialized in the following order:
    a. the _`operation-state`_ within the allocated `op_t` is initialized with the result of
-      `connect(write_env(token.wrap(std::forward<Sender>(snd)), @@_spawn-receiver_@@{...}, senv))`;
+      `connect(write_env(token.wrap(std::forward<Sender>(snd)), @_spawn-receiver_@{...}, senv))`;
    b. the allocator is initialized with a copy of the allocator used to allocate the `op_t`; and
    c. the token is initialized with a copy of `token`.
 5. if `token.try_associate()` returns `true` then the _`operation-state`_ is started; otherwise, the `op_t` is destroyed
@@ -1544,7 +1547,7 @@ class simple_counting_scope {
         void disassociate() const;
 
     private:
-        simple_counting_scope* @_scope_@; // @@_exposition only_@@
+        simple_counting_scope* @_scope_@; // @_exposition only_@
     };
 
     simple_counting_scope() noexcept;
@@ -1774,7 +1777,7 @@ class counting_scope {
         void disassociate() const;
 
     private:
-        counting_scope* scope; // @@_exposition only_@@
+        counting_scope* scope; // @_exposition only_@
     };
 
     counting_scope() noexcept;
@@ -1807,7 +1810,7 @@ class counting_scope {
         template <sender S>
         sender auto wrap(S&& snd) const
                 noexcept(std::is_nothrow_constructible_v<std::remove_cvref_t<S>, S>) {
-            return @@_stop-when_@@(std::forward<S>(snd), scope_->source_.get_token());
+            return @_stop-when_@(std::forward<S>(snd), scope_->source_.get_token());
         }
 
     private:
@@ -1889,9 +1892,9 @@ operations.
 ### `counting_scope::join`
 
 ```cpp
-struct @@_join-sender_@@; // @@_exposition only_@@
+struct @_join-sender_@; // @_exposition only_@
 
-@@_join-sender_@@ join() noexcept;
+@_join-sender_@ join() noexcept;
 ```
 
 Returns a join-sender that behaves the same as the result of `simple_counting_scope::join()`. Connecting and starting
@@ -2522,9 +2525,9 @@ either the result of the eagerly-started input sender or with `set_stopped` if t
 
 [2]{.pnum} The name `spawn_future` denotes a customization point object. The expression `spawn_future(sndr, token)` is
 expression-equivalent to `spawn_future(sndr, token, env<>{})`. For subexpressions `sndr`, `token`, and `env`, let `Sndr`
-be `decltype((sndr))`, let `Token` be `decltype((token))`, and let `Env` be `decltype((env))`. If
-`sender<Sndr>`, `scope_token<Token>`, or `@_queryable_@<Env>` returns `false`, the expression
-`spawn_future(sndr, token, env)` is ill-formed.
+be `decltype((sndr))`, let `Token` be `decltype((token))`, and let `Env` be `decltype((env))`. If `sender<Sndr>`,
+`scope_token<Token>`, or `@_queryable_@<Env>` returns `false`, the expression `spawn_future(sndr, token, env)` is
+ill-formed.
 
 [3]{.pnum} Let _`spawn-future-state-base`_ be the exposition-only class template defined below:
 
