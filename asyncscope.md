@@ -2642,9 +2642,14 @@ struct @_spawn-future-state_@                                                // 
           @_op_@(connect(
               write_env(@_stop-when_@(std::forward<Sender>(sndr), @_ssource_@.get_token()), std::move(env)),
               @_receiver-t_@{this})),
-          @_token_@(std::move(token)) {}
+          @_token_@(std::move(token)),
+          @_associated_@(@_token_@.try_associate()) {
+        if (@_associated_@)
+            start(@_op_@);
+        else
+            set_stopped(@_receiver-t_@{this});
+    }
 
-    void @_run_@();                                                          // @_exposition only_@
     void @_complete_@() noexcept override;                                   // @_exposition only_@
     void @_consume_@(receiver auto& rcvr) noexcept;                          // @_exposition only_@
     void @_abandon_@() noexcept;                                             // @_exposition only_@
@@ -2665,19 +2670,9 @@ private:
 }
 ```
 
-`void @_run_@();`
-
-[9]{.pnum} _Effects_: Equivalent to:
-```cpp
-    if (@_associated_@ = @_token_@.try_associate())
-        start(@_op_@);
-    else
-        set_stopped(@_receiver-t_@{this});
-```
-
 `void @_complete_@() noexcept;`
 
-[10]{.pnum} _Effects_:
+[9]{.pnum} _Effects_:
 
 - No effects if the invocation of _`complete`_ happens-before an invocation of _`consume`_ or _`abandon`_;
 - otherwise, if an invocation of _`consume`_ happened-before this invocation of _`complete`_ then there is a receiver,
@@ -2687,7 +2682,7 @@ private:
 
 `void @_consume_@(receiver auto& rcvr) noexcept;`
 
-[11]{.pnum} _Effects_:
+[10]{.pnum} _Effects_:
 
 - If the invocation of _`consume`_ happens-before an invocation of _`complete`_ then `rcvr` is registered to be
   completed when _`complete`_ is invoked;
@@ -2704,7 +2699,7 @@ private:
 
 `void @_abandon_@() noexcept;`
 
-[12]{.pnum} _Effects_:
+[11]{.pnum} _Effects_:
 
 - If the invocation of _`abandon`_ happens-before an invocation of _`complete`_ then equivalent to:
   ```cpp
@@ -2715,7 +2710,7 @@ private:
 
 `void @_destroy_@() noexcept;`
 
-[13]{.pnum} _Effects_: Equivalent to:
+[12]{.pnum} _Effects_: Equivalent to:
 ```cpp
     auto token = std::move(this->@_token_@);
     auto associated = this->@_associated_@;
@@ -2731,7 +2726,7 @@ private:
         token.disassociate();
 ```
 
-[14]{.pnum} The exposition-only class template _`impls-for`_ ([exec.snd.general]) is specialized for `spawn_future_t` as
+[13]{.pnum} The exposition-only class template _`impls-for`_ ([exec.snd.general]) is specialized for `spawn_future_t` as
 follows:
 ```cpp
 namespace std::execution {
@@ -2744,7 +2739,7 @@ struct @_impls-for_@<spawn_future_t> : @_default-impls_@ {
 }
 ```
 
-[15]{.pnum} The member `@_impls-fors_@<spawn_future_t>::@_start_@` is initialized with a callable object equivalent to
+[14]{.pnum} The member `@_impls-fors_@<spawn_future_t>::@_start_@` is initialized with a callable object equivalent to
 the following lambda:
 ```cpp
 [](auto& state, auto& rcvr) noexcept -> void {
@@ -2752,7 +2747,7 @@ the following lambda:
 }
 ```
 
-[16]{.pnum} Then the expression `spawn_future(sndr, token, env)` is expression-equivalent to the following:
+[15]{.pnum} Then the expression `spawn_future(sndr, token, env)` is expression-equivalent to the following:
 ```cpp
     // TODO: consider rewriting this in prose
 
@@ -2773,15 +2768,6 @@ the following lambda:
         @_traits-t_@::construct(stateAlloc, op, alloc, makeSender(), token, senv);
     }
     catch(...) {
-        @_traits-t_@::deallocate(stateAlloc, op, 1);
-        throw;
-    }
-
-    try {
-        op->@_run_@();
-    }
-    catch(...) {
-        @_traits-t_@::destroy(stateAlloc, op);
         @_traits-t_@::deallocate(stateAlloc, op, 1);
         throw;
     }
