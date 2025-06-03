@@ -2803,8 +2803,8 @@ or `scope_token<Token>` returns `false`, the expression `spawn(sndr, token, env)
 ```cpp
 namespace std::execution {
 
-struct @_spawn-state-base_@ { // exposition-only
-    virtual void @_complete_@() = 0; // exposition-only
+struct @_spawn-state-base_@ {                 // @_exposition only_@
+    virtual void @_complete_@() noexcept = 0; // @_exposition only_@
 };
 
 }
@@ -2815,10 +2815,10 @@ struct @_spawn-state-base_@ { // exposition-only
 ```cpp
 namespace std::execution {
 
-struct @_spawn-receiver_@ { // exposition-only
+struct @_spawn-receiver_@ {      // @_exposition only_@
     using receiver_concept = receiver_t;
 
-    @_spawn-state-base_@* state; // exposition-only
+    @_spawn-state-base_@* @_state_@; // @_exposition only_@
     void set_value() && noexcept { state->@_complete_@(); }
     void set_stopped() && noexcept { state->@_complete_@(); }
 };
@@ -2826,17 +2826,7 @@ struct @_spawn-receiver_@ { // exposition-only
 }
 ```
 
-[5]{.pnum} For the expression `spawn(sndr, token, env)` let _`new-sender`_ be the expression `token.wrap(sndr)` and let
-`alloc` and `senv` be defined as follows:
-
-- if the expression `get_allocator(env)` is well defined, then `alloc` is the result of `get_allocator(env)` and `senv`
-  is the expression `env`,
-- otherwise if the expression `get_allocator(get_env(@_new-sender_@))` is well-defined, then `alloc` is the result of
-  `get_allocator(get_env(@_new-sender_@))` and `senv` is the expression
-  `@_JOIN-ENV_@(env, prop(get_allocator, alloc))`
-- otherwise `alloc` is `std::allocator<void>{}` and `senv` is the expression `env`
-
-[6]{.pnum} Let _`spawn-state`_ be an exposition only class template defined
+[5]{.pnum} Let _`spawn-state`_ be an exposition only class template defined
 below:
 
 ```cpp
@@ -2844,20 +2834,20 @@ namespace std::execution {
 
 template <class Alloc, scope_token Token, sender Sender>
 struct @_spawn-state_@ : @_spawn-state-base_@ {
-    using @_op-t_@ = decltype(connect(declval<Sender>(), @_spawn-receiver_@{nullptr}));
+    using @_op-t_@ = connect_result_t<Sender, @_spawn-receiver_@>;
 
-    @_spawn-state_@(Alloc alloc, Sender&& sndr, Token token); // see below
-    void @_run_@(); // see below
-    void @_complete_@() override; // see below
+    @_spawn-state_@(Alloc alloc, Sender&& sndr, Token token); // @_exposition only_@
+    void @_complete_@() noexcept override;                    // @_exposition only_@
 
 private:
-    using @_alloc-t_@ = typename allocator_traits<Alloc>::template rebind_alloc<@_spawn-state_@>;
+    using @_alloc-t_@ =                                       // @_exposition only_@
+        typename allocator_traits<Alloc>::template rebind_alloc<@_spawn-state_@>;
 
-    @_alloc-t_@ alloc;
-    @_op-t_@ op;
-    Token @_token_@;
+    @_alloc-t_@ @_alloc_@;                                        // @_exposition only_@
+    @_op-t_@ @_op_@;                                              // @_exposition only_@
+    Token @_token_@;                                          // @_exposition only_@
 
-    void @_destroy_@() noexcept; // see below
+    void @_destroy_@() noexcept;                              // @_exposition only_@
 };
 
 }
@@ -2865,28 +2855,21 @@ private:
 
 `@_spawn-state_@(Alloc alloc, Sender&& sndr, Token token);`
 
-[7]{.pnum} _Effects_: Equivalent to:
+[6]{.pnum} _Effects_:
 
-```cpp
-    this->alloc = alloc;
-    this->op = connect(std::move(sndr), @_spawn-receiver_@{this});
-    this->@_token_@ = token;
-```
+- Initializes _`alloc`_ with `alloc`, _`token`_ with `token`, and _`op`_ with the result of the following expression:
+  ```cpp
+  connect(std::move(sndr), @_spawn-receiver_@{this})
+  ```
+- Then invokes `@_token_@.try_associate()`
+   - If the result is `true` then invokes `start(@_op_@)`;
+   - Otherwise invokes `@_destroy_@()`.
 
-`void @_run_@();`
-
-[9]{.pnum} _Effects_: Equivalent to:
-
-```cpp
-    if (@_token_@.try_associate())
-        start(op);
-    else
-        @_destroy_@();
-```
+[7]{.pnum} _Throws_: any exception thrown when initializing _`op`_ or invoking `try_associate`.
 
 `void @_complete_@() override;`
 
-[10]{.pnum} _Effects_: Equivalent to:
+[8]{.pnum} _Effects_: Equivalent to:
 
 ```cpp
     auto token = std::move(this->@_token_@);
@@ -2898,7 +2881,7 @@ private:
 
 `void @_destroy_@() noexcept;`
 
-[11]{.pnum} _Effects_: Equivalent to:
+[9]{.pnum} _Effects_: Equivalent to:
 
 ```cpp
     auto alloc = std::move(this->alloc);
@@ -2907,7 +2890,17 @@ private:
     allocator_traits<@_alloc-t_@>::deallocate(alloc, this, 1);
 ```
 
-[12]{.pnum} Then the expression `spawn(sndr, token)` is expression-equivalent to `spawn(sndr, token, env<>{})` and
+[10]{.pnum} For the expression `spawn(sndr, token, env)` let _`new-sender`_ be the expression `token.wrap(sndr)` and let
+`alloc` and `senv` be defined as follows:
+
+- if the expression `get_allocator(env)` is well defined, then `alloc` is the result of `get_allocator(env)` and `senv`
+  is the expression `env`,
+- otherwise if the expression `get_allocator(get_env(@_new-sender_@))` is well-defined, then `alloc` is the result of
+  `get_allocator(get_env(@_new-sender_@))` and `senv` is the expression
+  `@_JOIN-ENV_@(env, prop(get_allocator, alloc))`
+- otherwise `alloc` is `std::allocator<void>{}` and `senv` is the expression `env`
+
+[11]{.pnum} Then the expression `spawn(sndr, token)` is expression-equivalent to `spawn(sndr, token, env<>{})` and
 the expression `spawn(sndr, token, env)` is expression-equivalent to the following:
 ```
     auto makeSender = [&] {
@@ -2927,15 +2920,6 @@ the expression `spawn(sndr, token, env)` is expression-equivalent to the followi
         @_traits-t_@::construct(stateAlloc, op, alloc, makeSender(), @_token_@);
     }
     catch(...) {
-        @_traits-t_@::deallocate(stateAlloc, op, 1);
-        throw;
-    }
-
-    try {
-        op->@_run_@();
-    }
-    catch(...) {
-        @_traits-t_@::destroy(stateAlloc, op);
         @_traits-t_@::deallocate(stateAlloc, op, 1);
         throw;
     }
