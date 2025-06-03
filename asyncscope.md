@@ -33,7 +33,7 @@ Changes
 - Rename `async_scope_token` to `scope_token` and `nest` to `associate` per P3685R0 and P3706R0.
 - Update wording section to formalize the definition of _`stop-when`_ and reword `spawn_future` and
   `counting_scope::token::wrap` in terms of it.
-- Add _`check-types`_ to the various specializations of _`impls-for`_ per P3557R2.
+- Add _`check-types`_ to `@_impls-for_@::<associate_t>` per P3557R2.
 
 ## R10
 
@@ -2739,8 +2739,6 @@ namespace std::execution {
 template <>
 struct @_impls-for_@<spawn_future_t> : @_default-impls_@ {
     static constexpr auto @_start_@ = @_see below_@;
-
-    // TODO: add @_check-types_@
 };
 
 }
@@ -3146,8 +3144,6 @@ struct @_impls-for_@<@_join-t_@>: @_default-impls_@ {
 
     static constexpr auto @_start_@ =
         [](auto& s, auto&) noexcept { @_see-below_@; };
-
-    // TODO: add @_check-types_@
 };
 ```
 
