@@ -34,6 +34,7 @@ Changes
 - Update wording section to formalize the definition of _`stop-when`_ and reword `spawn_future` and
   `counting_scope::token::wrap` in terms of it.
 - Add _`check-types`_ to `@_impls-for_@::<associate_t>` per P3557R2.
+- Fix noexcept clause in `@_join-t@_` in scopes
 
 ## R10
 
@@ -3081,17 +3082,17 @@ which happens after a call to `s.close()` returns `false`.
 [5]{.pnum} The exposition-only class template `@_impls-for_@` ([exec.snd.general]{.sref}) is specialized for
 `@_join-t_@` as follows:
 
-```
+```cpp
 template <>
 struct @_impls-for_@<@_join-t_@>: @_default-impls_@ {
-    template <class Receiver>
+    template <class Rcvr>
     struct @_state_@ {  // @_exposition only_@
         simple_counting_scope* @_scope_@; // @_exposition only_@
-        remove_cvref_t<Receiver>& @_receiver_@; // @_exposition only_@
+        remove_cvref_t<Rcvr>& @_receiver_@; // @_exposition only_@
         using @_op_t_@ = decltype(connect(schedule(get_scheduler(get_env(receiver))), receiver)); // @_exposition only_@
         @_op_t_@ @_op_@; // @_exposition only_@
 
-        @_state_@(simple_counting_scope* scope, Receiver& receiver) // @_exposition only_@
+        @_state_@(simple_counting_scope* scope, Rcvr& receiver) // @_exposition only_@
           : @_scope_@(scope),
             @_receiver_@(receiver),
             @_op_@(connect(schedule(get_scheduler(get_env(receiver))), receiver)) {}
@@ -3105,11 +3106,11 @@ struct @_impls-for_@<@_join-t_@>: @_default-impls_@ {
         }
     };
 
-    // TODO: review why this is noexcept(false)
     static constexpr auto @_get-state_@ =
-        []<class Receiver>(auto&& sender, Receiver& receiver) noexcept(false) {
+        []<class Rcvr>(auto&& sender, Rcvr& receiver)
+                noexcept(@_nothrow_callable_@<connect_t, decltype(schedule(get_scheduler(get_env(receiver)))), Rcvr>) {
             auto[_, self] = sender;
-            return @_state_@<Receiver>(self, receiver);
+            return @_state_@<Rcvr>(self, receiver);
         };
 
     static constexpr auto @_start_@ =
@@ -3159,7 +3160,7 @@ __Counting Scope [exec.counting.scope]__
 
 __General [exec.counting.general]__
 
-```
+```cpp
 class counting_scope {
 public:
     // [exec.counting.token], token
@@ -3260,17 +3261,17 @@ happens after a call to `s.close()` returns `false`.
 [5]{.pnum} The exposition-only class template `@_impls-for_@` ([exec.snd.general]{.sref}) is specialized for
 `@_join-t_@` as follows:
 
-```
+```cpp
 template <>
 struct @_impls-for_@<@_join-t_@>: @_default-impls_@ {
-    template <class Receiver>
+    template <class Rcvr>
     struct @_state_@ {  // @_exposition only_@
         counting_scope* @_scope_@; // @_exposition only_@
-        remove_cvref_t<Receiver>& @_receiver_@; // @_exposition only_@
+        remove_cvref_t<Rcvr>& @_receiver_@; // @_exposition only_@
         using @_op_t_@ = decltype(connect(schedule(get_scheduler(get_env(receiver))), receiver)); // @_exposition only_@
         @_op_t_@ @_op_@; // @_exposition only_@
 
-        @_state_@(counting_scope* scope, Receiver& receiver) // @_exposition only_@
+        @_state_@(counting_scope* scope, Rcvr& receiver) // @_exposition only_@
           : @_scope_@(scope),
             @_receiver_@(receiver),
             @_op_@(connect(schedule(get_scheduler(get_env(receiver))), receiver)) {}
@@ -3284,11 +3285,11 @@ struct @_impls-for_@<@_join-t_@>: @_default-impls_@ {
         }
     };
 
-    // TODO: review why this is noexcept(false)
     static constexpr auto @_get-state_@ =
-        []<class Receiver>(auto&& sender, Receiver& receiver) noexcept(false) {
+        []<class Rcvr>(auto&& sender, Rcvr& receiver)
+                noexcept(@_nothrow_callable_@<connect_t, decltype(schedule(get_scheduler(get_env(receiver)))), Rcvr>) {
             auto[_, self] = sender;
-            return @_state_@<Receiver>(self, receiver);
+            return @_state_@<Rcvr>(self, receiver);
         };
 
     static constexpr auto @_start_@ =
