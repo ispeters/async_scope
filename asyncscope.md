@@ -30,7 +30,28 @@ Changes
 
 ## R11
 
-- Rename `async_scope_token` to `scope_token` and `nest` to `associate` per P3685R0 and P3706R0.
+- Rename `async_scope_token` to `scope_token` (per [@P3685R0]) and `nest` to `associate` ([@P3706R0]) which was decided
+  on LEWG telecon. The taken polls:
+
+  POLL: Apply the changes proposed in “P3685R0: Rename async_scope_token” on “P3149R10: async_scope – Creating scopes for
+  non-sequential concurrency” and send it back to LWG for C++26.
+
+  +---+---+---+---+---+
+  |SF |F  |N  |A  |SA |
+  +==:+==:+==:+==:+==:+
+  |8  |6  |1  |0  |0  |
+  +---+---+---+---+---+
+
+  POLL: Rename “nest” to “associate” as proposed in “P3706R0: Rename join and nest in async_scope proposal” on
+  “P3149R10: async_scope – Creating scopes for non-sequential concurrency” (but do not rename “join”) and send it back to
+  LWG for C++26.
+
+  +---+---+---+---+---+
+  |SF |F  |N  |A  |SA |
+  +==:+==:+==:+==:+==:+
+  |1  |8  |5  |0  |0  |
+  +---+---+---+---+---+
+
 - Update wording section to formalize the definition of _`stop-when`_ and reword `spawn_future` and
   `counting_scope::token::wrap` in terms of it.
 - Add _`check-types`_ to `@_impls-for_@::<associate_t>` per P3557R2.
@@ -79,12 +100,6 @@ Changes
   |4  |5  |0  |0  |0  |
   +---+---+---+---+---+
 
-  Attendance: 20 (IP) +  7 (R)
-
-  Author’s Position: SF
-
-  Outcome: Consensus in favor
-
   POLL: When the operation completes immediately, schedule instead of completing inline.
 
   +---+---+---+---+---+
@@ -93,12 +108,6 @@ Changes
   |0  |0  |0  |8  |3  |
   +---+---+---+---+---+
 
-  Attendance: 20 (IP) +  7 (R)
-
-  Author’s Position: A
-
-  Outcome: Strong consensus against
-
   POLL: When the operation completes asynchronously, complete inline instead of scheduling.
 
   +---+---+---+---+---+
@@ -106,12 +115,6 @@ Changes
   +==:+==:+==:+==:+==:+
   |1  |2  |1  |7  |0  |
   +---+---+---+---+---+
-
-  Attendance: 20 (IP) +  7 (R)
-
-  Author’s Position: A
-
-  Outcome: Consensus against.
 
 - Update wording to reflect LEWG requested changes before forwarding to LWG for review as captured in the poll below:
 
@@ -122,12 +125,6 @@ Changes
   +==:+==:+==:+==:+==:+
   |7  |5  |0  |0  |0  |
   +---+---+---+---+---+
-
-  Attendance: X (IP) +  X (R)
-
-  Author’s Position: SF
-
-  Outcome: Consensus in favor
 
 ## R8
 
@@ -145,18 +142,6 @@ Changes
   |5  |7  |1  |15 |2  |
   +---+---+---+---+---+
 
-  Attendance: [not recorded]
-
-  \# of Authors: 2
-
-  Authors' position: 2x A
-
-  Outcome: No consensus for change
-
-  SF: We don't have any copy ctor in the whole standard library that fails by silently not performing a copy.
-
-  SA: If we're not going to say this is a valid use of a copy ctor then we're saying this room doesn't believe in RAII.
-
   POLL: Modify the spelling of the copy constructor of "async_scope_association" concept, without changing the copy
   constructor of "nest".
 
@@ -165,14 +150,6 @@ Changes
   +==:+==:+==:+==:+==:+
   |1  |6  |2  |1  |2  |
   +---+---+---+---+---+
-
-  Attendance: 30 IP + 6 (19 IP)
-
-  \# of Authors: 2
-
-  Author's Position: F + F
-
-  Outcome: Consensus in favor
 
   SA: I was not permitted to ask questions about the poll
 - Update the words of power regarding how various parts of the proposed types interact with the C++ memory model.
@@ -246,16 +223,6 @@ The room took the following two straw polls:
    |10 |2  |3  |1  |1  |
    +---+---+---+---+---+
 
-   Attendance: 21 in-person + 10 remote
-
-   \# of Authors: 2
-
-   Authors' position: 2x SF
-
-   Outcome: Consensus in favor
-
-   SA: I'm SA because I don't think async scope needs to protect memory allocations or resources, it's fine for this not
-   to be a capability and I think adding this capability will add complexity, and that'll mean it doesn't make C++26.
 2. In P3149R5 strike option 2 from 6.5.2 (option 2 would prevent spawn from supporting allocators)
 
    +---+---+---+---+---+
@@ -263,16 +230,6 @@ The room took the following two straw polls:
    +==:+==:+==:+==:+==:+
    |8  |4  |2  |2  |0  |
    +---+---+---+---+---+
-
-   Attendance: 21 in-person + 10 remote
-
-   \# of Authors: 2
-
-   Authors' position: 2x SF
-
-   Outcome: Consensus in favor
-
-   WA: As someone who was weakly against I'm not ready to rule out this possibility yet.
 
 Ultimately, the authors chose option 4, leading to revision 6 of the paper changing from this:
 
@@ -347,10 +304,6 @@ with `nest()`, `spawn()`, and `spawn_future()` all being expressed in terms of t
   > +==:+==:+==:+==:+==:+
   > |10 |14 |2  |0  |1  |
   > +---+---+---+---+---+
-  > Consensus
-  >
-  > SA: we are moving something without wide implementation experience, the version with experience has cancellation of
-  > scopes
 
 - Add a fourth state to `counting_scope` so that it can be used as a data-member safely
 
@@ -1218,7 +1171,7 @@ failure.  Returning `false` will generally lead to algorithms that operate on to
 that completes immediately with `set_stopped()`, leading to rejected work being discarded as a "no-op". Throwing an
 exception will generally lead to that exception escaping from the calling algorithm.
 
-The `disassociate()` member function removes a previously-established assocation with the scope. `disassociate()` must
+The `disassociate()` member function removes a previously-established association with the scope. `disassociate()` must
 be called exactly once for every call to `try_associate()` that returns `true`; it is undefined behaviour to do
 otherwise.
 
@@ -1564,7 +1517,7 @@ class simple_counting_scope {
 };
 ```
 
-A `simple_counting_scope` maintains a count of outstanding operations and goes through several states durings its
+A `simple_counting_scope` maintains a count of outstanding operations and goes through several states during its
 lifetime:
 
 - unused
@@ -1658,12 +1611,12 @@ three member functions: `wrap(sender auto&& s`), `try_associate()`, and `disasso
 - `try_associate()` attempts to create a new association with the `simple_counting_scope` and will return `true` when
   successful, or `false`. The requirements for `try_associate()`'s success are outlined below:
   1. While a scope is in the unused, open, or open-and-joining state, calls to `token.try_associate()` succeeds by
-     incrementing the scope's count of oustanding operations before returning `true`.
+     incrementing the scope's count of outstanding operations before returning `true`.
   2. While a scope is in the closed, unused-and-closed, closed-and-joining, or joined state, calls to
      `token.try_associate()` will return `false` and _will not_ increment the scope's count of outstanding operations.
 
 When a token's `try_associate()` returns `true`, the caller is responsible for undoing the association by invoking
-`disassociate()`, which will decrement the scope's count of oustanding operations.
+`disassociate()`, which will decrement the scope's count of outstanding operations.
 
 - When a scope is in the open-and-joining or closed-and-joining state and a call to `disassociate()` undoes the final
   scope association, the scope moves to the joined state and the outstanding join-sender completes.
@@ -1675,7 +1628,7 @@ enough to ensure that there are no attempts to use `res` after its lifetime ends
 - all senders that refer to `res` are associated with `scope`; and
 - `scope` is destroyed (and therefore in the joined, unused, or unused-and-closed state) before `res` is destroyed.
 
-It is safe to destroy a scope in the unused or unusued-and-closed state because there can't be any work referring to the
+It is safe to destroy a scope in the unused or unused-and-closed state because there can't be any work referring to the
 resources protected by the scope.
 
 A `simple_counting_scope` is uncopyable and immovable so its copy and move operators are explicitly deleted.
@@ -2103,6 +2056,8 @@ to give useful error messages for invalid invocations.
 alternatives: `task_pool_ref`, `task_pool_token`, `task_group_ref`, `sender_group_ref`, `task_group_token`,
 `sender_group_token`, don't name it and leave it as _`exposition-only`_
 
+The `scope_token` name was chosen on LEWG telecon as proposed by [@P3685R0] paper. See [R11](#r11) for more information.
+
 ## `associate()`
 
 This provides a way to build a sender that is associated with a "scope", which is a type that implements and enforces
@@ -2113,6 +2068,8 @@ It would be good for the name to indicate that it is a simple operation (insert,
 allocation, which `associate()` does not do).
 
 alternatives: `wrap()`, `attach()`, `track()`, `add()`, `associate()`
+
+The `associate` name was chosen on LEWG telecon as proposed by [@P3706R0] paper. See [R11](#r11) for more information.
 
 ## `spawn()`
 
@@ -2170,6 +2127,9 @@ less-than-ideal in C++, and there is some real risk that users will write deadlo
 should have a name that conveys danger.
 
 alternatives: `complete()`, `close()`
+
+The `join` name was chosen on LEWG telecon. The suggestions proposed by [@P3706R0] paper were rejected. See [R11](#r11)
+for more information.
 
 Specification
 ============
