@@ -33,8 +33,8 @@ Changes
 - Rename `async_scope_token` to `scope_token` (per [@P3685R0]) and `nest` to `associate` ([@P3706R0]) which was decided
   on LEWG telecon. The taken polls:
 
-  POLL: Apply the changes proposed in “P3685R0: Rename async_scope_token” on “P3149R10: async_scope – Creating scopes for
-  non-sequential concurrency” and send it back to LWG for C++26.
+  POLL: Apply the changes proposed in “P3685R0: Rename async_scope_token” on “P3149R10: async_scope – Creating scopes
+  for non-sequential concurrency” and send it back to LWG for C++26.
 
   +---+---+---+---+---+
   |SF |F  |N  |A  |SA |
@@ -43,8 +43,8 @@ Changes
   +---+---+---+---+---+
 
   POLL: Rename “nest” to “associate” as proposed in “P3706R0: Rename join and nest in async_scope proposal” on
-  “P3149R10: async_scope – Creating scopes for non-sequential concurrency” (but do not rename “join”) and send it back to
-  LWG for C++26.
+  “P3149R10: async_scope – Creating scopes for non-sequential concurrency” (but do not rename “join”) and send it back
+  to LWG for C++26.
 
   +---+---+---+---+---+
   |SF |F  |N  |A  |SA |
@@ -1240,8 +1240,8 @@ An associated associate-sender has many properties of an RAII handle:
 - moving an instance into another transfers ownership of the resource from the source to the destination
 - etc.
 
-Copying an associate-sender is possible if the sender it is wrapping is copyable but the copying process is a bit unusual
-because of the `scope_token` it contains. If the sender, `snd`, provided to `associate()` is copyable then the
+Copying an associate-sender is possible if the sender it is wrapping is copyable but the copying process is a bit
+unusual because of the `scope_token` it contains. If the sender, `snd`, provided to `associate()` is copyable then the
 resulting associate-sender is also copyable, with the following rules:
 
 - copying an unassociated associate-sender invariably produces a new unassociated associate-sender; and
@@ -1278,9 +1278,9 @@ _`operation-state`_'s destructor.
 Note: the timing of when an associated _`operation-state`_ ends its association with the scope is chosen to avoid
 exposing user code to dangling references. Scopes are expected to serve as mechanisms for signaling when it is safe to
 destroy shared resources being protected by the scope. Ending any given association with a scope may lead to that scope
-signaling that the protected resources can be destroyed so an associate-sender's _`operation-state`_ must not permit that
-signal to be sent until the _`operation-state`_ is definitely finished accessing the shared resources, which is at the
-end of the _`operation-state`_'s destructor.
+signaling that the protected resources can be destroyed so an associate-sender's _`operation-state`_ must not permit
+that signal to be sent until the _`operation-state`_ is definitely finished accessing the shared resources, which is at
+the end of the _`operation-state`_'s destructor.
 
 A call to `associate()` does not start the given sender and is not expected to incur allocations.
 
@@ -2483,11 +2483,10 @@ TODO: define "_`future-sender`_ type" for this section to mean the sender that i
 success, eagerly starts the input sender; the return value is a sender that, when connected and started, completes with
 either the result of the eagerly-started input sender or with `set_stopped` if the input sender was not started.
 
-[2]{.pnum} The name `spawn_future` denotes a customization point object. The expression `spawn_future(sndr, token)` is
-expression-equivalent to `spawn_future(sndr, token, env<>{})`. For subexpressions `sndr`, `token`, and `env`, let `Sndr`
-be `decltype((sndr))`, let `Token` be `decltype((token))`, and let `Env` be `decltype((env))`. If `sender<Sndr>`,
-`scope_token<Token>`, or `@_queryable_@<Env>` returns `false`, the expression `spawn_future(sndr, token, env)` is
-ill-formed.
+[2]{.pnum} The name `spawn_future` denotes a customization point object.  For subexpressions `sndr`, `token`, and `env`,
+let `Sndr` be `decltype((sndr))`, let `Token` be `decltype((token))`, and let `Env` be `decltype((env))`. If
+`sender<Sndr>`, `scope_token<Token>`, or `@_queryable_@<Env>` returns `false`, the expression
+`spawn_future(sndr, token, env)` is ill-formed.
 
 [3]{.pnum} Let _`spawn-future-state-base`_ be the exposition-only class template defined below:
 
@@ -2563,26 +2562,17 @@ private:
 }
 ```
 
-[6]{.pnum} For the expression `spawn_future(sndr, token, env)` let `newSender` be the expression `token.wrap(sndr)`
-and let `alloc` and `senv` be defined as follows:
-
-- if the expression `get_allocator(env)` is well defined, then `alloc` is the result of `get_allocator(env)` and `senv`
-  is the expression `env`;
-- otherwise, if the expression `get_allocator(get_env(newSender))` is well-defined, then `alloc` is the result of
-  `get_allocator(get_env(newSender))` and `senv` is the expression `@_JOIN-ENV_@(prop(get_allocator, alloc), env)`;
-- otherwise, `alloc` is `std::allocator<void>{}` and `senv` is the expression `env`.
-
-[7]{.pnum} Let `ssource_t` be an unspecified type that models _`stoppable-source`_ and let `ssource` be an lvalue of
-type `ssource_t`. Let `stoken_t` be `decltype(ssource.get_token())`. Let _`future-spawned-sender`_ be the following
+[6]{.pnum} Let _`ssource-t`_ be an unspecified type that models _`stoppable-source`_ and let `ssource` be an lvalue of
+type _`ssource-t`_. Let _`stoken-t`_ be `decltype(ssource.get_token())`. Let _`future-spawned-sender`_ be the following
 alias template:
 
 ```cpp
 template <sender Sender, class Env>
 using @_future-spawned-sender_@ = // @_exposition only_@
-    decltype(write_env(@_stop-when_@(declval<Sender>(), declval<stoken_t>()), declval<Env>()));
+    decltype(write_env(@_stop-when_@(declval<Sender>(), declval<@_stoken-t_@>()), declval<Env>()));
 ```
 
-[8]{.pnum} Let _`spawn-future-state`_ be the exposition-only
+[7]{.pnum} Let _`spawn-future-state`_ be the exposition-only
 class template defined below:
 
 ```cpp
@@ -2620,7 +2610,7 @@ private:
         typename allocator_traits<Alloc>::template rebind_alloc<@_spawn-future-state_@>;
 
     @_alloc-t_@ @_alloc_@;                                                       // @_exposition only_@
-    ssource_t @_ssource_@;                                                   // @_exposition only_@
+    @_ssource-t_@ @_ssource_@;                                                   // @_exposition only_@
     @_op-t_@ @_op_@;                                                             // @_exposition only_@
     Token @_token_@;                                                         // @_exposition only_@
     bool @_associated_@ = false;                                             // @_exposition only_@
@@ -2633,7 +2623,7 @@ private:
 
 `void @_complete_@() noexcept;`
 
-[9]{.pnum} _Effects_:
+[8]{.pnum} _Effects_:
 
 - No effects if the invocation of _`complete`_ happens-before an invocation of _`consume`_ or _`abandon`_;
 - otherwise, if an invocation of _`consume`_ happened-before this invocation of _`complete`_ then there is a receiver,
@@ -2643,7 +2633,7 @@ private:
 
 `void @_consume_@(receiver auto& rcvr) noexcept;`
 
-[10]{.pnum} _Effects_:
+[9]{.pnum} _Effects_:
 
 - If the invocation of _`consume`_ happens-before an invocation of _`complete`_ then `rcvr` is registered to be
   completed when _`complete`_ is invoked;
@@ -2660,7 +2650,7 @@ private:
 
 `void @_abandon_@() noexcept;`
 
-[11]{.pnum} _Effects_:
+[10]{.pnum} _Effects_:
 
 - If the invocation of _`abandon`_ happens-before an invocation of _`complete`_ then equivalent to:
   ```cpp
@@ -2671,7 +2661,7 @@ private:
 
 `void @_destroy_@() noexcept;`
 
-[12]{.pnum} _Effects_: Equivalent to:
+[11]{.pnum} _Effects_: Equivalent to:
 ```cpp
     auto token = std::move(this->@_token_@);
     auto associated = this->@_associated_@;
@@ -2687,7 +2677,7 @@ private:
         token.disassociate();
 ```
 
-[13]{.pnum} The exposition-only class template _`impls-for`_ ([exec.snd.general]) is specialized for `spawn_future_t` as
+[12]{.pnum} The exposition-only class template _`impls-for`_ ([exec.snd.general]) is specialized for `spawn_future_t` as
 follows:
 ```cpp
 namespace std::execution {
@@ -2700,7 +2690,7 @@ struct @_impls-for_@<spawn_future_t> : @_default-impls_@ {
 }
 ```
 
-[14]{.pnum} The member `@_impls-fors_@<spawn_future_t>::@_start_@` is initialized with a callable object equivalent to
+[13]{.pnum} The member `@_impls-fors_@<spawn_future_t>::@_start_@` is initialized with a callable object equivalent to
 the following lambda:
 ```cpp
 [](auto& state, auto& rcvr) noexcept -> void {
@@ -2708,40 +2698,26 @@ the following lambda:
 }
 ```
 
-[15]{.pnum} Then the expression `spawn_future(sndr, token, env)` is expression-equivalent to the following:
-```cpp
-    // TODO: consider rewriting this in prose
+[14]{.pnum} For the expression `spawn_future(sndr, token, env)` let `new_sender` be the expression `token.wrap(sndr)`
+and let `alloc` and `senv` be defined as follows:
 
-    auto makeSender = [&] -> decltype(auto) {
-        return token.wrap(std::forward<Sender>(sndr));
-    };
+- if the expression `get_allocator(env)` is well defined, then `alloc` is the result of `get_allocator(env)` and `senv`
+  is the expression `env`;
+- otherwise, if the expression `get_allocator(get_env(new_sender))` is well-defined, then `alloc` is the result of
+  `get_allocator(get_env(new_sender))` and `senv` is the expression `@_JOIN-ENV_@(prop(get_allocator, alloc), env)`;
+- otherwise, `alloc` is `std::allocator<void>{}` and `senv` is the expression `env`.
 
-    using @_sender-t_@ = decltype(makeSender());
+[15]{.pnum} The expression `spawn_future(sndr, token, env)` has the following effects:
 
-    using @_state-t_@ = @_spawn-future-state_@<decltype(alloc), Token, @_sender-t_@, decltype(senv)>;
-    using @_alloc-t_@ = typename allocator_traits<decltype(alloc)>::template rebind_alloc<@_state-t_@>;
-    using @_traits-t_@ = allocator_traits<@_alloc-t_@>;
+- [15.1]{.pnum} Uses `alloc` to allocate and construct an object `s` of a specialization of  _`spawn-future-state`_ from
+  `alloc`, `token.wrap(std::forward<Sender>(sndr))`, `token`, and `senv`, and an object `u` of a type that is a
+  specialization of `unique_ptr` such that:
+  - `u.get()` is equal to the address of `s`, and
+  - `u.get_deleter()(u.release())` is equivalent to `u.release()->@_abandon_@()`
 
-    @_alloc-t_@ stateAlloc{alloc};
-    auto* op = @_traits-t_@::allocate(stateAlloc, 1);
+  and returns `@_make-sender_@(spawn_future, u)`. If an exception is thrown then the expression has no effect.
 
-    try {
-        @_traits-t_@::construct(stateAlloc, op, alloc, makeSender(), token, senv);
-    }
-    catch(...) {
-        @_traits-t_@::deallocate(stateAlloc, op, 1);
-        throw;
-    }
-
-    struct deleter {
-        void operator()(@_state-t_@ p) noexcept {
-             if (p)
-                 p->@_abandon_@();
-        }
-    };
-
-    return @_make-sender_@(spawn_future, unique_ptr<@_state-t_@, deleter>{op});
-```
+[16]{.pnum} The expression `spawn_future(sndr, token)` is expression-equivalent to `spawn_future(sndr, token, env<>{})`.
 
 :::
 
@@ -2851,40 +2827,23 @@ private:
     allocator_traits<@_alloc-t_@>::deallocate(alloc, this, 1);
 ```
 
-[10]{.pnum} For the expression `spawn(sndr, token, env)` let _`new-sender`_ be the expression `token.wrap(sndr)` and let
+[10]{.pnum} For the expression `spawn(sndr, token, env)` let `new_sender` be the expression `token.wrap(sndr)` and let
 `alloc` and `senv` be defined as follows:
 
 - if the expression `get_allocator(env)` is well defined, then `alloc` is the result of `get_allocator(env)` and `senv`
   is the expression `env`,
-- otherwise if the expression `get_allocator(get_env(@_new-sender_@))` is well-defined, then `alloc` is the result of
-  `get_allocator(get_env(@_new-sender_@))` and `senv` is the expression
-  `@_JOIN-ENV_@(env, prop(get_allocator, alloc))`
+- otherwise if the expression `get_allocator(get_env(new_sender))` is well-defined, then `alloc` is the result of
+  `get_allocator(get_env(new_sender))` and `senv` is the expression `@_JOIN-ENV_@(env, prop(get_allocator, alloc))`
 - otherwise `alloc` is `std::allocator<void>{}` and `senv` is the expression `env`
 
-[11]{.pnum} Then the expression `spawn(sndr, token)` is expression-equivalent to `spawn(sndr, token, env<>{})` and
-the expression `spawn(sndr, token, env)` is expression-equivalent to the following:
-```
-    auto makeSender = [&] {
-        return write_env(@_token_@.wrap(std::forward<Sender>(sndr)), senv);
-    };
+[11]{.pnum} The expression `spawn(sndr, token, env)` has the following effects:
 
-    using @_sender-t_@ = decltype(makeSender());
+- [11.1]{.pnum} Uses `alloc` to allocate and construct an object of a specialization of _`spawn-state`_ from `alloc`,
+  `write_env(token.wrap(std::forward<Sender>(sndr)), senv)`, and `token`. If an exception is thrown then the expression
+  has no effect.
 
-    using @_state-t_@ = @_spawn-state_@<decltype(alloc), Token, @_sender-t_@>;
-    using @_alloc-t_@ = typename allocator_traits<decltype(alloc)>::template rebind_alloc<@_state-t_@>;
-    using @_traits-t_@ = allocator_traits<@_alloc-t_@>;
+[12]{.pnum} The expression `spawn(sndr, token)` is expression-equivalent to `spawn(sndr, token, env<>{})`.
 
-    @_alloc-t_@ stateAlloc{alloc};
-    auto* op = @_traits-t_@::allocate(stateAlloc, 1);
-
-    try {
-        @_traits-t_@::construct(stateAlloc, op, alloc, makeSender(), @_token_@);
-    }
-    catch(...) {
-        @_traits-t_@::deallocate(stateAlloc, op, 1);
-        throw;
-    }
-```
 :::
 
 ## Async scope utilities
@@ -3068,7 +3027,7 @@ struct @_impls-for_@<@_join-t_@>: @_default-impls_@ {
 
     static constexpr auto @_get-state_@ =
         []<class Rcvr>(auto&& sender, Rcvr& receiver)
-                noexcept(@_nothrow_callable_@<connect_t, decltype(schedule(get_scheduler(get_env(receiver)))), Rcvr>) {
+                noexcept(@_nothrow-callable_@<connect_t, decltype(schedule(get_scheduler(get_env(receiver)))), Rcvr>) {
             auto[_, self] = sender;
             return @_state_@<Rcvr>(self, receiver);
         };
@@ -3247,7 +3206,7 @@ struct @_impls-for_@<@_join-t_@>: @_default-impls_@ {
 
     static constexpr auto @_get-state_@ =
         []<class Rcvr>(auto&& sender, Rcvr& receiver)
-                noexcept(@_nothrow_callable_@<connect_t, decltype(schedule(get_scheduler(get_env(receiver)))), Rcvr>) {
+                noexcept(@_nothrow-callable_@<connect_t, decltype(schedule(get_scheduler(get_env(receiver)))), Rcvr>) {
             auto[_, self] = sender;
             return @_state_@<Rcvr>(self, receiver);
         };
