@@ -2463,10 +2463,19 @@ __Exposition-only `execution::@_stop-when_@` [exec.stop.when]__
 [3]{.pnum} Otherwise, if `decltype((token))` models `unstoppable_token` then `@_stop-when_@(sndr, token)` is
 expression-equivalent to `sndr`.
 
-[4]{.pnum} Otherwise, the expression `@_stop-when_@(sndr, token)` produces a sender, `osndr`, such that, when `osnd` is
-connected to a receiver, `r`, the resulting _`operation-state`_, `opstate`, behaves the same as connecting the original
-sender, `sndr`, to `r`, except that `opstate` will receive a stop request when either the token returned from
-`get_stop_token(get_env(r))` receives a stop request or when `token` receives a stop request.
+[4]{.pnum} Otherwise, `@_stop-when_@(sndr, token)` returns a sender, `osndr`. When `osndr` is connected to a receiver,
+`r`, let `rtoken` be the result of `get_stop_token(get_env(r))`.
+
+- [4.1]{.pnum} If `rtoken` models `unstoppable_token` then `osndr` is equivalent to
+  `write_env(sndr, prop(get_stop_token, token))`.
+- [4.2]{.pnum} Otherwise, `osndr` is equivalent to `write_env(sndr, prop(get_stop_token, stoken))` where `stoken` is an
+  instance of an exposition-only type _`stoken-t`_ that models `stoppable_token` such that:
+    - `stoken.stop_requested()` returns `token.stop_requested() || rtoken.stop_requested()`;
+    - `stoken.stop_possible()` returns `token.stop_possible() || rtoken.stop_possible()`; and
+    - let `Token` be `decltype((token))`, `RToken` be `decltype((rtoken))`, then for all types `Fn` and `Init` such that
+      `Token::callback_type<Fn>` models `@_stoppable-callback-for_@<Fn, Token, Init>` and `RToken::callback_type<Fn>`
+      models `@_stoppable-callback-for_@<Fn, RToken, Init>` then `@_stoken-t_@::callback_type<Fn>` models
+      `@_stoppable-callback-for_@<Fn, @_stoken-t_@, Init>`.
 
 :::
 
