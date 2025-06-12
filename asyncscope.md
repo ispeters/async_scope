@@ -2486,8 +2486,6 @@ Add the following as a new subsection immediately after __[exec.stop.when]__:
 ::: add
 __`std::execution::spawn_future` [exec.spawn.future]__
 
-TODO: define "_`future-sender`_ type" for this section to mean the sender that is returned
-
 [1]{.pnum} `spawn_future` attempts to associate the given input sender with the given token's async scope and, on
 success, eagerly starts the input sender; the return value is a sender that, when connected and started, completes with
 either the result of the eagerly-started input sender or with `set_stopped` if the input sender was not started.
@@ -2521,9 +2519,10 @@ signature `Tag(Args...)` into the tuple specialization `@_decayed-tuple_@<Tag, A
 
 - [4.1]{.pnum} If `is_nothrow_constructible_v<decay_t<Arg>, Arg>` is `true` for every type `Arg` in every parameter pack
   `Args` in every completion signature `Tag(Args...)` in `Sigs` then _`variant_t`_ denotes the type
-  `variant<monostate, @_as-tuple_@<Sigs>...>`, except with duplicates removed.
+  `variant<monostate, tuple<set_stopped_t>, @_as-tuple_@<Sigs>...>`, except with duplicates removed.
 - [4.2]{.pnum} Otherwise _`variant_t`_ denotes the type
-  `variant<monostate, tuple<set_error_t, exception_ptr>, @_as-tuple_@<Sigs>...>`, except with duplicates removed.
+  `variant<monostate, tuple<set_stopped_t>, tuple<set_error_t, exception_ptr>, @_as-tuple_@<Sigs>...>`, except with
+  duplicates removed.
 
 [5]{.pnum} Let _`spawn-future-receiver`_ be an exposition-only class template defined below:
 
