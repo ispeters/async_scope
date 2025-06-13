@@ -2461,21 +2461,20 @@ __Exposition-only `execution::@_stop-when_@` [exec.stop.when]__
 `@_stop-when_@(sndr, token)` is ill-formed.
 
 [3]{.pnum} Otherwise, if `decltype((token))` models `unstoppable_token` then `@_stop-when_@(sndr, token)` is
-expression-equivalent to `sndr`.
+expression-equivalent to `sndr`. Otherwise, `@_stop-when_@(sndr, token)` returns a sender, `osndr`. When `osndr` is
+connected to a receiver, `r`, let `rtoken` be the result of `get_stop_token(get_env(r))`.
 
-[4]{.pnum} Otherwise, `@_stop-when_@(sndr, token)` returns a sender, `osndr`. When `osndr` is connected to a receiver,
-`r`, let `rtoken` be the result of `get_stop_token(get_env(r))`.
-
-- [4.1]{.pnum} If `rtoken` models `unstoppable_token` then `osndr` is equivalent to
+- [3.1]{.pnum} If `rtoken` models `unstoppable_token` then `osndr` is equivalent to
   `write_env(sndr, prop(get_stop_token, token))`.
-- [4.2]{.pnum} Otherwise, `osndr` is equivalent to `write_env(sndr, prop(get_stop_token, stoken))` where `stoken` is an
+- [3.2]{.pnum} Otherwise, `osndr` is equivalent to `write_env(sndr, prop(get_stop_token, stoken))` where `stoken` is an
   instance of an exposition-only type _`stoken-t`_ that models `stoppable_token` such that:
     - `stoken.stop_requested()` returns `token.stop_requested() || rtoken.stop_requested()`;
     - `stoken.stop_possible()` returns `token.stop_possible() || rtoken.stop_possible()`; and
-    - let `Token` be `decltype((token))`, `RToken` be `decltype((rtoken))`, then for all types `Fn` and `Init` such that
-      `Token::callback_type<Fn>` models `@_stoppable-callback-for_@<Fn, Token, Init>` and `RToken::callback_type<Fn>`
-      models `@_stoppable-callback-for_@<Fn, RToken, Init>` then `@_stoken-t_@::callback_type<Fn>` models
-      `@_stoppable-callback-for_@<Fn, @_stoken-t_@, Init>`.
+    - for types `Fn` and `Init` such that both `invocable<Fn>` and `constructible_from<Fn, Init>` are modelled,
+      `@_stoken-t_@::callback_type<Fn>` models `@_stoppable-callback-for_@<Fn, @_stoken-t_@, Init>`. [For an object `fn`
+      of type `Fn` constructed from a value, `init`, of type `Init`, registering `fn` using
+      `@_stoken-t_@::callback_type<Fn>(stoken, init)` results in an invocation of `fn` when a callback registered with
+      `token` or `rtoken` would be invoked. `fn` is invoked at most once.]{.note}
 
 :::
 
@@ -2633,25 +2632,28 @@ private:
 
 [8]{.pnum} _Effects_:
 
-- No effects if the invocation of _`complete`_ happens-before an invocation of _`consume`_ or _`abandon`_;
-- otherwise, if an invocation of _`consume`_ happened-before this invocation of _`complete`_ then there is a receiver,
+TODO: rewrite this and related paragraphs with a _Synchronization_ block because we can't order function invocations
+with "happens before".
+
+- No effects if the invocation of _`complete`_ happens before an invocation of _`consume`_ or _`abandon`_;
+- otherwise, if an invocation of _`consume`_ happens before this invocation of _`complete`_ then there is a receiver,
   `rcvr`, registered and that receiver is completed as if by `@_consume_@(rcvr)`;
-- otherwise, an invocation of _`abandon`_ happened-before this invocation of _`complete`_ and `@_destroy_@()`
+- otherwise, an invocation of _`abandon`_ happens before this invocation of _`complete`_, `@_destroy_@()`
   is invoked.
 
 `void @_consume_@(receiver auto& rcvr) noexcept;`
 
 [9]{.pnum} _Effects_:
 
-- If the invocation of _`consume`_ happens-before an invocation of _`complete`_ then `rcvr` is registered to be
+- If the invocation of _`consume`_ happens before an invocation of _`complete`_ then `rcvr` is registered to be
   completed when _`complete`_ is invoked;
 - otherwise, `rcvr` is completed as if by:
   ```cpp
-  std::move(this->@_result_@).visit([&rcvr](auto&& tuplish) noexcept {
-     if constexpr (!same_as<remove_reference_t<decltype(tuplish)>, monostate>) {
+  std::move(this->@_result_@).visit([&rcvr](auto&& tuple) noexcept {
+     if constexpr (!same_as<remove_reference_t<decltype(tuple)>, monostate>) {
          apply([&rcvr](auto cpo, auto&&... vals) {
              cpo(std::move(rcvr), std::move(vals)...);
-         }, std::move(tuplish));
+         }, std::move(tuple));
      }
   });
   ```
@@ -2660,7 +2662,7 @@ private:
 
 [10]{.pnum} _Effects_:
 
-- If the invocation of _`abandon`_ happens-before an invocation of _`complete`_ then equivalent to:
+- If the invocation of _`abandon`_ happens before an invocation of _`complete`_ then equivalent to:
   ```cpp
   @_ssource_@.request_stop();
   ```
@@ -2671,18 +2673,18 @@ private:
 
 [11]{.pnum} _Effects_: Equivalent to:
 ```cpp
-    auto token = std::move(this->@_token_@);
-    auto associated = this->@_associated_@;
+auto token = std::move(this->@_token_@);
+bool associated = this->@_associated_@;
 
-    {
-        auto alloc = std::move(this->@_alloc_@);
+{
+    auto alloc = std::move(this->@_alloc_@);
 
-        allocator_traits<@_alloc-t_@>::destroy(alloc, this);
-        allocator_traits<@_alloc-t_@>::deallocate(alloc, this, 1);
-    }
+    allocator_traits<@_alloc-t_@>::destroy(alloc, this);
+    allocator_traits<@_alloc-t_@>::deallocate(alloc, this, 1);
+}
 
-    if (associated)
-        token.disassociate();
+if (associated)
+    token.disassociate();
 ```
 
 [12]{.pnum} The exposition-only class template _`impls-for`_ ([exec.snd.general]) is specialized for `spawn_future_t` as
