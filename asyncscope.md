@@ -33,8 +33,8 @@ Changes
 - Rename `async_scope_token` to `scope_token` (per [@P3685R0]) and `nest` to `associate` ([@P3706R0]) which was decided
   on LEWG telecon. The taken polls:
 
-  POLL: Apply the changes proposed in “P3685R0: Rename async_scope_token” on “P3149R10: async_scope – Creating scopes
-  for non-sequential concurrency” and send it back to LWG for C++26.
+  POLL: Apply the changes proposed in "P3685R0: Rename async_scope_token" on "P3149R10: async_scope – Creating scopes
+  for non-sequential concurrency" and send it back to LWG for C++26.
 
   +---+---+---+---+---+
   |SF |F  |N  |A  |SA |
@@ -42,8 +42,8 @@ Changes
   |8  |6  |1  |0  |0  |
   +---+---+---+---+---+
 
-  POLL: Rename “nest” to “associate” as proposed in “P3706R0: Rename join and nest in async_scope proposal” on
-  “P3149R10: async_scope – Creating scopes for non-sequential concurrency” (but do not rename “join”) and send it back
+  POLL: Rename "nest" to "associate" as proposed in "P3706R0: Rename join and nest in async_scope proposal" on
+  "P3149R10: async_scope – Creating scopes for non-sequential concurrency" (but do not rename "join") and send it back
   to LWG for C++26.
 
   +---+---+---+---+---+
@@ -439,9 +439,9 @@ scoped work to a new scheduler).
 
 We learned that making each component own a distinct responsibility will minimize the confusion and increase the
 structured concurrency adoption rate. The above example was an intuitive use of async_scope because the concept of a
-“scoped executor” was familiar to many engineers and is a popular async pattern in other programming languages.
+"scoped executor" was familiar to many engineers and is a popular async pattern in other programming languages.
 However, the above design abstracted away some of the APIs in async_scope that explicitly asked for a scheduler, which
-would have helped challenge the assumption engineers made about async_scope being an instance of a “scoped executor”.
+would have helped challenge the assumption engineers made about async_scope being an instance of a "scoped executor".
 
 Cancellation was an unfamiliar topic for engineers within the context of asynchronous programming. The
 `v1::async_scope` provided both `cleanup()` and `complete()` to give engineers the freedom to decide between canceling
