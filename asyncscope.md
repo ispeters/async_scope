@@ -2273,7 +2273,7 @@ template <scope_token Token, sender Sender>
 }
 ```
 
-[3]{.pnum} For an _`associate-data`_ object, `a`, `a.@_sndr_@.has_value()` is `true` if and only if an association was
+[3]{.pnum} For an _`associate-data`_ object `a`, `a.@_sndr_@.has_value()` is `true` if and only if an association was
 successfully made and is owned by `a`.
 
 ```c++
@@ -2286,7 +2286,7 @@ successfully made and is owned by `a`.
 
 [5]{.pnum} _Effects:_ Value-initializes _`sndr`_ and initializes _`token`_ with `other.@_token_@`. If
 `other.@_sndr_@.has_value()` is `false`, no further effects; otherwise, calls `@_token_@.try_associate()` and, if that
-returns `true`, calls `@_sndr_@.emplace(other.@_sndr_@)` and, if that exits with an exception, calls
+returns `true`, calls `@_sndr_@.emplace(*other.@_sndr_@)` and, if that exits with an exception, calls
 `@_token_@.disassociate()` before propagating the exception.
 
 ```c++
@@ -2311,21 +2311,16 @@ optional<pair<Token, @_wrap-sender_@>> release() && noexcept(is_nothrow_move_con
 value; otherwise returns an `optional` containing a value of type `pair<Token, @_wrap-sender_@>` as if by:
 
 ```c++
-using deleter = decltype([](auto* p) {
-    if (uncaught_exceptions() == 0)
-        p->reset();
-});
-
-unique_ptr<decltype(@_sndr_@), deleter> guard(addressof(@_sndr_@));
-
 return optional(pair(@_token_@, std::move(*@_sndr_@)));
 ```
 
-[9]{.pnum} The name `associate` denotes a pipeable sender adaptor object. For subexpressions `sndr` and `token`, if
-`decltype((sndr))` does not satisfy `sender`, or `decltype((token))` does not satisfy `scope_token`, then
-`associate(sndr, token)` is ill-formed.
+[9]{.pnum} _Postconditions:_ _`sndr`_ does not contain a value.
 
-[10]{.pnum} Otherwise, the expression `associate(sndr, token)` is expression-equivalent to:
+[10]{.pnum} The name `associate` denotes a pipeable sender adaptor object. For subexpressions `sndr` and `token`, if
+`decltype((sndr))` does not satisfy `sender`, or `remove_cvref_t<decltype((token))>` does not satisfy `scope_token`,
+then `associate(sndr, token)` is ill-formed.
+
+[11]{.pnum} Otherwise, the expression `associate(sndr, token)` is expression-equivalent to:
 
 ```
 transform_sender(@_get-domain-early_@(sndr), @_make-sender_@(associate, @_associate-data_@(token, sndr)))
@@ -2333,7 +2328,7 @@ transform_sender(@_get-domain-early_@(sndr), @_make-sender_@(associate, @_associ
 
 except that `sndr` is evaluated only once.
 
-[11]{.pnum} The exposition-only class template _`impls-for`_ ([exec.snd.general]{.sref}) is specialized for
+[12]{.pnum} The exposition-only class template _`impls-for`_ ([exec.snd.general]{.sref}) is specialized for
 `associate_t` as follows:
 
 ```cpp
@@ -2347,7 +2342,7 @@ struct @_impls-for_@<associate_t> : @_default-impls_@ {
 
     template<class Sndr, class... Env>
     static consteval void @_check-types_@() {
-        using associate_data_t = decltype(declval<Sndr>().template get<1>());
+        using associate_data_t = remove_cvref_t<@_data-type_@<Sndr>>;
         using child_type_t = typename associate_data_t::@_wrap-sender_@;
         (void)get_completion_signatures<child_type_t, @_FWD-ENV-T_@(Env)...>();
     }
@@ -2356,7 +2351,7 @@ struct @_impls-for_@<associate_t> : @_default-impls_@ {
 }
 ```
 
-[12]{.pnum} The member `@_impls-for_@<associate_t>::@_get-state_@` is initialized with a callable object equivalent to
+[13]{.pnum} The member `@_impls-for_@<associate_t>::@_get-state_@` is initialized with a callable object equivalent to
 the following lambda:
 ```cpp
 []<class Sndr, class Rcvr>(Sndr&& sndr, Rcvr& rcvr) noexcept(/* @_see below_@ */) {
@@ -2375,7 +2370,7 @@ the following lambda:
             struct {
                 scope_token @_token_@; // @_exposition only_@
                 op_t @_op_@;           // @_exposition only_@
-            };
+            } @_assoc_@;               // @_exposition only_@
         };
 
         explicit op_state(Rcvr& r) noexcept
@@ -2383,11 +2378,10 @@ the following lambda:
 
         explicit op_state(scope_token tkn, wrap_sender&& sndr, Rcvr& r) try
             : @_associated_@(true),
-              @_token_@(std::move(tkn)),
-              @_op_@(connect(std::move(sndr), std::move(r))) {
+              @_assoc_@(tkn, connect(std::move(sndr), std::move(r))) {
         }
         catch (...) {
-            @_token_@.disassociate();
+            tkn.disassociate();
             throw;
         }
 
@@ -2395,15 +2389,15 @@ the following lambda:
 
         ~op_state() {
             if (@_associated_@) {
-                @_op_@.~op_t();
-                @_token_@.disassociate();
-                @_token_@.~scope_token();
+                @_assoc_@.@_op_@.~op_t();
+                @_assoc_@.@_token_@.disassociate();
+                @_assoc_@.@_token_@.~scope_token();
             }
         }
 
         void @_run_@() noexcept {    // @_exposition only_@
             if (@_associated_@)
-                start(@_op_@);
+                start(@_assoc_@.@_op_@);
             else
                 set_stopped(std::move(*@_rcvr_@));
         }
@@ -2416,7 +2410,7 @@ the following lambda:
 }
 ```
 
-[13]{.pnum} The expression in the `noexcept` clause of `@_impls-for_@<associate_t>::@_get-state_@` is
+[14]{.pnum} The expression in the `noexcept` clause of `@_impls-for_@<associate_t>::@_get-state_@` is
 
 ```cpp
     is_nothrow_constructible_v<remove_cvref_t<Sndr>, Sndr> &&
@@ -2424,9 +2418,9 @@ the following lambda:
     @_nothrow-callable_@<connect_t, @_wrap-sender_@, Rcvr>
 ```
 
-where _`wrap-sender`_ is the type `remove_cvref_t<decltype(declval<Sndr>().template get<1>())>::@_wrap-sender_@.`
+where _`wrap-sender`_ is the type `remove_cvref_t<@_data-type_@<Sndr>>::@_wrap-sender_@.`
 
-[14]{.pnum} The member `@_impls-for_@<associate_t>::@_start_@` is initialized with a callable object equivalent to the
+[15]{.pnum} The member `@_impls-for_@<associate_t>::@_start_@` is initialized with a callable object equivalent to the
 following lambda:
 ```cpp
 [](auto& state, auto&) noexcept -> void {
@@ -2434,7 +2428,7 @@ following lambda:
 }
 ```
 
-[15]{.pnum} The evaluation of `associate(sndr, token)` may cause side effects observable via `token`'s associated async
+[16]{.pnum} The evaluation of `associate(sndr, token)` may cause side effects observable via `token`'s associated async
 scope object.
 
 :::
@@ -2446,25 +2440,27 @@ Add the following as a new subsection immediately after __[exec.associate]__:
 ::: add
 __Exposition-only `execution::@_stop-when_@` [exec.stop.when]__
 
-[1]{.pnum} _`stop-when`_ fuses an additional stop token, `token`, into a sender so that, once connected to a receiver,
-`r`, the resulting operation state receives stop requests from both `token` and the token returned from
+[1]{.pnum} _`stop-when`_ fuses an additional stop token `t` into a sender so that, upon connecting to a receiver `r`,
+the resulting operation state receives stop requests from both `t` and the token returned from
 `get_stop_token(get_env(r))`.
 
 [2]{.pnum} The name _`stop-when`_ denotes an exposition-only sender adaptor. For subexpressions `sndr` and `token`, if
-`decltype((sndr))` does not satisfy `sender`, or `decltype((token))` does not satisfy `stoppable_token`, then
-`@_stop-when_@(sndr, token)` is ill-formed.
+`decltype((sndr))` does not satisfy `sender`, or `remove_cvref_t<decltype((token))>` does not satisfy `stoppable_token`,
+then `@_stop-when_@(sndr, token)` is ill-formed.
 
-[3]{.pnum} Otherwise, if `decltype((token))` models `unstoppable_token` then `@_stop-when_@(sndr, token)` is
-expression-equivalent to `sndr`. Otherwise, `@_stop-when_@(sndr, token)` returns a sender, `osndr`. When `osndr` is
-connected to a receiver, `r`, let `rtoken` be the result of `get_stop_token(get_env(r))`.
+[3]{.pnum} Otherwise, if `remove_cvref_t<decltype((token))>` models `unstoppable_token` then
+`@_stop-when_@(sndr, token)` is expression-equivalent to `sndr`. Otherwise, `@_stop-when_@(sndr, token)` returns a
+sender `osndr`. If `osndr` is connected to a receiver `r`, let `rtoken` be the result of `get_stop_token(get_env(r))`.
 
-- [3.1]{.pnum} If `rtoken` models `unstoppable_token` then `osndr` is equivalent to
-  `write_env(sndr, prop(get_stop_token, token))`.
-- [3.2]{.pnum} Otherwise, `osndr` is equivalent to `write_env(sndr, prop(get_stop_token, stoken))` where `stoken` is an
-  instance of an exposition-only type _`stoken-t`_ that models `stoppable_token` such that:
+- [3.1]{.pnum} If the type of `rtoken` models `unstoppable_token` then the effects of connecting `osndr` to `r` are
+  equivalent to `connect(write_env(sndr, prop(get_stop_token, token)), r)`.
+- [3.2]{.pnum} Otherwise, the effects of connecting `osndr` to `r` are equivalent to
+  `connect(write_env(sndr, prop(get_stop_token, stoken)), r)` where `stoken` is an object of an exposition-only type
+  _`stoken-t`_ such that:
+    - _`stoken-t`_ models `stoppable_token`;
     - `stoken.stop_requested()` returns `token.stop_requested() || rtoken.stop_requested()`;
     - `stoken.stop_possible()` returns `token.stop_possible() || rtoken.stop_possible()`; and
-    - for types `Fn` and `Init` such that both `invocable<Fn>` and `constructible_from<Fn, Init>` are modelled,
+    - for types `Fn` and `Init` such that both `invocable<Fn>` and `constructible_from<Fn, Init>` are modeled,
       `@_stoken-t_@::callback_type<Fn>` models `@_stoppable-callback-for_@<Fn, @_stoken-t_@, Init>`. [For an object `fn`
       of type `Fn` constructed from a value, `init`, of type `Init`, registering `fn` using
       `@_stoken-t_@::callback_type<Fn>(stoken, init)` results in an invocation of `fn` when a callback registered with
@@ -2484,11 +2480,11 @@ success, eagerly starts the input sender; the return value is a sender that, whe
 either the result of the eagerly-started input sender or with `set_stopped` if the input sender was not started.
 
 [2]{.pnum} The name `spawn_future` denotes a customization point object.  For subexpressions `sndr`, `token`, and `env`,
-let `Sndr` be `decltype((sndr))`, let `Token` be `decltype((token))`, and let `Env` be `decltype((env))`. If
-`sender<Sndr>`, `scope_token<Token>`, or `@_queryable_@<Env>` returns `false`, the expression
-`spawn_future(sndr, token, env)` is ill-formed.
+let `Sndr` be `decltype((sndr))`, let `Token` be `remove_cvref_t<decltype((token))>`, and let `Env` be
+`remove_cvref_t<decltype((env))>`. If any of `sender<Sndr>`, `scope_token<Token>`, or `@_queryable_@<Env>` are not
+satisfied, the expression `spawn_future(sndr, token, env)` is ill-formed.
 
-[3]{.pnum} Let _`spawn-future-state-base`_ be the exposition-only class template defined below:
+[3]{.pnum} Let _`spawn-future-state-base`_ be the exposition-only class template:
 
 ```cpp
 namespace std::execution {
@@ -2512,12 +2508,12 @@ signature `Tag(Args...)` into the tuple specialization `@_decayed-tuple_@<Tag, A
 
 - [4.1]{.pnum} If `is_nothrow_constructible_v<decay_t<Arg>, Arg>` is `true` for every type `Arg` in every parameter pack
   `Args` in every completion signature `Tag(Args...)` in `Sigs` then _`variant_t`_ denotes the type
-  `variant<monostate, tuple<set_stopped_t>, @_as-tuple_@<Sigs>...>`, except with duplicates removed.
+  `variant<monostate, tuple<set_stopped_t>, @_as-tuple_@<Sigs>...>`, except with duplicate types removed.
 - [4.2]{.pnum} Otherwise _`variant_t`_ denotes the type
   `variant<monostate, tuple<set_stopped_t>, tuple<set_error_t, exception_ptr>, @_as-tuple_@<Sigs>...>`, except with
-  duplicates removed.
+  duplicate types removed.
 
-[5]{.pnum} Let _`spawn-future-receiver`_ be an exposition-only class template defined below:
+[5]{.pnum} Let _`spawn-future-receiver`_ be an exposition-only class template:
 
 ```cpp
 namespace std::execution {
@@ -2564,8 +2560,8 @@ private:
 ```
 
 [6]{.pnum} Let _`ssource-t`_ be an unspecified type that models _`stoppable-source`_ and let `ssource` be an lvalue of
-type _`ssource-t`_. Let _`stoken-t`_ be `decltype(ssource.get_token())`. Let _`future-spawned-sender`_ be the following
-alias template:
+type _`ssource-t`_. Let _`stoken-t`_ be `decltype(ssource.get_token())`. Let _`future-spawned-sender`_ be the alias
+template:
 
 ```cpp
 template <sender Sender, class Env>
@@ -2573,8 +2569,7 @@ using @_future-spawned-sender_@ = // @_exposition only_@
     decltype(write_env(@_stop-when_@(declval<Sender>(), declval<@_stoken-t_@>()), declval<Env>()));
 ```
 
-[7]{.pnum} Let _`spawn-future-state`_ be the exposition-only
-class template defined below:
+[7]{.pnum} Let _`spawn-future-state`_ be the exposition-only class template:
 
 ```cpp
 namespace std::execution {
@@ -2593,13 +2588,13 @@ struct @_spawn-future-state_@                                                // 
         : @_alloc_@(std::move(alloc)),
           @_op_@(connect(
               write_env(@_stop-when_@(std::forward<Sender>(sndr), @_ssource_@.get_token()), std::move(env)),
-              @_receiver-t_@{this})),
+              @_receiver-t_@(this))),
           @_token_@(std::move(token)),
           @_associated_@(@_token_@.try_associate()) {
         if (@_associated_@)
             start(@_op_@);
         else
-            set_stopped(@_receiver-t_@{this});
+            set_stopped(@_receiver-t_@(this));
     }
 
     void @_complete_@() noexcept override;                                   // @_exposition only_@
@@ -2614,7 +2609,7 @@ private:
     @_ssource-t_@ @_ssource_@;                                                   // @_exposition only_@
     @_op-t_@ @_op_@;                                                             // @_exposition only_@
     Token @_token_@;                                                         // @_exposition only_@
-    bool @_associated_@ = false;                                             // @_exposition only_@
+    bool @_associated_@;                                                     // @_exposition only_@
 
     void @_destroy_@() noexcept;                                             // @_exposition only_@
 };
@@ -2622,27 +2617,25 @@ private:
 }
 ```
 
-[8]{.pnum} _`spawn-future-state`_ provides _`complete`_, _`consume`_, and _`abandon`_ operations, as described below.
-For purposes of determining the existence of a data race, these behave as atomic operations
-([intro.multithread]{.sref}). The _`complete`_, _`consume`_, and _`abandon`_ operations on a single instance of
-_`spawn-future-state`_ appear to occur in a single total order.
+[8]{.pnum} For purposes of determining the existence of a data race, _`complete`_, _`consume`_, and _`abandon`_ behave
+as atomic operations ([intro.multithread]{.sref}). These operations on a single object of a type that is a
+specialization of _`spawn-future-state`_ appear to occur in a single total order.
 
 `void @_complete_@() noexcept;`
 
 [9]{.pnum} _Effects_:
 
-- No effects if the invocation of _`complete`_ happens before an invocation of _`consume`_ or _`abandon`_;
-- otherwise, if an invocation of _`consume`_ happens before this invocation of _`complete`_ then there is a receiver,
-  `rcvr`, registered and that receiver is completed as if by `@_consume_@(rcvr)`;
-- otherwise, an invocation of _`abandon`_ happens before this invocation of _`complete`_, `@_destroy_@()`
-  is invoked.
+- No effects if this invocation of _`complete`_ happens before an invocation of _`consume`_ or _`abandon`_ on `*this`;
+- otherwise, if an invocation of _`consume`_ on `*this` happens before this invocation of _`complete`_ then there is a
+  receiver, `rcvr`, registered and that receiver is completed as if by `@_consume_@(rcvr)`;
+- otherwise, `@_destroy_@` is invoked.
 
 `void @_consume_@(receiver auto& rcvr) noexcept;`
 
 [10]{.pnum} _Effects_:
 
-- If the invocation of _`consume`_ happens before an invocation of _`complete`_ then `rcvr` is registered to be
-  completed when _`complete`_ is invoked;
+- If this invocation of _`consume`_ happens before an invocation of _`complete`_ on `*this` then `rcvr` is registered to
+  be completed when _`complete`_ is subsequently invoked on `*this`;
 - otherwise, `rcvr` is completed as if by:
   ```cpp
   std::move(this->@_result_@).visit([&rcvr](auto&& tuple) noexcept {
@@ -2658,12 +2651,12 @@ _`spawn-future-state`_ appear to occur in a single total order.
 
 [11]{.pnum} _Effects_:
 
-- If the invocation of _`abandon`_ happens before an invocation of _`complete`_ then equivalent to:
+- If this invocation of _`abandon`_ happens before an invocation of _`complete`_ on `*this` then equivalent to:
   ```cpp
   @_ssource_@.request_stop();
   ```
 
-- otherwise `@_destroy_@()` is invoked.
+- otherwise, `@_destroy_@` is invoked.
 
 `void @_destroy_@() noexcept;`
 
@@ -2690,7 +2683,7 @@ namespace std::execution {
 
 template <>
 struct @_impls-for_@<spawn_future_t> : @_default-impls_@ {
-    static constexpr auto @_start_@ = @_see below_@;
+    static constexpr auto @_start_@ = @_see below_@; // @_exposition only_@
 };
 
 }
@@ -2707,23 +2700,25 @@ the following lambda:
 [15]{.pnum} For the expression `spawn_future(sndr, token, env)` let `new_sender` be the expression `token.wrap(sndr)`
 and let `alloc` and `senv` be defined as follows:
 
-- if the expression `get_allocator(env)` is well defined, then `alloc` is the result of `get_allocator(env)` and `senv`
+- if the expression `get_allocator(env)` is well-formed, then `alloc` is the result of `get_allocator(env)` and `senv`
   is the expression `env`;
-- otherwise, if the expression `get_allocator(get_env(new_sender))` is well-defined, then `alloc` is the result of
+- otherwise, if the expression `get_allocator(get_env(new_sender))` is well-formed, then `alloc` is the result of
   `get_allocator(get_env(new_sender))` and `senv` is the expression `@_JOIN-ENV_@(prop(get_allocator, alloc), env)`;
-- otherwise, `alloc` is `std::allocator<void>{}` and `senv` is the expression `env`.
+- otherwise, `alloc` is `allocator<void>()` and `senv` is the expression `env`.
 
 [16]{.pnum} The expression `spawn_future(sndr, token, env)` has the following effects:
 
-- [15.1]{.pnum} Uses `alloc` to allocate and construct an object `s` of a specialization of  _`spawn-future-state`_ from
-  `alloc`, `token.wrap(std::forward<Sender>(sndr))`, `token`, and `senv`, and an object `u` of a type that is a
-  specialization of `unique_ptr` such that:
+- [16.1]{.pnum} Uses `alloc` to allocate and construct an object `s` of a type that is a specialization of
+  _`spawn-future-state`_ from `alloc`, `token.wrap(sndr)`, `token`, and `senv`. If an exception is thrown then any
+  constructed objects are destroyed and any allocated memory is deallocated.
+- [16.2]{.pnum} Constructs an object `u` of a type that is a specialization of `unique_ptr` such that:
   - `u.get()` is equal to the address of `s`, and
-  - `u.get_deleter()(u.release())` is equivalent to `u.release()->@_abandon_@()`
+  - `u.get_deleter()(u.release())` is equivalent to `u.release()->@_abandon_@()`.
+- [16.3]{.pnum} Returns `@_make-sender_@(spawn_future, std::move(u))`.
 
-  and returns `@_make-sender_@(spawn_future, u)`. If an exception is thrown then the expression has no effect.
 
-[17]{.pnum} The expression `spawn_future(sndr, token)` is expression-equivalent to `spawn_future(sndr, token, env<>{})`.
+[17]{.pnum} The expression `spawn_future(sndr, token)` is expression-equivalent to
+`spawn_future(sndr, token, execution::env<>())`.
 
 :::
 
@@ -2738,10 +2733,10 @@ __`std::execution::spawn` [exec.spawn]__
 eagerly starts the input sender.
 
 [2]{.pnum} The name `spawn` denotes a customization point object. For subexpressions `sndr`, `token`, and `env`, let
-`Sndr` be `decltype((sndr))`, let `Token` be `decltype((token))`, and let `Env` be `decltype((env))`. If `sender<Sndr>`
-or `scope_token<Token>` returns `false`, the expression `spawn(sndr, token, env)` is ill-formed.
+`Sndr` be `decltype((sndr))`, let `Token` be `remove_cvref_t<decltype((token))>`, and let `Env` be `decltype((env))`. If
+`sender<Sndr>` or `scope_token<Token>` returns `false`, the expression `spawn(sndr, token, env)` is ill-formed.
 
-[3]{.pnum} Let _`spawn-state-base`_ be an exposition only class defined below:
+[3]{.pnum} Let _`spawn-state-base`_ be an exposition only class:
 
 ```cpp
 namespace std::execution {
@@ -2753,7 +2748,7 @@ struct @_spawn-state-base_@ {                 // @_exposition only_@
 }
 ```
 
-[4]{.pnum} Let _`spawn-receiver`_ be an exposition only class defined below:
+[4]{.pnum} Let _`spawn-receiver`_ be an exposition only class:
 
 ```cpp
 namespace std::execution {
@@ -2891,9 +2886,9 @@ concept scope_token =
 [3]{.pnum} `scope_token<Token>` is modeled only if `Token`'s copy operations, move operations, and `disassociate`
 member function does not exit with an exception.
 
-[4]{.pnum} Let `token` be an expression, and let `Token` be `decltype((token))`. `Token` models `scope_token` only
-if, for all expressions `sndr` whose type models `sender`, `token.wrap(sndr)` is a valid expression whose type models
-`sender` and whose advertised completion signatures are the same as those advertised by `sndr`.
+[4]{.pnum} Let `token` be an expression, and let `Token` be `remove_cvref_t<decltype((token))>`. `Token` models
+`scope_token` only if, for all expressions `sndr` whose type models `sender`, `token.wrap(sndr)` is a valid expression
+whose type models `sender` and whose advertised completion signatures are the same as those advertised by `sndr`.
 
 :::
 
