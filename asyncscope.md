@@ -2234,6 +2234,19 @@ To the `<execution>` synopsis [execution.syn]{.sref}, make the following additio
 > }
 > ```
 
+## The `std::terminate` function [except.terminate]{.sref}
+
+To the note 1 paragraph 1 of [except.terminate]{.sref}, add the following bullet point at the end:
+
+- [1.16]{.pnum} when `unhandled_stopped` is called on a `with_awaitable_senders<T>` object
+  ([exec.with.awaitable.senders]{.sref}) whose continuation is not a handle to a coroutine whose promise type has an
+  `unhandled_stopped` member function.
+
+::: add
+- [1.?]{.pnum} when an object `scope` of type `simple_counting_scope` or `counting_scope` is destroyed and
+  `scope.@_state_@` is not equal to _`joined`_, _`unused`_, or _`unused-and-closed`_ ([exec.simple.counting.ctor]).
+::::
+
 ## `execution::associate`
 
 Add the following as a new subsection at the end of [exec.adapt]{.sref}:
