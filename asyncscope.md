@@ -2907,10 +2907,10 @@ concept scope_token =
 
 [3]{.pnum} A type `Token` models `scope_token` only if:
 
-- no exceptions are thrown from copy construction, move construction, copy assignment, or move assignment of objects of
-  type `Token`; and
-- given an lvalue `token` of type (possibly `const`) `Token`, for all expressions `sndr` such that `decltype((sndr))`
-  models `sender`:
+- [3.1]{.pnum} no exceptions are thrown from copy construction, move construction, copy assignment, or move assignment
+  of objects of type `Token`; and
+- [3.2]{.pnum} given an lvalue `token` of type (possibly `const`) `Token`, for all expressions `sndr` such that
+  `decltype((sndr))` models `sender`:
    - `token.wrap(sndr)` is a valid expression,
    - `decltype(token.wrap(sndr))` models `sender`, and
    - `completion_signatures_of_t<decltype(token.wrap(sndr)), E>` contains the same completion signatures as
