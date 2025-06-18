@@ -320,8 +320,8 @@ with `nest()`, `spawn()`, and `spawn_future()` all being expressed in terms of t
 Introduction
 ============
 
-[@P2300R10] lays the groundwork for writing structured concurrent programs in C++ but it leaves three important scenarios
-under- or unaddressed:
+[@P2300R10] lays the groundwork for writing structured concurrent programs in C++ but it leaves three important
+scenarios under- or unaddressed:
 
 1. progressively structuring an existing, unstructured concurrent program;
 2. starting a dynamic number of parallel tasks without "losing track" of them; and
@@ -2290,23 +2290,17 @@ successfully made and is owned by `a`.
 returns `true`, calls `@_sndr_@.emplace(*other.@_sndr_@)` and, if that exits with an exception, calls
 `@_token_@.disassociate()` before propagating the exception.
 
-```c++
-@_associate-data_@(@_associate-data_@&& other) noexcept(is_nothrow_move_constructible_v<@_wrap-sender_@>);
-```
+`@_associate-data_@(@_associate-data_@&& other) noexcept(is_nothrow_move_constructible_v<@_wrap-sender_@>);`
 
 [6]{.pnum} _Effects:_ Initializes _`sndr`_ with `std::move(other.@_sndr_@)` and initializes _`token`_ with
 `std::move(other.@_token_@)` and then calls `other.@_sndr_@.reset()`.
 
-```c++
-~@_associate-data_@();
-```
+`~@_associate-data_@();`
 
 [7]{.pnum} _Effects:_ If `@_sndr_@.has_value()` returns `false` then no effect; otherwise, invokes `@_sndr_@.reset()`
 before invoking `@_token_@.disassociate()`.
 
-```c++
-optional<pair<Token, @_wrap-sender_@>> release() && noexcept(is_nothrow_move_constructible_v<@_wrap-sender_@>);
-```
+`optional<pair<Token, @_wrap-sender_@>> release() && noexcept(is_nothrow_move_constructible_v<@_wrap-sender_@>);`
 
 [8]{.pnum} _Effects:_ If `@_sndr_@.has_value()` returns `false` then returns an `optional` that does not contain a
 value; otherwise returns an `optional` containing a value of type `pair<Token, @_wrap-sender_@>` as if by:
@@ -2813,7 +2807,7 @@ private:
         @_destroy_@();
 ```
 
-`void @_complete_@() override;`
+`void @_complete_@() noexcept override;`
 
 [8]{.pnum} _Effects:_ Equivalent to:
 
@@ -2922,38 +2916,42 @@ __General [exec.counting.scopes.general]__
 - `jsndr` be a sender obtained from `scope.join()`, and
 - `op` be an operation state obtained from connecting `jsndr` to a receiver.
 
-During its lifetime `scope` goes through different states which govern what operations are allowed and the result of these
-operations:
+During its lifetime `scope` goes through different states which govern what operations are allowed and the result of
+these operations:
 
 - [1.1]{.pnum} `@_unused_@`: a newly constructed object starts in the `@_unused_@` state.
-- [1.2]{.pnum} `@_open_@`: when `tkn.try_associate()` is called while `scope` is in the `@_unused_@` state, `scope` moves to
-  the `@_open_@` state.
-- [1.3]{.pnum} `@_open-and-joining_@`: when the operation state `op` is started while the `scope` is in the `@_unused_@` or
-  `@_open_@` state, `scope` moves to the `@_open-and-joining_@` state.
-- [1.4]{.pnum} `@_closed_@`: when `scope.close()` is called while `scope` is in the `@_open_@` state, `scope` moves to the `@_closed_@`
-  state.
-- [1.5]{.pnum} `@_unused-and-closed_@`: when `scope.close()` is called while `scope` is in the `@_unused_@` state, `scope` moves to the
-  `@_unused-and-closed_@` state.
-- [1.6]{.pnum} `@_closed-and-joining_@`: when `scope.close()` is called while `scope` is in the `@_open-and-joining_@` state or the
-  operation state `op` is started while `scope` is in the `@_closed_@` or `@_unused-and-closed_@` state, `scope` moves to the
-  `@_closed-and-joining_@` state.
-- [1.7]{.pnum} `@_joined_@`: when the count of associated objects drops to zero while `scope` is in the `@_open-and-joining_@`
-  or `@_closed-and-joining_@` state, `scope` moves to the `@_joined_@` state.
+- [1.2]{.pnum} `@_open_@`: when `tkn.try_associate()` is called while `scope` is in the `@_unused_@` state, `scope`
+  moves to the `@_open_@` state.
+- [1.3]{.pnum} `@_open-and-joining_@`: when the operation state `op` is started while the `scope` is in the `@_unused_@`
+  or `@_open_@` state, `scope` moves to the `@_open-and-joining_@` state.
+- [1.4]{.pnum} `@_closed_@`: when `scope.close()` is called while `scope` is in the `@_open_@` state, `scope` moves to
+  the `@_closed_@` state.
+- [1.5]{.pnum} `@_unused-and-closed_@`: when `scope.close()` is called while `scope` is in the `@_unused_@` state,
+  `scope` moves to the `@_unused-and-closed_@` state.
+- [1.6]{.pnum} `@_closed-and-joining_@`: when `scope.close()` is called while `scope` is in the `@_open-and-joining_@`
+  state or the operation state `op` is started while `scope` is in the `@_closed_@` or `@_unused-and-closed_@` state,
+  `scope` moves to the `@_closed-and-joining_@` state.
+- [1.7]{.pnum} `@_joined_@`: when the count of associated objects drops to zero while `scope` is in the
+  `@_open-and-joining_@` or `@_closed-and-joining_@` state, `scope` moves to the `@_joined_@` state.
 
-[2]{.pnum} _Recommended practice_: For `simple_counting_scope` and `counting_scope`, implementations should store the state and the count of associated objects in a single member of type `size_t`.
+TODO: paragraph 1 refers to "counts of outstanding operations" and paragraph 2 refers to "count of associated objects";
+should they be consistent?
+
+[2]{.pnum} _Recommended practice_: For `simple_counting_scope` and `counting_scope`, implementations should store the
+state and the count of associated objects in a single member of type `size_t`.
 
 [3]{.pnum} Subclause [exec.counting.scopes] makes use of the following exposition-only entities:
 ```cpp
-struct @_scope-join-t_@ {};           // @_exposition only_@
+struct @_scope-join-t_@ {}; // @_exposition only_@
 
-enum @_scope-state-type_@ {           // @_exposition only_@
-    @_unused_@,                       // @_exposition only_@
-    @_open_@,                         // @_exposition only_@
-    @_close_@,                        // @_exposition only_@
-    @_open-and-joining_@,             // @_exposition only_@
-    @_closed-and-joining_@,           // @_exposition only_@
-    @_unused-and-closed_@,            // @_exposition only_@
-    @_joined_@,                       // @_exposition only_@
+enum @_scope-state-type_@ { // @_exposition only_@
+    @_unused_@,             // @_exposition only_@
+    @_open_@,               // @_exposition only_@
+    @_close_@,              // @_exposition only_@
+    @_open-and-joining_@,   // @_exposition only_@
+    @_closed-and-joining_@, // @_exposition only_@
+    @_unused-and-closed_@,  // @_exposition only_@
+    @_joined_@,             // @_exposition only_@
 };
 ```
 
@@ -2964,11 +2962,11 @@ enum @_scope-state-type_@ {           // @_exposition only_@
 template <>
 struct @_impls-for_@<@_scope-join-t_@> : @_default-impls_@ {
     template <class Scope, class Rcvr>
-    struct @_state_@ {                                          // @_exposition only_@
-        struct @_rcvr-t_@ {                                     // @_exposition only_@
+    struct @_state_@ {                        // @_exposition only_@
+        struct @_rcvr-t_@ {                   // @_exposition only_@
             using receiver_concept = receiver_t;
 
-            Rcvr& @_rcvr_@;                                     // @_exposition only_@
+            Rcvr& @_rcvr_@;                   // @_exposition only_@
 
             void set_value() && noexcept {
                 execution::set_value(std::move(@_rcvr_@));
@@ -2988,26 +2986,26 @@ struct @_impls-for_@<@_scope-join-t_@> : @_default-impls_@ {
             }
         };
 
-        using @_sched-sender_@ =                                // @_exposition only_@
+        using @_sched-sender_@ =              // @_exposition only_@
             decltype(schedule(get_scheduler(get_env(declval<Rcvr&>()))));
-        using @_op-t_@ =                                        // @_exposition only_@
+        using @_op-t_@ =                      // @_exposition only_@
             connect_result_t<@_sched-sender_@, @_rcvr-t_@>;
 
-        Scope* @_scope_@;                       // @_exposition only_@
-        Rcvr& @_receiver_@;                                     // @_exposition only_@
-        @_op-t_@ @_op_@;                                            // @_exposition only_@
+        Scope* @_scope_@;                     // @_exposition only_@
+        Rcvr& @_receiver_@;                   // @_exposition only_@
+        @_op-t_@ @_op_@;                          // @_exposition only_@
 
-        @_state_@(Scope* scope, Rcvr& rcvr)     // @_exposition only_@
+        @_state_@(Scope* scope, Rcvr& rcvr)   // @_exposition only_@
             noexcept(@_nothrow-callable_@<connect_t, @_sched-sender_@, @_rcvr-t_@>)
           : @_scope_@(scope),
             @_receiver_@(rcvr),
             @_op_@(connect(schedule(get_scheduler(get_env(rcvr))), @_rcvr-t_@(rcvr))) {}
 
-        void @_complete_@() noexcept {                          // @_exposition only_@
+        void @_complete_@() noexcept {        // @_exposition only_@
             start(@_op_@);
         }
 
-        void @_complete-inline_@() noexcept {                   // @_exposition only_@
+        void @_complete-inline_@() noexcept { // @_exposition only_@
             set_value(std::move(@_receiver_@));
         }
     };
@@ -3050,19 +3048,19 @@ public:
     sender auto join() noexcept;
 
 private:
-    size_t @_count_@;                     // @_exposition only_@
-    @_scope-state-type_@ @_state_@;       // @_exposition only_@
+    size_t @_count_@;                                  // @_exposition only_@
+    @_scope-state-type_@ @_state_@;                        // @_exposition only_@
 
-    bool @_try-associate_@() noexcept;    // @_exposition only_@
-    void @_disassociate_@() noexcept;     // @_exposition only_@
+    bool @_try-associate_@() noexcept;                 // @_exposition only_@
+    void @_disassociate_@() noexcept;                  // @_exposition only_@
     template <class State>
     bool @_start-join-sender_@(State& state) noexcept; // @_exposition only_@
 };
 ```
 
 [1]{.pnum} For purposes of determining the existence of a data race, `get_token`, `close`, `join`, _`try-associate`_,
-_`disassociate`_, and _`start-join-sender`_ behave as atomic operations ([intro.multithread]{.sref}). These operations on a single object of type
-`simple_counting_scope` appear to occur in a single total order.
+_`disassociate`_, and _`start-join-sender`_ behave as atomic operations ([intro.multithread]{.sref}). These operations
+on a single object of type `simple_counting_scope` appear to occur in a single total order.
 
 __Constructor and Destructor [exec.simple.counting.ctor]__
 
@@ -3098,6 +3096,10 @@ __Members [exec.simple.counting.mem]__
 
 `bool @_try-associate_@() noexcept;`
 
+TODO: in practice, a "failed" call to _`try-associate`_ could cause a memory barrier. Is this "no effects"? Does
+specifying "no effects" require that the implied CAS loop be `std::memory_order_relaxed` on failure? Does it bar
+mutex-based implementations? Should it?
+
 [5]{.pnum} _Effects:_ If _`count`_ is equal to `max_associations`, then no effects. Otherwise, if _`state`_ is
 
 - [5.1]{.pnum} _`unused`_, then increments _`count`_ and changes _`state`_ to _`open`_;
@@ -3112,18 +3114,20 @@ __Members [exec.simple.counting.mem]__
 
 [8]{.pnum} _Effects:_ Decrements _`count`_. If _`count`_ is zero after decrementing and _`state`_ is
 _`open-and-joining`_ or _`closed-and-joining`_, changes _`state`_ to _`joined`_ and calls `@_complete_@()` on all
-objects registered with `*this`. [Calling `@_complete_@()` on any registered object can cause `*this` to get destroyed.]{.note}
+objects registered with `*this`. [Calling `@_complete_@()` on any registered object can cause `*this` to get
+destroyed.]{.note}
 
-```
-template <class State>
-bool @_start-join-sender_@(State& st) noexcept;
-```
+`template <class State>` \
+`bool @_start-join-sender_@(State& st) noexcept;`
 
 [9]{.pnum} _Effects:_ If _`state`_ is
 
-- [9.1]{.pnum} `@_unused_@`, `@_unused-and-closed_@`, or `@_joined_@`, changes _`state`_ to _`joined`_ and returns `true`;
-- [9.2]{.pnum} `@_open_@` or _`open-and-joining`_, changes _`state`_ to `@_open-and-joining_@`, registers `st` with `*this` and returns `false`;
-- [9.3]{.pnum} `@_closed_@` or _`closed-and-joining`_, changes _`state`_ to `@_closed-and-joining_@`, registers `st` with `*this` and returns `false`.
+- [9.1]{.pnum} `@_unused_@`, `@_unused-and-closed_@`, or `@_joined_@`, changes _`state`_ to _`joined`_ and returns
+  `true`;
+- [9.2]{.pnum} `@_open_@` or _`open-and-joining`_, changes _`state`_ to `@_open-and-joining_@`, registers `st` with
+  `*this` and returns `false`;
+- [9.3]{.pnum} `@_closed_@` or _`closed-and-joining`_, changes _`state`_ to `@_closed-and-joining_@`, registers `st`
+  with `*this` and returns `false`.
 
 __Token [exec.simple.counting.token]__
 ```cpp
@@ -3189,7 +3193,9 @@ private:
     bool @_start-join-sender_@(State& state) noexcept; // @_exposition only_@
 };
 ```
-[1]{.pnum} `counting_scope` differs from `simple_counting_scope` by adding support for cancellation. Unless specified below, the semantics of members of `counting_scope` are the same as the corresponding members of `simple_counting_scope`.
+[1]{.pnum} `counting_scope` differs from `simple_counting_scope` by adding support for cancellation. Unless specified
+below, the semantics of members of `counting_scope` are the same as the corresponding members of
+`simple_counting_scope`.
 
 `token get_token() noexcept;`
 
@@ -3201,8 +3207,11 @@ private:
 
 [4]{.pnum} _Remarks:_ Calls to `request_stop` do not introduce data races.
 
-`template <sender Sender>` \
-`sender auto counting_scope::token::wrap(Sender&& snd) const noexcept(is_nothrow_constructible_v<remove_cvref_t<Sender>, Sender>);`
+```cpp
+template <sender Sender>
+sender auto counting_scope::token::wrap(Sender&& snd) const
+    noexcept(is_nothrow_constructible_v<remove_cvref_t<Sender>, Sender>);
+```
 
 [5]{.pnum} _Effects:_ Equivalent to: `return @_stop-when_@(std::forward<Sender>(snd), @_scope_@->@_s_source_@.get_token());`
 :::
