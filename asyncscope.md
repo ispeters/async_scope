@@ -151,8 +151,6 @@ Changes
   +==:+==:+==:+==:+==:+
   |1  |6  |2  |1  |2  |
   +---+---+---+---+---+
-
-  SA: I was not permitted to ask questions about the poll
 - Update the words of power regarding how various parts of the proposed types interact with the C++ memory model.
 
 ## R7
@@ -329,8 +327,9 @@ scenarios under- or unaddressed:
 
 This paper describes the utilities needed to address the above scenarios within the following constraints:
 
-- _No detached work by default;_ as specified in [@P2300R9], the `start_detached` and `ensure_started` algorithms invite
-  users to start concurrent work with no built-in way to know when that work has finished.
+- _No detached work by default;_ as specified in [@P2300R9] (and removed from [@P2300R10] by [@P3187R1]), the
+  `start_detached` and `ensure_started` algorithms invite users to start concurrent work with no built-in way to know
+  when that work has finished.
   - Such so-called "detached work" is undesirable; without a way to know when detached work is done, it is difficult
     know when it is safe to destroy any resources referred to by the work. Ad hoc solutions to this shutdown problem
     add unnecessary complexity that can be avoided by ensuring all concurrent work is "attached".
@@ -439,10 +438,10 @@ and conflated too many responsibilities (scoping async work, associating work wi
 scoped work to a new scheduler).
 
 We learned that making each component own a distinct responsibility will minimize the confusion and increase the
-structured concurrency adoption rate. The above example was an intuitive use of async_scope because the concept of a
+structured concurrency adoption rate. The above example was an intuitive use of `async_scope` because the concept of a
 "scoped executor" was familiar to many engineers and is a popular async pattern in other programming languages.
-However, the above design abstracted away some of the APIs in async_scope that explicitly asked for a scheduler, which
-would have helped challenge the assumption engineers made about async_scope being an instance of a "scoped executor".
+However, the above design abstracted away some of the APIs in `async_scope` that explicitly asked for a scheduler, which
+would have helped challenge the assumption engineers made about `async_scope` being an instance of a "scoped executor".
 
 Cancellation was an unfamiliar topic for engineers within the context of asynchronous programming. The
 `v1::async_scope` provided both `cleanup()` and `complete()` to give engineers the freedom to decide between canceling
@@ -463,7 +462,7 @@ the scope’s owner. Since there is no language support to manage async lifetime
 preventing these types of deadlocks. Although this breakthrough was a result of strong guidance from experts, we
 believe that the simpler design of `v2::async_scope` would make this a little easier.
 
-We strongly believe that async_scope was necessary for making structured concurrency possible within rsys, and we
+We strongly believe that `async_scope` was necessary for making structured concurrency possible within rsys, and we
 believe that the improvements we made with `v2::async_scope` will make the adoption of P2300 more accessible.
 
 
@@ -1044,7 +1043,7 @@ adding structure to existing, unstructured code at Meta, but other useful polici
 implementation of the abstract interface to concrete token types, this paper's design leaves the set of policies open to
 extension by user code or future standards.
 
-An scope token's implementation of the `scope_token` concept:
+A scope token's implementation of the `scope_token` concept:
 
  - must allow an arbitrary sender to be wrapped without eagerly starting the sender;
  - must not add new value or error completions when wrapping a sender;
@@ -1077,13 +1076,11 @@ struct @_spawn-future-receiver_@ { // @_exposition only_@
 template <class Token>
 concept scope_token =
     copyable<Token> &&
-    requires(Token token) {
+    requires(const Token token) {
         { token.try_associate() } -> same_as<bool>;
-        { token.disassociate() } -> same_as<void>;
+        { token.disassociate() } noexcept -> same_as<void>;
+        { token.wrap(declval<@_test-sender_@>()) } -> sender_in<@_test-env_@>;
     };
-
-template <scope_token Token, sender Sender>
-using @_wrapped-sender-from_@ = decay_t<decltype(declval<Token&>().wrap(declval<Sender>()))>; // @_exposition only_@
 
 struct associate_t { @_unspecified_@ };
 struct spawn_t { @_unspecified_@ };
@@ -1098,9 +1095,9 @@ class simple_counting_scope {
         template <sender Sender>
         Sender&& wrap(Sender&& snd) const noexcept;
 
-        bool try_associate() const;
+        bool try_associate() const noexcept;
 
-        void disassociate() const;
+        void disassociate() const noexcept;
 
     private:
         simple_counting_scope* @_scope_@; // @_exposition only_@
@@ -1122,11 +1119,11 @@ class simple_counting_scope {
 class counting_scope {
     struct token {
         template <sender Sender>
-        sender auto wrap(Sender&& snd) const;
+        sender auto wrap(Sender&& snd) const noexcept(/* @_see below_@ */);
 
-        bool try_associate() const;
+        bool try_associate() const noexcept;
 
-        void disassociate() const;
+        void disassociate() const noexcept;
 
     private:
         counting_scope* @_scope_@; // @_exposition only_@
@@ -1158,7 +1155,8 @@ concept scope_token =
     copyable<Token> &&
     requires(Token token) {
         { token.try_associate() } -> same_as<bool>;
-        { token.disassociate() } -> same_as<void>;
+        { token.disassociate() } noexcept -> same_as<void>;
+        { token.wrap(declval<@_test-sender_@>()) } -> sender_in<@_test-env_@>;
     };
 ```
 
@@ -1324,7 +1322,7 @@ _`operation-state`_. The following algorithm determines which _Allocator_ to use
 1. an environment, `senv`, is chosen:
    - if `get_allocator(env)` is valid then `senv` is `env`;
    - otherwise, if `get_allocator(get_env(token.wrap(snd)))` is valid then `senv` is the expression
-     `@_JOIN-ENV_@(env, prop(get_allocator, alloc))`, where `alloc` is the chosen allocator;
+     `@_JOIN-ENV_@(prop(get_allocator, alloc), env)`, where `alloc` is the chosen allocator;
    - otherwise, `senv` is `env`.
 2. the type of the object to dynamically allocate is computed, say `op_t`; `op_t` contains
    - an _`operation-state`_;
@@ -1471,7 +1469,7 @@ eagerly-started work to complete.
 When `fsop` is started and does not receive a stop request from its receiver, `fsop` completes after the eagerly-started
 work completes with the same completion. Once `fsop` completes, it cleans up the dynamically-allocated state.
 
-`spawn_future` is similar to `ensure_started()` from [@P2300R10], but the scope may observe and participate in the
+`spawn_future` is similar to `ensure_started()` from [@P2300R9], but the scope may observe and participate in the
 lifetime of the work described by the sender. The `simple_counting_scope` and `counting_scope` described in this paper
 use this opportunity to keep a count of given senders that haven't finished, and to prevent new senders from being
 started once the scope has been closed.
@@ -1698,7 +1696,7 @@ Returns the argument unmodified.
 ### `simple_counting_scope::token::try_associate`
 
 ```cpp
-bool try_associate() const;
+bool try_associate() const noexcept;
 ```
 
 The following atomic state change is attempted on the token's scope:
@@ -1712,7 +1710,7 @@ open, or open-and-joining state; otherwise the scope's state is left unchanged a
 ### `simple_counting_scope::token::disassociate`
 
 ```cpp
-void disassociate() const;
+void disassociate() const noexcept;
 ```
 
 Decrements the associated scope's count of outstanding operations and, when the scope is in the open-and-joining or
@@ -1724,11 +1722,11 @@ closed-and-joing state, moves the scope to the joined state and signals the outs
 class counting_scope {
     struct token {
         template <sender Sender>
-        sender auto wrap(Sender&& snd);
+        sender auto wrap(Sender&& snd) const noexcept(/* @_see below_@ */);
 
-        bool try_associate() const;
+        bool try_associate() const noexcept;
 
-        void disassociate() const;
+        void disassociate() const noexcept;
 
     private:
         counting_scope* scope; // @_exposition only_@
@@ -1831,7 +1829,7 @@ void close() noexcept;
 ```
 
 Moves the scope to the closed, unused-and-closed, or closed-and-joining state. After a call to `close()`, all future
-calls to `try_associate()` return disengaged associations.
+calls to `try_associate()` return `false`.
 
 ### `counting_scope::request_stop`
 
@@ -1859,7 +1857,7 @@ scope's count of outstanding operations drops to zero, at which point the scope 
 
 ```cpp
 template <sender Sender>
-sender auto wrap(Sender&& snd);
+sender auto wrap(Sender&& snd) const noexcept(std::is_nothrow_constructible_v<std::remove_cvref_t<S>, S>);
 ```
 
 Returns a sender, `osnd`, that behaves in all ways the same as the input sender, `snd`, except that, when `osnd` is
@@ -1869,12 +1867,21 @@ _and_ the stop source in the token's `counting_scope`.
 ### `counting_scope::token::try_associate`
 
 ```cpp
-bool try_associate() const;
+bool try_associate() const noexcept;
 ```
 
 Returns `true` if the token's scope is open, and `false` if it's closed. `try_associate()`
 behaves as if its `counting_scope` owns a `simple_counting_scope`, `scope`, and the result is equivalent to the result
 of invoking `scope.get_token().try_associate()`.
+
+### `counting_scope::token::disassociate`
+
+```cpp
+void disassociate() const noexcept;
+```
+
+Decrements the associated scope's count of outstanding operations and, when the scope is in the open-and-joining or
+closed-and-joing state, moves the scope to the joined state and signals the outstanding join-sender to complete.
 
 ## When to use `counting_scope` vs [@P3296R4]'s `let_async_scope`
 
@@ -1973,7 +1980,7 @@ before destroying any resources references by that work.
 
 ## P2300's `ensure_started()`
 
-The `spawn_future()` algorithm in this paper can be used as a replacement for `ensure_started` proposed in [@P2300R10].
+The `spawn_future()` algorithm in this paper can be used as a replacement for `ensure_started` proposed in [@P2300R9].
 Essentially it does the same thing, but it also provides the given scope the opportunity to apply its bookkeeping policy
 to the given sender, which, in the case of `counting_scope`, ensures the program can wait for spawned work to complete
 before destroying any resources references by that work.
@@ -3251,13 +3258,13 @@ references:
     citation-label: "`folly::coro::AsyncScope`"
     type: header
     title: "folly::coro::AsyncScope"
-    url: https://github.com/facebook/folly/blob/main/folly/experimental/coro/AsyncScope.h
+    url: https://github.com/facebook/folly/blob/main/folly/coro/AsyncScope.h
     company: Meta Platforms, Inc
   - id: follycoro
     citation-label: "`folly::coro`"
     type: repository
     title: "folly::coro"
-    url: https://github.com/facebook/folly/tree/main/folly/experimental/coro
+    url: https://github.com/facebook/folly/tree/main/folly/coro
     company: Meta Platforms, Inc
   - id: asyncscopeunifexv1
     citation-label: "`unifex::v1::async_scope`"
