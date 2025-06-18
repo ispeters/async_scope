@@ -2959,17 +2959,7 @@ public:
         simple_counting_scope* @_scope_@; // @_exposition only_@
     };
 
-    struct @_join-t_@ {}                  // @_exposition only_@
-
-    enum @_state-type_@ {                 // @_exposition only_@
-        @_unused_@,                       // @_exposition only_@
-        @_open_@,                         // @_exposition only_@
-        @_close_@,                        // @_exposition only_@
-        @_open-and-joining_@,             // @_exposition only_@
-        @_closed-and-joining_@,           // @_exposition only_@
-        @_unused-and-closed_@,            // @_exposition only_@
-        @_joined_@,                       // @_exposition only_@
-    };
+    static constexpr size_t max_associations = @_implementation-defined_@;
 
     // [exec.simple.counting.ctor], constructor and destructor
     simple_counting_scope() noexcept;
@@ -2982,16 +2972,30 @@ public:
     sender auto join() noexcept;
 
 private:
+    struct @_join-t_@ {};                 // @_exposition only_@
+
+    enum @_state-type_@ {                 // @_exposition only_@
+        @_unused_@,                       // @_exposition only_@
+        @_open_@,                         // @_exposition only_@
+        @_close_@,                        // @_exposition only_@
+        @_open-and-joining_@,             // @_exposition only_@
+        @_closed-and-joining_@,           // @_exposition only_@
+        @_unused-and-closed_@,            // @_exposition only_@
+        @_joined_@,                       // @_exposition only_@
+    };
+
     size_t @_count_@;                     // @_exposition only_@
     @_state-type_@ @_state_@;                 // @_exposition only_@
 
     bool @_try-associate_@() noexcept;    // @_exposition only_@
     void @_disassociate_@() noexcept;     // @_exposition only_@
+    template <class State>
+    bool @_start-join-sender_@(State& state) noexcept; // @_exposition only_@
 };
 ```
 
-[1]{.pnum} For purposes of determining the existence of a data race, `get_token`, `close`, `join`, _`try-associate`_, and
-_`disassociate`_ behave as atomic operations ([intro.multithread]{.sref}). These operations on a single object of type
+[1]{.pnum} For purposes of determining the existence of a data race, `get_token`, `close`, `join`, _`try-associate`_,
+_`disassociate`_, and _`start-join-sender`_ behave as atomic operations ([intro.multithread]{.sref}). These operations on a single object of type
 `simple_counting_scope` appear to occur in a single total order.
 
 __Constructor and Destructor [exec.simple.counting.ctor]__
@@ -3067,7 +3071,7 @@ struct @_impls-for_@<simple_counting_scope::@_join-t_@> : @_default-impls_@ {
         @_op-t_@ @_op_@;                                            // @_exposition only_@
 
         @_state_@(simple_counting_scope* scope, Rcvr& rcvr)     // @_exposition only_@
-            noexcept(@_nothrow-callable_@<connect_t, @_sched-sender_@, Rcvr&>)
+            noexcept(@_nothrow-callable_@<connect_t, @_sched-sender_@, @_rcvr-t_@>)
           : @_scope_@(scope),
             @_receiver_@(rcvr),
             @_op_@(connect(schedule(get_scheduler(get_env(rcvr))), @_rcvr-t_@(rcvr))) {}
@@ -3089,24 +3093,16 @@ struct @_impls-for_@<simple_counting_scope::@_join-t_@> : @_default-impls_@ {
         };
 
     static constexpr auto @_start_@ =
-        [](auto& s, auto&) noexcept { @_see-below_@; };
+        [](auto& s, auto&) noexcept {
+            if (s.@_scope_@->@_start-join-sender_@(s))
+                s.@_complete-inline_@();
+        };
 };
 ```
 
-[7]{.pnum} In the function object used to initialize `@_impls-for_@<@_join-t_@>::@_start_@` let state be
-`s.@_scope_@->@_state_@`. If state is
-
-- [7.1]{.pnum} `@_unused_@`, `@_unused-and-closed_@`, or `@_joined_@`, `s.@_complete-inline_@()` is invoked and changes
-  the state of `*s.@_scope_@` to `@_joined_@`;
-- [7.2]{.pnum} `@_open_@`, changes the state of `*s.@_scope_@` to `@_open-and-joining_@`;
-- [7.3]{.pnum} `@_closed_@`, changes the state of `*s.@_scope_@` to `@_closed-and-joining_@`;
-
-[8]{.pnum} If `s.@_complete-inline_@()` was not invoked, registers s with `*s.@_scope_@` to have `s.@_complete_@()`
-invoked when `s.@_scope_@->@_count_@` becomes zero.
-
 `bool @_try-associate_@() noexcept;`
 
-[9]{.pnum} _Effects:_ If _`state`_ is
+[9]{.pnum} _Effects:_ If _`count`_ is equal to `max_associations`, then no effects. Otherwise, if _`state`_ is
 
 - [9.1]{.pnum} _`unused`_, then increments _`count`_ and changes _`state`_ to _`open`_;
 - [9.2]{.pnum} _`open`_ or _`open-and-joining`_, then increments _`count`_;
@@ -3118,9 +3114,18 @@ invoked when `s.@_scope_@->@_count_@` becomes zero.
 
 [11]{.pnum} _Effects:_ Decrements _`count`_. If _`count`_ is zero after decrementing and _`state`_ is
 _`open-and-joining`_ or _`closed-and-joining`_, changes _`state`_ to _`joined`_ and calls `@_complete_@()` on all
-objects registered with `*this`.
+objects registered with `*this`. [Calling `@_complete_@()` on any registered object can cause `*this` to get destroyed.]{.note}
 
-[12]{.pnum} [Calling `@_complete_@()` on any registered object may cause `*this` to get destroyed.]{.note}
+```
+template <class State>
+bool @_start-join-sender_@(State& st) noexcept;
+```
+
+[13]{.pnum} _Effects:_ If _`state`_ is
+
+- [13.1]{.pnum} `@_unused_@`, `@_unused-and-closed_@`, or `@_joined_@`, changes _`state`_ to _`joined`_ and returns `true`;
+- [13.2]{.pnum} `@_open_@` or _`open-and-joining`_, changes _`state`_ to `@_open-and-joining_@`, registers `st` with `*this` and returns `false`;
+- [13.3]{.pnum} `@_closed_@` or _`closed-and-joining`_, changes _`state`_ to `@_closed-and-joining_@`, registers `st` with `*this` and returns `false`.
 
 __Token [exec.simple.counting.token]__
 
