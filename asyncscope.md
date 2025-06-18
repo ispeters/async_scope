@@ -2860,7 +2860,7 @@ private:
 Add the following as a  new subsection immediately after [exec.coro.util]{.sref}:
 
 ::: add
-__Async scope utilities [exec.scope]__
+__Execution scope utilities [exec.scope]__
 :::
 
 ## Async scope concepts
@@ -2868,7 +2868,7 @@ __Async scope utilities [exec.scope]__
 Add the following as the first subsection of __[exec.scope]__:
 
 ::: add
-__Async scope concepts [exec.scope.concepts]__
+__Execution scope concepts [exec.scope.concepts]__
 
 [1]{.pnum} The `scope_token` concept defines the requirements on a type `Token` that can be used
 to create associations between senders and an async scope.
@@ -2940,24 +2940,102 @@ operations:
 - [1.7]{.pnum} `@_joined_@`: when the count of associated objects drops to zero while `scope` is in the `@_open-and-joining_@`
   or `@_closed-and-joining_@` state, `scope` moves to the `@_joined_@` state.
 
+[2]{.pnum} _Recommended practice_: For `simple_counting_scope` and `counting_scope`, implementations should store the state and the count of associated objects in a single member of type `size_t`.
+
+[3]{.pnum} Subclause [exec.counting.scopes] makes use of the following exposition-only entities:
+```cpp
+struct @_scope-join-t_@ {};           // @_exposition only_@
+
+enum @_scope-state-type_@ {           // @_exposition only_@
+    @_unused_@,                       // @_exposition only_@
+    @_open_@,                         // @_exposition only_@
+    @_close_@,                        // @_exposition only_@
+    @_open-and-joining_@,             // @_exposition only_@
+    @_closed-and-joining_@,           // @_exposition only_@
+    @_unused-and-closed_@,            // @_exposition only_@
+    @_joined_@,                       // @_exposition only_@
+};
+```
+
+[4]{.pnum} The exposition-only class template `@_impls-for_@` ([exec.snd.general]{.sref}) is specialized for
+`@_scope-join-t_@` as follows:
+
+```cpp
+template <>
+struct @_impls-for_@<@_scope-join-t_@> : @_default-impls_@ {
+    template <class Scope, class Rcvr>
+    struct @_state_@ {                                          // @_exposition only_@
+        struct @_rcvr-t_@ {                                     // @_exposition only_@
+            using receiver_concept = receiver_t;
+
+            Rcvr& @_rcvr_@;                                     // @_exposition only_@
+
+            void set_value() && noexcept {
+                execution::set_value(std::move(@_rcvr_@));
+            }
+
+            template <class E>
+            void set_error(E&& e) && noexcept {
+                execution::set_error(std::move(@_rcvr_@), std::forward<E>(e));
+            }
+
+            void set_stopped() && noexcept {
+                execution::set_stopped(std::move(@_rcvr_@));
+            }
+
+            const auto& get_env() const noexcept {
+                return execution::get_env(@_rcvr_@);
+            }
+        };
+
+        using @_sched-sender_@ =                                // @_exposition only_@
+            decltype(schedule(get_scheduler(get_env(declval<Rcvr&>()))));
+        using @_op-t_@ =                                        // @_exposition only_@
+            connect_result_t<@_sched-sender_@, @_rcvr-t_@>;
+
+        Scope* @_scope_@;                       // @_exposition only_@
+        Rcvr& @_receiver_@;                                     // @_exposition only_@
+        @_op-t_@ @_op_@;                                            // @_exposition only_@
+
+        @_state_@(Scope* scope, Rcvr& rcvr)     // @_exposition only_@
+            noexcept(@_nothrow-callable_@<connect_t, @_sched-sender_@, @_rcvr-t_@>)
+          : @_scope_@(scope),
+            @_receiver_@(rcvr),
+            @_op_@(connect(schedule(get_scheduler(get_env(rcvr))), @_rcvr-t_@(rcvr))) {}
+
+        void @_complete_@() noexcept {                          // @_exposition only_@
+            start(@_op_@);
+        }
+
+        void @_complete-inline_@() noexcept {                   // @_exposition only_@
+            set_value(std::move(@_receiver_@));
+        }
+    };
+
+    static constexpr auto @_get-state_@ =
+        []<class Rcvr>(auto&& sender, Rcvr& receiver)
+                noexcept(is_nothrow_constructible_v<@_state_@<Rcvr>, @_data-type_@<decltype(sender)>, Rcvr&>) {
+            auto[_, self] = sender;
+            return @_state_@(self, receiver);
+        };
+
+    static constexpr auto @_start_@ =
+        [](auto& s, auto&) noexcept {
+            if (s.@_scope_@->@_start-join-sender_@(s))
+                s.@_complete-inline_@();
+        };
+};
+```
 
 __Simple Counting Scope [exec.scope.simple.counting]__
 
 __General [exec.scope.simple.counting.general]__
 
-```
+```cpp
 class simple_counting_scope {
 public:
     // [exec.simple.counting.token], token
-    struct token {
-        template <sender Sender>
-        Sender&& wrap(Sender&& snd) const noexcept;
-        bool try_associate() const noexcept;
-        void disassociate() const noexcept;
-
-    private:
-        simple_counting_scope* @_scope_@; // @_exposition only_@
-    };
+    struct token;
 
     static constexpr size_t max_associations = @_implementation-defined_@;
 
@@ -2972,20 +3050,8 @@ public:
     sender auto join() noexcept;
 
 private:
-    struct @_join-t_@ {};                 // @_exposition only_@
-
-    enum @_state-type_@ {                 // @_exposition only_@
-        @_unused_@,                       // @_exposition only_@
-        @_open_@,                         // @_exposition only_@
-        @_close_@,                        // @_exposition only_@
-        @_open-and-joining_@,             // @_exposition only_@
-        @_closed-and-joining_@,           // @_exposition only_@
-        @_unused-and-closed_@,            // @_exposition only_@
-        @_joined_@,                       // @_exposition only_@
-    };
-
     size_t @_count_@;                     // @_exposition only_@
-    @_state-type_@ @_state_@;                 // @_exposition only_@
+    @_scope-state-type_@ @_state_@;       // @_exposition only_@
 
     bool @_try-associate_@() noexcept;    // @_exposition only_@
     void @_disassociate_@() noexcept;     // @_exposition only_@
@@ -3028,91 +3094,23 @@ __Members [exec.simple.counting.mem]__
 
 `sender auto join() noexcept;`
 
-[4]{.pnum} _Returns:_ `@_make-sender_@(@_join-t_@(), this)`.
-
-[5]{.pnum} The exposition-only class template `@_impls-for_@` ([exec.snd.general]{.sref}) is specialized for
-`@_join-t_@` as follows:
-
-```cpp
-template <>
-struct @_impls-for_@<simple_counting_scope::@_join-t_@> : @_default-impls_@ {
-    template <class Rcvr>
-    struct @_state_@ {                                          // @_exposition only_@
-        struct @_rcvr-t_@ {                                     // @_exposition only_@
-            using receiver_concept = receiver_t;
-
-            Rcvr& @_rcvr_@;                                     // @_exposition only_@
-
-            void set_value() && noexcept {
-                execution::set_value(std::move(@_rcvr_@));
-            }
-
-            template <class E>
-            void set_error(E&& e) && noexcept {
-                execution::set_error(std::move(@_rcvr_@), std::forward<E>(e));
-            }
-
-            void set_stopped() && noexcept {
-                execution::set_stopped(std::move(@_rcvr_@));
-            }
-
-            const auto& get_env() const noexcept {
-                return execution::get_env(@_rcvr_@);
-            }
-        };
-
-        using @_sched-sender_@ =                                // @_exposition only_@
-            decltype(schedule(get_scheduler(get_env(declval<Rcvr&>()))));
-        using @_op-t_@ =                                        // @_exposition only_@
-            connect_result_t<@_sched-sender_@, @_rcvr-t_@>;
-
-        simple_counting_scope* @_scope_@;                       // @_exposition only_@
-        Rcvr& @_receiver_@;                                     // @_exposition only_@
-        @_op-t_@ @_op_@;                                            // @_exposition only_@
-
-        @_state_@(simple_counting_scope* scope, Rcvr& rcvr)     // @_exposition only_@
-            noexcept(@_nothrow-callable_@<connect_t, @_sched-sender_@, @_rcvr-t_@>)
-          : @_scope_@(scope),
-            @_receiver_@(rcvr),
-            @_op_@(connect(schedule(get_scheduler(get_env(rcvr))), @_rcvr-t_@(rcvr))) {}
-
-        void @_complete_@() noexcept {                          // @_exposition only_@
-            start(@_op_@);
-        }
-
-        void @_complete-inline_@() noexcept {                   // @_exposition only_@
-            set_value(std::move(@_receiver_@));
-        }
-    };
-
-    static constexpr auto @_get-state_@ =
-        []<class Rcvr>(auto&& sender, Rcvr& receiver)
-                noexcept(is_nothrow_constructible_v<@_state_@<Rcvr>, simple_counting_scope*, Rcvr&>) {
-            auto[_, self] = sender;
-            return @_state_@<Rcvr>(self, receiver);
-        };
-
-    static constexpr auto @_start_@ =
-        [](auto& s, auto&) noexcept {
-            if (s.@_scope_@->@_start-join-sender_@(s))
-                s.@_complete-inline_@();
-        };
-};
-```
+[4]{.pnum} _Returns:_ `@_make-sender_@(@_scope-join-t_@(), this)`.
 
 `bool @_try-associate_@() noexcept;`
 
-[9]{.pnum} _Effects:_ If _`count`_ is equal to `max_associations`, then no effects. Otherwise, if _`state`_ is
+[5]{.pnum} _Effects:_ If _`count`_ is equal to `max_associations`, then no effects. Otherwise, if _`state`_ is
 
-- [9.1]{.pnum} _`unused`_, then increments _`count`_ and changes _`state`_ to _`open`_;
-- [9.2]{.pnum} _`open`_ or _`open-and-joining`_, then increments _`count`_;
-- [9.3]{.pnum} otherwise, no effects.
+- [5.1]{.pnum} _`unused`_, then increments _`count`_ and changes _`state`_ to _`open`_;
+- [5.2]{.pnum} _`open`_ or _`open-and-joining`_, then increments _`count`_;
+- [5.3]{.pnum} otherwise, no effects.
 
-[10]{.pnum} _Returns:_ `true` if _`count`_ was incremented, `false` otherwise.
+[6]{.pnum} _Returns:_ `true` if _`count`_ was incremented, `false` otherwise.
 
 `void @_disassociate_@() noexcept;`
 
-[11]{.pnum} _Effects:_ Decrements _`count`_. If _`count`_ is zero after decrementing and _`state`_ is
+[7]{.pnum} _Preconditions_: _`count`_ is greater than zero.
+
+[8]{.pnum} _Effects:_ Decrements _`count`_. If _`count`_ is zero after decrementing and _`state`_ is
 _`open-and-joining`_ or _`closed-and-joining`_, changes _`state`_ to _`joined`_ and calls `@_complete_@()` on all
 objects registered with `*this`. [Calling `@_complete_@()` on any registered object can cause `*this` to get destroyed.]{.note}
 
@@ -3121,38 +3119,46 @@ template <class State>
 bool @_start-join-sender_@(State& st) noexcept;
 ```
 
-[13]{.pnum} _Effects:_ If _`state`_ is
+[9]{.pnum} _Effects:_ If _`state`_ is
 
-- [13.1]{.pnum} `@_unused_@`, `@_unused-and-closed_@`, or `@_joined_@`, changes _`state`_ to _`joined`_ and returns `true`;
-- [13.2]{.pnum} `@_open_@` or _`open-and-joining`_, changes _`state`_ to `@_open-and-joining_@`, registers `st` with `*this` and returns `false`;
-- [13.3]{.pnum} `@_closed_@` or _`closed-and-joining`_, changes _`state`_ to `@_closed-and-joining_@`, registers `st` with `*this` and returns `false`.
+- [9.1]{.pnum} `@_unused_@`, `@_unused-and-closed_@`, or `@_joined_@`, changes _`state`_ to _`joined`_ and returns `true`;
+- [9.2]{.pnum} `@_open_@` or _`open-and-joining`_, changes _`state`_ to `@_open-and-joining_@`, registers `st` with `*this` and returns `false`;
+- [9.3]{.pnum} `@_closed_@` or _`closed-and-joining`_, changes _`state`_ to `@_closed-and-joining_@`, registers `st` with `*this` and returns `false`.
 
 __Token [exec.simple.counting.token]__
+```cpp
+struct simple_counting_scope::token {
+    template <sender Sender>
+    Sender&& wrap(Sender&& snd) const noexcept;
+    bool try_associate() const noexcept;
+    void disassociate() const noexcept;
+
+private:
+    simple_counting_scope* @_scope_@; // @_exposition only_@
+};
+```
 
 `template <sender Sender>` \
 `Sender&& wrap(Sender&& snd) const noexcept;`
 
-[1]{.pnum} _Returns:_ `std::forward<Sender>(snd);`
+[1]{.pnum} _Returns:_ `std::forward<Sender>(snd)`.
 
 `bool try_associate() const noexcept;`
 
-[2]{.pnum} _Returns:_ `@_scope_@->@_try-associate_@()`.
+[2]{.pnum} _Effects:_ Equivalent to: `return @_scope_@->@_try-associate_@();`
 
 `void disassociate() const noexcept;`
 
-[3]{.pnum} _Effects:_ Invokes `@_scope_@->@_disassociate_@()`;
+[3]{.pnum} _Effects:_ Equivalent to `@_scope_@->@_disassociate_@()`.
 
 __Counting Scope [exec.counting.scope]__
-
-__General [exec.counting.general]__
 
 ```cpp
 class counting_scope {
 public:
-    // [exec.counting.token], token
     struct token {
         template <sender Sender>
-        sender auto wrap(Sender&& snd) const noexcept(is_nothrow_constructible_v<remove_cvref_t<Sender>, Sender>*);
+        sender auto wrap(Sender&& snd) const noexcept(@_see below_@);
         bool try_associate() const noexcept;
         void disassociate() const noexcept;
 
@@ -3160,191 +3166,45 @@ public:
         counting_scope* @_scope_@;    // @_exposition only_@
     };
 
-    struct @_join-t_@ {};             // @_exposition only_@
+    static constexpr size_t max_associations = @_implementation-defined_@;
 
-    enum @_state-type_@ {             // @_exposition only_@
-        @_unused_@,                   // @_exposition only_@
-        @_open_@,                     // @_exposition only_@
-        @_close_@,                    // @_exposition only_@
-        @_open-and-joining_@,         // @_exposition only_@
-        @_closed-and-joining_@,       // @_exposition only_@
-        @_unused-and-closed_@,        // @_exposition only_@
-        @_joined_@,                   // @_exposition only_@
-    };
-
-    // [exec.counting.ctor], constructor and destructor
     counting_scope() noexcept;
     counting_scope(counting_scope&&) = delete;
     ~counting_scope();
 
-    // [exec.counting.mem], members
     token get_token() noexcept;
     void close() noexcept;
     sender auto join() noexcept;
     void request_stop() noexcept;
 
 private:
-    size_t @_count_@;                  // @_exposition only_@
-    @_state-type_@ @_state_@;              // @_exposition only_@
-    inplace_stop_source @_s_source_@   // @_exposition only_@
+    size_t @_count_@;                   // @_exposition only_@
+    @_scope-state-type_@ @_state_@;     // @_exposition only_@
+    inplace_stop_source @_s_source_@;   // @_exposition only_@
 
     bool @_try-associate_@() noexcept; // @_exposition only_@
     void @_disassociate_@() noexcept;  // @_exposition only_@
+
+    template <class State>
+    bool @_start-join-sender_@(State& state) noexcept; // @_exposition only_@
 };
 ```
-
-[1]{.pnum} For purposes of determining the existence of a data race, `get_token`, `close`, `join`, _`try-associate`_, and
-_`disassociate`_ behave as atomic operations ([intro.multithread]{.sref}). These operations on a single object of type
-`counting_scope` appear to occur in a single total order.
-
-[2]{.pnum} Calls to `request_stop` do not introduce data races.
-
-__Constructor and Destructor [exec.counting.ctor]__
-
-`counting_scope() noexcept;`
-
-[1]{.pnum} _Postconditions:_ _`count`_ is `0` and _`state`_ is _`unused`_.
-
-`~counting_scope();`
-
-[2]{.pnum} _Effects:_ If _`state`_ is not one of _`joined`_, _`unused`_, or _`unused-and-closed`_, invokes `terminate`
-([except.terminate]{.sref}). Otherwise, has no effects.
-
-__Members [exec.counting.mem]__
+[1]{.pnum} `counting_scope` differs from `simple_counting_scope` by adding support for cancellation. Unless specified below, the semantics of members of `counting_scope` are the same as the corresponding members of `simple_counting_scope`.
 
 `token get_token() noexcept;`
 
-[1]{.pnum} _Returns:_ An object `t` of type `counting_scope::token` such that `t.@_scope_@ == this` is `true`.
+[2]{.pnum} _Returns:_ An object `t` of type `counting_scope::token` such that `t.@_scope_@ == this` is `true`.
 
-`void close() noexcept;`
+`void request_stop() noexcept;`
 
-[2]{.pnum} _Effects:_ If _`state`_ is
+[3]{.pnum} _Effects:_ Equivalent to `@_s_source_@.request_stop()`.
 
-- [2.1]{.pnum} _`unused`_, changes _`state`_ to _`unused-and-closed`_;
-- [2.2]{.pnum} _`open`_, changes _`state`_ to _`closed`_;
-- [2.3]{.pnum} _`open-and-joining`_, changes _`state`_ to _`closed-and-joining`_;
-- [2.4]{.pnum} otherwise, no effects.
-
-[3]{.pnum} _Postconditions:_ Any subsequent call to `@_try-associate_@()` on `*this` returns `false`.
-
-`sender auto join() noexcept;`
-
-[4]{.pnum} _Returns:_ `@_make-sender_@(@_join-t_@(), this)`.
-
-[5]{.pnum} The exposition-only class template `@_impls-for_@` ([exec.snd.general]{.sref}) is specialized for
-`@_join-t_@` as follows:
-
-```cpp
-template <>
-struct @_impls-for_@<counting_scope::@_join-t_@>: @_default-impls_@ {
-    template <class Rcvr>
-    struct @_state_@ {                                          // @_exposition only_@
-        struct @_rcvr-t_@ {                                     // @_exposition only_@
-            using receiver_concept = receiver_t;
-
-            Rcvr& @_rcvr_@;                                     // @_exposition only_@
-
-            void set_value() && noexcept {
-                execution::set_value(std::move(@_rcvr_@));
-            }
-
-            template <class E>
-            void set_error(E&& e) && noexcept {
-                execution::set_error(std::move(@_rcvr_@), std::forward<E>(e));
-            }
-
-            void set_stopped() && noexcept {
-                execution::set_stopped(std::move(@_rcvr_@));
-            }
-
-            const auto& get_env() const noexcept {
-                return execution::get_env(@_rcvr_@);
-            }
-        };
-
-        using @_sched-sender_@ =                                // @_exposition only_@
-            decltype(schedule(get_scheduler(get_env(declval<Rcvr&>()))));
-        using @_op-t_@ =                                        // @_exposition only_@
-            connect_result_t<@_sched-sender_@, @_rcvr-t_@>;
-
-        @_scope_@;                                              // @_exposition only_@
-        Rcvr& @_receiver_@;                                     // @_exposition only_@
-        @_op-t_@ @_op_@;                                            // @_exposition only_@
-
-        @_state_@(counting_scope* scope, Rcvr& rcvr)            // @_exposition only_@
-            noexcept(@_nothrow-callable_@<connect_t, @_sched-sender_@, Rcvr&>)
-          : @_scope_@(scope),
-            @_receiver_@(rcvr),
-            @_op_@(connect(schedule(get_scheduler(get_env(rcvr))), @_rcvr-t_@(rcvr))) {}
-
-        void @_complete_@() noexcept {                          // @_exposition only_@
-            start(@_op_@);
-        }
-
-        void @_complete-inline_@() noexcept {                   // @_exposition only_@
-            set_value(std::move(@_receiver_@));
-        }
-    };
-
-    static constexpr auto @_get-state_@ =
-        []<class Rcvr>(auto&& sender, Rcvr& receiver)
-                noexcept(is_nothrow_constructible_v<@_state_@<Rcvr>, counting_scope*, Rcvr&>) {
-            auto[_, self] = sender;
-            return @_state_@<Rcvr>(self, receiver);
-        };
-
-    static constexpr auto @_start_@ =
-        [](auto& s, auto&) noexcept { @_see-below_@; };
-};
-```
-
-[7]{.pnum} In the function object used to initialize `@_impls-for_@<@_join-t_@>::@_start_@` let state be
-`s.@_scope_@->@_state_@`. If state is
-
-- [7.1]{.pnum} `@_unused_@`, `@_unused-and-closed_@`, or `@_joined_@`, `s.@_complete-inline_@()` is invoked and changes
-  the state of `*s.@_scope_@` to `@_joined_@`;
-- [7.2]{.pnum} `@_open_@`, changes the state of `*s.@_scope_@` to `@_open-and-joining_@`;
-- [7.3]{.pnum} `@_closed_@`, changes the state of `*s.@_scope_@` to `@_closed-and-joining_@`;
-
-[8]{.pnum} If `s.@_complete-inline_@()` was not invoked, registers s with `*s.@_scope_@` to have `s.@_complete_@()`
-invoked when `s.@_scope_@->@_count_@` becomes zero.
-
-`void request_stop() noexcept`
-
-[9]{.pnum} _Effects:_ Calls `@_s_source_@.request_stop()`
-
-`bool @_try-associate_@() noexcept;`
-
-[10]{.pnum} _Effects:_ If _`state`_ is
-
-- [10.1]{.pnum} _`unused`_, then increments _`count`_ and changes _`state`_ to _`open`_;
-- [10.2]{.pnum} _`open`_ or _`open-and-joining`_, then increments _`count`_;
-- [10.3]{.pnum} otherwise, no effects.
-
-[11]{.pnum} _Returns:_ `true` if _`count`_ was incremented, `false` otherwise.
-
-`void @_disassociate_@() noexcept;`
-
-[12]{.pnum} _Effects:_ Decrements _`count`_. If _`count`_ is zero after decrementing and _`state`_ is
-_`open-and-joining`_ or _`closed-and-joining`_, changes _`state`_ to _`joined`_ and calls `@_complete_@()` on all
-objects registered with `*this`.
-
-[13]{.pnum} [Calling `@_complete_@()` on any registered object may cause `*this` to get destroyed.]{.note}
-
-__Token [exec.counting.token]__
+[4]{.pnum} _Remarks:_ Calls to `request_stop` do not introduce data races.
 
 `template <sender Sender>` \
-`sender auto wrap(Sender&& snd) const noexcept(is_nothrow_constructible_v<remove_cvref_t<Sender>, Sender>);`
+`sender auto counting_scope::token::wrap(Sender&& snd) const noexcept(is_nothrow_constructible_v<remove_cvref_t<Sender>, Sender>);`
 
-[1]{.pnum} _Returns:_ `@_stop-when_@(std::forward<Sender>(snd), @_scope_@->@_s_source_@.get_token())`.
-
-`bool try_associate() const;`
-
-[2]{.pnum} _Returns:_ `@_scope_@->@_try-associate_@()`.
-
-`void disassociate() const;`
-
-[3]{.pnum} _Effects:_ invokes `@_scope_@->@_disassociate_@()`.
+[5]{.pnum} _Effects:_ Equivalent to: `return @_stop-when_@(std::forward<Sender>(snd), @_scope_@->@_s_source_@.get_token());`
 :::
 
 Acknowledgements
