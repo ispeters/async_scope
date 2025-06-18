@@ -2733,10 +2733,11 @@ __`std::execution::spawn` [exec.spawn]__
 eagerly starts the input sender.
 
 [2]{.pnum} The name `spawn` denotes a customization point object. For subexpressions `sndr`, `token`, and `env`, let
-`Sndr` be `decltype((sndr))`, let `Token` be `remove_cvref_t<decltype((token))>`, and let `Env` be `decltype((env))`. If
-`sender<Sndr>` or `scope_token<Token>` returns `false`, the expression `spawn(sndr, token, env)` is ill-formed.
+`Sndr` be `decltype((sndr))`, let `Token` be `remove_cvref_t<decltype((token))>`, and let `Env` be
+`remove_cvref_t<decltype((env))>`. If any of `sender<Sndr>`, `scope_token<Token>`, or `@_queryable_@<Env>` are not
+satisfied, the expression `spawn(sndr, token, env)` is ill-formed.
 
-[3]{.pnum} Let _`spawn-state-base`_ be an exposition only class:
+[3]{.pnum} Let _`spawn-state-base`_ be an exposition-only class:
 
 ```cpp
 namespace std::execution {
@@ -2748,7 +2749,7 @@ struct @_spawn-state-base_@ {                 // @_exposition only_@
 }
 ```
 
-[4]{.pnum} Let _`spawn-receiver`_ be an exposition only class:
+[4]{.pnum} Let _`spawn-receiver`_ be an exposition-only class:
 
 ```cpp
 namespace std::execution {
@@ -2764,8 +2765,7 @@ struct @_spawn-receiver_@ {      // @_exposition only_@
 }
 ```
 
-[5]{.pnum} Let _`spawn-state`_ be an exposition only class template defined
-below:
+[5]{.pnum} Let _`spawn-state`_ be an exposition-only class template:
 
 ```cpp
 namespace std::execution {
@@ -2795,9 +2795,9 @@ private:
 
 [6]{.pnum} _Effects_:
 
-- Initializes _`alloc`_ with `alloc`, _`token`_ with `token`, and _`op`_ with the result of the following expression:
+- Initializes _`alloc`_ with `alloc`, _`token`_ with `token`, and _`op`_ with:
   ```cpp
-  connect(std::move(sndr), @_spawn-receiver_@{this})
+  connect(std::move(sndr), @_spawn-receiver_@(this))
   ```
 - Then invokes `@_token_@.try_associate()`
    - If the result is `true` then invokes `start(@_op_@)`;
@@ -2831,19 +2831,19 @@ private:
 [10]{.pnum} For the expression `spawn(sndr, token, env)` let `new_sender` be the expression `token.wrap(sndr)` and let
 `alloc` and `senv` be defined as follows:
 
-- if the expression `get_allocator(env)` is well defined, then `alloc` is the result of `get_allocator(env)` and `senv`
+- if the expression `get_allocator(env)` is well-formed, then `alloc` is the result of `get_allocator(env)` and `senv`
   is the expression `env`,
-- otherwise if the expression `get_allocator(get_env(new_sender))` is well-defined, then `alloc` is the result of
-  `get_allocator(get_env(new_sender))` and `senv` is the expression `@_JOIN-ENV_@(env, prop(get_allocator, alloc))`
-- otherwise `alloc` is `std::allocator<void>{}` and `senv` is the expression `env`
+- otherwise if the expression `get_allocator(get_env(new_sender))` is well-formed, then `alloc` is the result of
+  `get_allocator(get_env(new_sender))` and `senv` is the expression `@_JOIN-ENV_@(prop(get_allocator, alloc), env)`,
+- otherwise `alloc` is `allocator<void>()` and `senv` is the expression `env`.
 
-[11]{.pnum} The expression `spawn(sndr, token, env)` has the following effects:
+[11]{.pnum} The expression `spawn(sndr, token, env)` is of type `void` and has the following effects:
 
 - [11.1]{.pnum} Uses `alloc` to allocate and construct an object of a specialization of _`spawn-state`_ from `alloc`,
-  `write_env(token.wrap(std::forward<Sender>(sndr)), senv)`, and `token`. If an exception is thrown then the expression
-  has no effect.
+  `write_env(token.wrap(sndr), senv)`, and `token`. If an exception is thrown then any constructed objects are destroyed
+  and any allocated memory is deallocated.
 
-[12]{.pnum} The expression `spawn(sndr, token)` is expression-equivalent to `spawn(sndr, token, env<>{})`.
+[12]{.pnum} The expression `spawn(sndr, token)` is expression-equivalent to `spawn(sndr, token, execution::env<>())`.
 
 :::
 
@@ -2866,7 +2866,7 @@ __Scope concepts [exec.scope.concepts]__
 to create associations between senders and an async scope.
 
 [2]{.pnum} Let _`test-sender`_ and _`test-env`_ be unspecified types such that
-`sender_in<@_test-sender_@, @_test-env_@>` returns `true`.
+`sender_in<@_test-sender_@, @_test-env_@>` is modeled.
 
 ```cpp
 namespace std::execution {
@@ -2883,12 +2883,15 @@ concept scope_token =
 }
 ```
 
-[3]{.pnum} `scope_token<Token>` is modeled only if `Token`'s copy operations, move operations, and `disassociate`
-member function does not exit with an exception.
+[3]{.pnum} A type `Token` models `scope_token` only if:
 
-[4]{.pnum} Let `token` be an expression, and let `Token` be `remove_cvref_t<decltype((token))>`. `Token` models
-`scope_token` only if, for all expressions `sndr` whose type models `sender`, `token.wrap(sndr)` is a valid expression
-whose type models `sender` and whose advertised completion signatures are the same as those advertised by `sndr`.
+- no exceptions are thrown from copy construction, move construction, copy assignment, or move assignment of objects of
+  type `Token`; and
+- given an lvalue `token` of type `Token`, for all expressions `sndr` such that `Sndr` is `decltype((sndr))`, `Sndr`
+  models `sender`, `token.wrap(sndr)` is a valid expression, `decltype(token.wrap(sndr))` models `sender`, and for all
+  types `E` such that `E` models _`queryable`_ and `sender_id<Sndr, E>` is modeled,
+  `completion_signatures_of_t<decltype(token.wrap(sndr)), E>` contains the same completion signatures as
+  `completion_signatures_of_t<Sndr, E>`.
 
 :::
 
