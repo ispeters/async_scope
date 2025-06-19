@@ -3207,12 +3207,12 @@ public:
     void request_stop() noexcept;
 
 private:
-    size_t @_count_@;                   // @_exposition only_@
-    @_scope-state-type_@ @_state_@;     // @_exposition only_@
-    inplace_stop_source @_s_source_@;   // @_exposition only_@
+    size_t @_count_@;                                  // @_exposition only_@
+    @_scope-state-type_@ @_state_@;                        // @_exposition only_@
+    inplace_stop_source @_s_source_@;                  // @_exposition only_@
 
-    bool @_try-associate_@() noexcept; // @_exposition only_@
-    void @_disassociate_@() noexcept;  // @_exposition only_@
+    bool @_try-associate_@() noexcept;                 // @_exposition only_@
+    void @_disassociate_@() noexcept;                  // @_exposition only_@
 
     template <class State>
     bool @_start-join-sender_@(State& state) noexcept; // @_exposition only_@
