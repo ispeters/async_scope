@@ -2245,7 +2245,7 @@ To the note 1 paragraph 1 of [except.terminate]{.sref}, add the following bullet
 
 - [1.16]{.pnum} when `unhandled_stopped` is called on a `with_awaitable_senders<T>` object
   ([exec.with.awaitable.senders]{.sref}) whose continuation is not a handle to a coroutine whose promise type has an
-  `unhandled_stopped` member function.
+  `unhandled_stopped` member function, or
 
 ::: add
 - [1.?]{.pnum} when an object `scope` of type `std::execution::simple_counting_scope` or `std::execution::counting_scope` is destroyed and
