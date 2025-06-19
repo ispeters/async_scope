@@ -57,6 +57,11 @@ Changes
 - Add _`check-types`_ to `@_impls-for_@::<associate_t>` per [@P3557R2].
 - Fix `noexcept` clause in _`join-t`_ in scopes.
 - Apply wording feedback from LWG sessions in Sofia, Bulgaria.
+- Refresh sections 1 through 6 in hopes this is the final revision of this paper:
+  - ensure paper references refer to the most appropriate revisions (usually the most recent),
+  - remove minor divergences between section 5's description of the proposed library additions and the corresponding
+    formal wording (e.g. consistent `const` and `noexcept` qualifications), and
+  - fix as many typos as possible.
 
 ## R10
 
