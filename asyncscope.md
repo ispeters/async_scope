@@ -2248,7 +2248,7 @@ To the note 1 paragraph 1 of [except.terminate]{.sref}, add the following bullet
   `unhandled_stopped` member function.
 
 ::: add
-- [1.?]{.pnum} when an object `scope` of type `simple_counting_scope` or `counting_scope` is destroyed and
+- [1.?]{.pnum} when an object `scope` of type `std::execution::simple_counting_scope` or `std::execution::counting_scope` is destroyed and
   `scope.@_state_@` is not equal to _`joined`_, _`unused`_, or _`unused-and-closed`_ ([exec.simple.counting.ctor]).
 ::::
 
