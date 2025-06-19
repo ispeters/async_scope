@@ -3192,7 +3192,7 @@ public:
         void disassociate() const noexcept;
 
     private:
-        counting_scope* @_scope_@;                    // @_exposition only_@
+        counting_scope* @_scope_@;                     // @_exposition only_@
     };
 
     static constexpr size_t max_associations = @_implementation-defined_@;
