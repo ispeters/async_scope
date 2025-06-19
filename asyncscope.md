@@ -1,6 +1,6 @@
 ---
 title: "`async_scope` -- Creating scopes for non-sequential concurrency"
-document: D3149R11
+document: P3149R11
 date: today
 audience:
   - "LWG Library Working Group"
@@ -1727,7 +1727,7 @@ closed-and-joing state, moves the scope to the joined state and signals the outs
 class counting_scope {
     struct token {
         template <sender Sender>
-        sender auto wrap(Sender&& snd) const noexcept(/* @_see below_@ */);
+        sender auto wrap(Sender&& snd) const noexcept(@_see below_@);
 
         bool try_associate() const noexcept;
 
@@ -2248,8 +2248,9 @@ To the note 1 paragraph 1 of [except.terminate]{.sref}, add the following bullet
   `unhandled_stopped` member function, or
 
 ::: add
-- [1.?]{.pnum} when an object `scope` of type `std::execution::simple_counting_scope` or `std::execution::counting_scope` is destroyed and
-  `scope.@_state_@` is not equal to _`joined`_, _`unused`_, or _`unused-and-closed`_ ([exec.simple.counting.ctor]).
+- [1.?]{.pnum} when an object `scope` of type `std::execution::simple_counting_scope` or
+  `std::execution::counting_scope` is destroyed and `scope.@_state_@` is not equal to _`joined`_, _`unused`_, or
+  _`unused-and-closed`_ ([exec.simple.counting.ctor]).
 ::::
 
 ## `execution::associate`
@@ -2374,7 +2375,7 @@ struct @_impls-for_@<associate_t> : @_default-impls_@ {
 [13]{.pnum} The member `@_impls-for_@<associate_t>::@_get-state_@` is initialized with a callable object equivalent to
 the following lambda:
 ```cpp
-[]<class Sndr, class Rcvr>(Sndr&& sndr, Rcvr& rcvr) noexcept(/* @_see below_@ */) {
+[]<class Sndr, class Rcvr>(Sndr&& sndr, Rcvr& rcvr) noexcept(@_see below_@) {
     auto [_, data] = std::forward<Sndr>(sndr);
 
     auto dataParts = std::move(data).release();
@@ -2933,7 +2934,7 @@ __Counting Scopes [exec.counting.scopes]__
 
 __General [exec.counting.scopes.general]__
 
-[1]{.pnum} Scopes of type `simple_counting_scope` and `counting_scope` maintain counts of outstanding operations.  Let:
+[1]{.pnum} Scopes of type `simple_counting_scope` and `counting_scope` maintain counts of associations. Let:
 
 - `Scope` be either `simple_counting_scope` or `counting_scope`,
 - `scope` be an object of type `Scope`,
@@ -2956,14 +2957,11 @@ these operations:
 - [1.6]{.pnum} `@_closed-and-joining_@`: when `scope.close()` is called while `scope` is in the `@_open-and-joining_@`
   state or the operation state `op` is started while `scope` is in the `@_closed_@` or `@_unused-and-closed_@` state,
   `scope` moves to the `@_closed-and-joining_@` state.
-- [1.7]{.pnum} `@_joined_@`: when the count of associated objects drops to zero while `scope` is in the
-  `@_open-and-joining_@` or `@_closed-and-joining_@` state, `scope` moves to the `@_joined_@` state.
-
-TODO: paragraph 1 refers to "counts of outstanding operations" and paragraph 2 refers to "count of associated objects";
-should they be consistent?
+- [1.7]{.pnum} `@_joined_@`: when the count of assocations drops to zero while `scope` is in the `@_open-and-joining_@`
+  or `@_closed-and-joining_@` state, `scope` moves to the `@_joined_@` state.
 
 [2]{.pnum} _Recommended practice_: For `simple_counting_scope` and `counting_scope`, implementations should store the
-state and the count of associated objects in a single member of type `size_t`.
+state and the count of associations in a single member of type `size_t`.
 
 [3]{.pnum} Subclause [exec.counting.scopes] makes use of the following exposition-only entities:
 ```cpp
@@ -3006,7 +3004,7 @@ struct @_impls-for_@<@_scope-join-t_@> : @_default-impls_@ {
                 execution::set_stopped(std::move(@_rcvr_@));
             }
 
-            const auto& get_env() const noexcept {
+            decltype(auto) get_env() const noexcept {
                 return execution::get_env(@_rcvr_@);
             }
         };
@@ -3121,10 +3119,6 @@ __Members [exec.simple.counting.mem]__
 
 `bool @_try-associate_@() noexcept;`
 
-TODO: in practice, a "failed" call to _`try-associate`_ could cause a memory barrier. Is this "no effects"? Does
-specifying "no effects" require that the implied CAS loop be `std::memory_order_relaxed` on failure? Does it bar
-mutex-based implementations? Should it?
-
 [5]{.pnum} _Effects:_ If _`count`_ is equal to `max_associations`, then no effects. Otherwise, if _`state`_ is
 
 - [5.1]{.pnum} _`unused`_, then increments _`count`_ and changes _`state`_ to _`open`_;
@@ -3139,7 +3133,7 @@ mutex-based implementations? Should it?
 
 [8]{.pnum} _Effects:_ Decrements _`count`_. If _`count`_ is zero after decrementing and _`state`_ is
 _`open-and-joining`_ or _`closed-and-joining`_, changes _`state`_ to _`joined`_ and calls `@_complete_@()` on all
-objects registered with `*this`. [Calling `@_complete_@()` on any registered object can cause `*this` to get
+objects registered with `*this`. [Calling `@_complete_@()` on any registered object can cause `*this` to be
 destroyed.]{.note}
 
 `template <class State>` \
@@ -3147,12 +3141,12 @@ destroyed.]{.note}
 
 [9]{.pnum} _Effects:_ If _`state`_ is
 
-- [9.1]{.pnum} `@_unused_@`, `@_unused-and-closed_@`, or `@_joined_@`, changes _`state`_ to _`joined`_ and returns
+- [9.1]{.pnum} `@_unused_@`, `@_unused-and-closed_@`, or `@_joined_@`, then changes _`state`_ to _`joined`_ and returns
   `true`;
-- [9.2]{.pnum} `@_open_@` or _`open-and-joining`_, changes _`state`_ to `@_open-and-joining_@`, registers `st` with
+- [9.2]{.pnum} `@_open_@` or _`open-and-joining`_, then changes _`state`_ to `@_open-and-joining_@`, registers `st` with
   `*this` and returns `false`;
-- [9.3]{.pnum} `@_closed_@` or _`closed-and-joining`_, changes _`state`_ to `@_closed-and-joining_@`, registers `st`
-  with `*this` and returns `false`.
+- [9.3]{.pnum} `@_closed_@` or _`closed-and-joining`_, then changes _`state`_ to `@_closed-and-joining_@`, registers
+  `st` with `*this` and returns `false`.
 
 __Token [exec.simple.counting.token]__
 ```cpp
